@@ -1,10 +1,11 @@
-import type { BookDocument, Element, ImageElement, PhotoAsset } from './model';
+import type { BookDocument, Element, ImageElement, PhotoAsset, Spread } from './model';
 import { isPrintable, pageSafeRect, pageTrimRect, sideOfX, type PageSide } from './book';
 import { containsRect, effectiveDpi, elementBounds, elementPlacement, intersects } from './geometry';
 import { spineTextAllowed } from './cover';
 import { binding, pageCountOf, printer } from './printers';
 import { COVER_INDEX, coverGeometry, posterGeometry, type SurfaceGeometry } from './surface';
 import { spreadPagesLabel } from './generator';
+import { backgroundFrame } from './background';
 
 // Print preflight. Pure and fast enough to run on every edit.
 
@@ -214,8 +215,25 @@ function posterIssues(doc: BookDocument, assets: Map<string, PhotoAsset>): Prefl
   if (!sheet) return [];
   const g = posterGeometry(doc);
   const out = surfaceIssues(doc, g, sheet.elements, assets, 0, 'Poster');
+  out.push(...backgroundIssues(doc, sheet, g, assets, 'Poster'));
   if (!sheet.elements.length) out.push({ id: 'poster:empty', severity: 'info', code: 'empty-frame', message: 'Poster: the sheet is empty — use Auto collage or drag photos onto it.' });
   return out;
+}
+
+/** A background image prints across the whole sheet: it needs to hold up at that size too. */
+function backgroundIssues(doc: BookDocument, surface: Spread, g: { width: number; height: number; bleed: number }, assets: Map<string, PhotoAsset>, where: string): PreflightIssue[] {
+  const frame = backgroundFrame(surface, g);
+  if (!frame) return [];
+  const id = `bg:${surface.id}`;
+  const asset = assets.get(frame.assetId!);
+  if (!asset) return [{ id, severity: 'error', code: 'missing-photo', message: `${where}: the background photo is not in this project’s library.` }];
+  if (asset.missing) return [{ id, severity: 'error', code: 'missing-photo', message: `${where}: the original of the background photo (${asset.fileName}) is missing. Relink it from the library.` }];
+  const dpi = effectiveDpi(frame, asset);
+  // Faded backgrounds hide softness: judge them a little more kindly.
+  const k = frame.opacity !== undefined && frame.opacity < 0.6 ? 0.75 : 1;
+  if (dpi < doc.settings.minDpiError * k) return [{ id, severity: 'warning', code: 'low-dpi', message: `${where}: the background photo prints at only ${Math.round(dpi)} DPI — it will look soft. Fade it, or use a larger photo.` }];
+  if (dpi < doc.settings.minDpiWarning * k) return [{ id, severity: 'info', code: 'low-dpi', message: `${where}: the background photo prints at ${Math.round(dpi)} DPI (${doc.settings.minDpiWarning}+ is ideal).` }];
+  return [];
 }
 
 /** Signed distance from each *outer* trim edge (positive = inside the page). The spine edge is excluded. */

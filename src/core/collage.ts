@@ -1,7 +1,7 @@
 import type { BookDocument, Element, ImageElement, PhotoAsset, Rect } from './model';
 import { aspectOf } from './curation';
 import { defaultCrop } from './geometry';
-import { makeImageElement, makeTextElement } from './layout';
+import { isCutout, makeImageElement, makeTextElement } from './layout';
 import { mulberry32 } from './random';
 import { clamp, MM_PER_PT } from './units';
 
@@ -212,9 +212,10 @@ export function layoutCollageAround(doc: Pick<BookDocument, 'style'>, box: Rect,
   return { elements, used };
 }
 
+// Cutouts keep fit 'contain' from makeImageElement (shown whole) and never get a print border.
 const frame = (doc: Pick<BookDocument, 'style'>, asset: PhotoAsset, r: Rect, rotationDeg = 0, borderMm = 0): ImageElement => ({
   ...makeImageElement(doc, asset, r, rotationDeg, true),
-  borderMm,
+  borderMm: isCutout(asset) ? 0 : borderMm,
   borderColor: '#ffffff',
   crop: defaultCrop(asset),
 });

@@ -1,6 +1,6 @@
 import { memo, useMemo, type CSSProperties, type ReactNode } from 'react';
 import {
-  COVER_INDEX, elementPlacement, geometryFor, pageNumberRect, roleStyle, type BookSettings, type BookStyle, type Element,
+  COVER_INDEX, backgroundFrame, elementPlacement, geometryFor, pageNumberRect, roleStyle, type BookSettings, type BookStyle, type Element,
   type ImageElement, type PhotoAsset, type ShapeElement, type Spread, type TextElement, MM_PER_PT,
 } from '../../core';
 import { thumbUrl } from '../api';
@@ -31,6 +31,7 @@ export const SpreadView = memo(function SpreadView({ settings, style, spreadCoun
   const px = (mm: number) => mm * scale;
   // Covers and posters are one continuous sheet; spreads are two pages (with inside covers).
   const isCover = index === COVER_INDEX || g.kind === 'poster';
+  const bgFrame = backgroundFrame(surface, g);
   return (
     <div className="spread" style={{ width: px(g.width + 2 * b), height: px(g.height + 2 * b), background: isCover ? bg : undefined }}>
       {!isCover &&
@@ -47,6 +48,7 @@ export const SpreadView = memo(function SpreadView({ settings, style, spreadCoun
             }}
           />
         ))}
+      {bgFrame && <ElementView el={bgFrame} scale={scale} offset={b} asset={assets.get(bgFrame.assetId!)} thumbSize={thumbSize} />}
       {surface.elements.map((el) =>
         el.id === hiddenElementId ? null : (
           <ElementView key={el.id} el={el} scale={scale} offset={b} asset={el.type === 'image' && el.assetId ? assets.get(el.assetId) : undefined} thumbSize={thumbSize} />
@@ -90,7 +92,7 @@ export const ElementView = memo(function ElementView({ el, scale, offset, asset,
 });
 
 function ImageView({ el, scale, style, asset, thumbSize }: { el: ImageElement; scale: number; style: CSSProperties; asset?: PhotoAsset; thumbSize: 's' | 'm' }) {
-  const frameStyle: CSSProperties = { ...style, background: el.borderMm > 0 ? el.borderColor : undefined };
+  const frameStyle: CSSProperties = { ...style, background: el.borderMm > 0 ? el.borderColor : undefined, opacity: el.opacity };
   if (!el.assetId || !asset) {
     return (
       <div className={`el el-image el-empty ${el.borderMm > 0 ? 'el-print' : ''}`} style={frameStyle}>

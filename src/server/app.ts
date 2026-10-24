@@ -2,10 +2,10 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { existsSync, statSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
-import { API_VERSION, SCHEMA_VERSION, UnknownSizeError, createBook, createPoster, posterSize, migrateDocument, type BookDocument, type PhotoAsset } from '../core';
+import { API_VERSION, SCHEMA_VERSION, UnknownSizeError, createBook, createPoster, posterSize, migrateDocument, type BookDocument, type PhotoAnalysis, type PhotoAsset } from '../core';
 import { Store, toPhotoAsset, type AssetRow } from './db';
 import { Importer, scanFolder } from './importer';
-import { colorFeatures, hashFile, isSupported, thumbPath, THUMB_SIZES, type ThumbSize } from './media';
+import { ALPHA_FORMATS, colorFeatures, existingThumb, hashFile, hasTransparency, isSupported, makeThumbnails, THUMB_SIZES, type ThumbSize } from './media';
 import { exportCoverPdf, exportPdf, exportPosterPdf, type ExportAsset, type ExportOptions } from './pdf';
 
 // HTTP API. Bound to 127.0.0.1 by main.ts — never reachable from the network.
@@ -92,23 +92,38 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
   // ---- library
   app.get('/api/projects/:id/assets', wrap(async (req, res) => {
     requireProject(P(req).id);
-    await backfillColors(P(req).id);
+    await backfill(P(req).id);
     res.json(projectAssets(P(req).id));
   }));
 
-  /** Photos imported before colour analysis existed: compute it once from their thumbnails. */
-  const backfillColors = async (projectId: string) => {
+  /**
+   * Photos imported before an analysis existed get it once, here: colour features from their
+   * thumbnails, and — for PNG/WebP — whether they have transparency (then their thumbnails are
+   * remade as WebP so the see-through parts stay see-through).
+   */
+  const backfill = async (projectId: string) => {
     for (const r of store.projectAssetRows(projectId)) {
       if (!r.analysis) continue;
-      const analysis = JSON.parse(r.analysis) as { colorGrid?: number[] };
-      if (analysis.colorGrid) continue;
-      const thumb = thumbPath(dataDir, r.id, 's');
-      if (!existsSync(thumb)) continue;
-      try {
-        store.updateAnalysis(r.id, { ...analysis, ...(await colorFeatures(thumb, false)) });
-      } catch {
-        // unreadable thumbnail: leave it; ordering falls back to time for this photo
+      let analysis = JSON.parse(r.analysis) as PhotoAnalysis;
+      const before = r.analysis;
+      if (!analysis.colorGrid) {
+        const thumb = existingThumb(dataDir, r.id, 's');
+        try {
+          if (thumb) analysis = { ...analysis, ...(await colorFeatures(thumb, false)) };
+        } catch {
+          // unreadable thumbnail: leave it; ordering falls back to time for this photo
+        }
       }
+      if (analysis.transparent === undefined && ALPHA_FORMATS.has(r.format) && existsSync(r.original_path)) {
+        try {
+          const transparent = await hasTransparency(r.original_path);
+          if (transparent) await makeThumbnails(r.original_path, dataDir, r.id, true);
+          analysis = { ...analysis, transparent };
+        } catch {
+          // unreadable original: treat as opaque for now and try again next time
+        }
+      }
+      if (JSON.stringify(analysis) !== before) store.updateAnalysis(r.id, analysis);
     }
   };
 
@@ -123,8 +138,8 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
 
   app.get('/api/assets/:id/thumb', wrap((req, res) => {
     const size = (req.query.size === 'm' ? 'm' : 's') as ThumbSize;
-    const path = thumbPath(dataDir, P(req).id, size);
-    if (!existsSync(path)) throw new HttpError(404, 'No thumbnail');
+    const path = existingThumb(dataDir, P(req).id, size);
+    if (!path) throw new HttpError(404, 'No thumbnail');
     res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
     res.sendFile(path);
   }));

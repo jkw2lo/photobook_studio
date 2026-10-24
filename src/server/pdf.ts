@@ -6,9 +6,9 @@ import PDFDocument from 'pdfkit';
 import { PDFDocument as PdfLibDocument, PDFName, PDFArray, PDFNumber } from 'pdf-lib';
 import sharp from 'sharp';
 import {
-  COVER_INDEX, coverGeometry, posterGeometry, elementBounds, elementPlacement, fontFilePath, intersects, mmToInch, mmToPt, nearestWeight,
+  COVER_INDEX, backgroundFrame, coverGeometry, geometryFor, posterGeometry, elementBounds, elementPlacement, fontFilePath, intersects, mmToInch, mmToPt, nearestWeight,
   pageNumberRect, preflight, printablePages, roleStyle, type BleedMode, type BookDocument, type Element, type ImageElement,
-  type PhotoAsset, type PreflightIssue, type Rect, type TextElement,
+  type PhotoAsset, type PreflightIssue, type Rect, type Spread, type TextElement,
 } from '../core';
 
 // Print export. Geometry comes from core (same functions the editor preview uses); this module only
@@ -136,15 +136,18 @@ class PdfWriter {
     const key = `${asset.id}|${left},${top},${width},${height}|${tw}x${th}`;
     let buf = this.imageCache.get(key);
     if (!buf) {
-      buf = await sharp(entry.workPath, { failOn: 'none' })
+      const img = sharp(entry.workPath, { failOn: 'none' })
         .rotate() // EXIF orientation first, so extract() works in the same oriented space as the preview
         .extract({ left, top, width, height })
-        .resize(tw, th, { fit: 'fill' })
-        .flatten({ background: '#ffffff' })
-        .jpeg({ quality: 92, chromaSubsampling: '4:4:4' })
-        .toBuffer();
+        .resize(tw, th, { fit: 'fill' });
+      // Cutouts keep their transparency (PNG with alpha → PDF soft mask) so whatever is behind them
+      // — the sheet colour, a background image, other photos — shows through. Photos stay JPEG.
+      buf = asset.analysis?.transparent
+        ? await img.ensureAlpha().png({ compressionLevel: 6 }).toBuffer()
+        : await img.flatten({ background: '#ffffff' }).jpeg({ quality: 92, chromaSubsampling: '4:4:4' }).toBuffer();
       this.imageCache.set(key, buf);
     }
+    if (el.opacity !== undefined && el.opacity < 1) pdf.opacity(el.opacity);
     pdf.image(buf, mmToPt(box.x + visible.dest.x), mmToPt(box.y + visible.dest.y), { width: mmToPt(visible.dest.w), height: mmToPt(visible.dest.h) });
   }
 
@@ -182,6 +185,12 @@ class PdfWriter {
   }
 }
 
+/** A surface's elements with its background image (if any) first, so it is drawn behind them. */
+function withBackground(surface: Spread, g: { width: number; height: number; bleed: number }): Element[] {
+  const bg = backgroundFrame(surface, g);
+  return bg ? [bg, ...surface.elements] : surface.elements;
+}
+
 /** Interior: one PDF page per printed page, trim + bleed, TrimBox/BleedBox set. */
 export async function exportPdf(doc: BookDocument, assets: Map<string, ExportAsset>, outPath: string, options: ExportOptions = {}): Promise<ExportResult> {
   const started = Date.now();
@@ -204,7 +213,7 @@ export async function exportPdf(doc: BookDocument, assets: Map<string, ExportAss
     const spec: PageSpec = { pageW, pageH, trim: { x: page.side === 'left' ? b : spineBleed, y: b, w: W, h: H } };
     specs.push(spec);
     w.page(spec, spread.background ?? doc.style.background);
-    await w.elements(spread.elements, { x: originX, y: -b, w: pageW, h: pageH }, page.spreadIndex, `Page ${page.pageNumber}`);
+    await w.elements(withBackground(spread, geometryFor(s, doc.spreads.length, page.spreadIndex)), { x: originX, y: -b, w: pageW, h: pageH }, page.spreadIndex, `Page ${page.pageNumber}`);
     if (s.pageNumbers && page.pageNumber > 1) {
       const r = pageNumberRect(page.side, s);
       w.useFont(roleStyle(doc.style, 'caption').family, 400);
@@ -225,7 +234,7 @@ export async function exportCoverPdf(doc: BookDocument, assets: Map<string, Expo
   const spec: PageSpec = { pageW: g.width + 2 * g.bleed, pageH: g.height + 2 * g.bleed, trim: { x: g.bleed, y: g.bleed, w: g.width, h: g.height } };
   const w = new PdfWriter(outPath, `${doc.title} — cover`, assets);
   w.page(spec, doc.cover.background ?? doc.style.background);
-  await w.elements(doc.cover.elements, { x: -g.bleed, y: -g.bleed, w: spec.pageW, h: spec.pageH }, COVER_INDEX, 'Cover');
+  await w.elements(withBackground(doc.cover, g), { x: -g.bleed, y: -g.bleed, w: spec.pageW, h: spec.pageH }, COVER_INDEX, 'Cover');
   const bytes = await w.finish();
   return { path: outPath, bytes, verification: await verifyPdf(outPath, [spec]), textOverflow: overflowIssues(w), spineMm: g.spine?.mm ?? 0 };
 }
@@ -240,7 +249,7 @@ export async function exportPosterPdf(doc: BookDocument, assets: Map<string, Exp
   const spec: PageSpec = { pageW: g.width + 2 * g.bleed, pageH: g.height + 2 * g.bleed, trim: { x: g.bleed, y: g.bleed, w: g.width, h: g.height } };
   const w = new PdfWriter(outPath, doc.title, assets);
   w.page(spec, sheet.background ?? doc.style.background);
-  await w.elements(sheet.elements, { x: -g.bleed, y: -g.bleed, w: spec.pageW, h: spec.pageH }, 0, 'Poster');
+  await w.elements(withBackground(sheet, g), { x: -g.bleed, y: -g.bleed, w: spec.pageW, h: spec.pageH }, 0, 'Poster');
   const bytes = await w.finish();
   return { path: outPath, bytes, issues, textOverflow: overflowIssues(w), verification: await verifyPdf(outPath, [spec]), durationMs: Date.now() - started, bleedMode: 'all' };
 }

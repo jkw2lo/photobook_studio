@@ -101,4 +101,5 @@ export const api = {
     call<ExportResponse>('POST', `/api/projects/${projectId}/export`, { doc, bleedMode }),
 };
 
-export const thumbUrl = (assetId: string, size: 's' | 'm' = 's') => `/api/assets/${assetId}/thumb?size=${size}`;
+// v=2: thumbnails of cutouts became WebP with transparency; the version skips older cached JPEGs.
+export const thumbUrl = (assetId: string, size: 's' | 'm' = 's') => `/api/assets/${assetId}/thumb?size=${size}&v=2`;

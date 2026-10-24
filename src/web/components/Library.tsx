@@ -121,7 +121,10 @@ export function Library() {
 function usageKeyOf(doc: BookDocument): string {
   const m = new Map<string, number>();
   const surfaces = doc.cover ? [doc.cover, ...doc.spreads] : doc.spreads;
-  for (const s of surfaces) for (const e of s.elements) if (e.type === 'image' && e.assetId) m.set(e.assetId, (m.get(e.assetId) ?? 0) + 1);
+  for (const s of surfaces) {
+    for (const e of s.elements) if (e.type === 'image' && e.assetId) m.set(e.assetId, (m.get(e.assetId) ?? 0) + 1);
+    if (s.backgroundImage) m.set(s.backgroundImage.assetId, (m.get(s.backgroundImage.assetId) ?? 0) + 1);
+  }
   return [...m].map(([k, v]) => `${k}:${v}`).sort().join('|');
 }
 
@@ -155,7 +158,7 @@ function PreviewPane({ usage }: { usage: Map<string, number> }) {
       {open && (
         asset ? (
           <div className="preview-body">
-            <div className="preview-img" draggable={!asset.missing} onDragStart={(e) => {
+            <div className={`preview-img ${asset.analysis?.transparent ? 'checker' : ''}`} draggable={!asset.missing} onDragStart={(e) => {
               e.dataTransfer.setData(ASSET_MIME, asset.id);
               e.dataTransfer.effectAllowed = 'copy';
             }}>
@@ -189,7 +192,7 @@ const Tile = memo(function Tile({ asset, used, similar, previewed }: { asset: Ph
   const patch = useEditor((s) => s.patchAsset);
   return (
     <div
-      className={`tile ${asset.excluded ? 'tile-hidden' : ''} ${used ? 'tile-used' : ''} ${previewed ? 'tile-previewed' : ''}`}
+      className={`tile ${asset.excluded ? 'tile-hidden' : ''} ${used ? 'tile-used' : ''} ${previewed ? 'tile-previewed' : ''} ${asset.analysis?.transparent ? 'checker tile-cutout' : ''}`}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest('.tile-actions')) return;
         useEditor.setState({ previewAssetId: asset.id });
@@ -205,6 +208,7 @@ const Tile = memo(function Tile({ asset, used, similar, previewed }: { asset: Ph
       <div className="tile-badges">
         {used > 0 && <span className="badge badge-used">{used > 1 ? `×${used}` : 'In book'}</span>}
         {asset.exactDuplicateOf && <span className="badge badge-warn">Duplicate</span>}
+        {asset.analysis?.transparent && <span className="badge" title="Has transparency: whatever is behind it shows through">Cutout</span>}
         {!asset.exactDuplicateOf && similar > 1 && <span className="badge">Similar ×{similar}</span>}
         {asset.missing && <span className="badge badge-error">Missing</span>}
       </div>

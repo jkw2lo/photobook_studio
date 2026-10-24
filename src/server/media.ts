@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { rm, stat } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { basename, extname, join } from 'node:path';
@@ -18,7 +18,34 @@ const HEIC = new Set(['.heic', '.heif']);
 export const THUMB_SIZES = { s: 400, m: 1600 } as const;
 export type ThumbSize = keyof typeof THUMB_SIZES;
 
-export const thumbPath = (dataDir: string, assetId: string, size: ThumbSize) => join(dataDir, 'thumbs', `${assetId}_${size}.jpg`);
+/** Opaque photos get JPEG thumbnails; photos with transparency (cutouts) get WebP, which keeps it. */
+export const thumbPath = (dataDir: string, assetId: string, size: ThumbSize, ext: 'jpg' | 'webp' = 'jpg') => join(dataDir, 'thumbs', `${assetId}_${size}.${ext}`);
+
+/** The thumbnail file that exists for an asset (WebP for cutouts, else JPEG), or null. */
+export function existingThumb(dataDir: string, assetId: string, size: ThumbSize): string | null {
+  for (const ext of ['webp', 'jpg'] as const) {
+    const p = thumbPath(dataDir, assetId, size, ext);
+    if (existsSync(p)) return p;
+  }
+  return null;
+}
+
+/** Formats that can carry an alpha channel. */
+export const ALPHA_FORMATS = new Set(['png', 'webp']);
+
+/**
+ * True when the image actually has see-through pixels (not just an unused alpha channel, which
+ * many exported PNGs carry). Checked on a small render so large files stay cheap.
+ */
+export async function hasTransparency(path: string): Promise<boolean> {
+  const meta = await sharp(path, { failOn: 'none' }).metadata();
+  if (!meta.hasAlpha) return false;
+  const { data, info } = await sharp(path, { failOn: 'none' }).resize(256, 256, { fit: 'inside' }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  let clear = 0;
+  for (let i = info.channels - 1; i < data.length; i += info.channels) if (data[i] < 250) clear++;
+  // A few soft edge pixels don't make a cutout; ~0.5% of the image does.
+  return clear > (info.width * info.height) / 200;
+}
 
 export function isSupported(path: string) {
   return SUPPORTED_EXTENSIONS.has(extname(path).toLowerCase()) && !basename(path).startsWith('._');
@@ -93,17 +120,16 @@ export async function orientedSize(path: string): Promise<{ width: number; heigh
   return { width: swap ? m.height : m.width, height: swap ? m.width : m.height, format: m.format ?? 'unknown' };
 }
 
-export async function makeThumbnails(workPath: string, dataDir: string, assetId: string) {
+export async function makeThumbnails(workPath: string, dataDir: string, assetId: string, transparent = false) {
   const base = sharp(workPath, { failOn: 'none' }).rotate();
   await Promise.all(
-    (Object.keys(THUMB_SIZES) as ThumbSize[]).map((size) =>
-      base
-        .clone()
-        .resize(THUMB_SIZES[size], THUMB_SIZES[size], { fit: 'inside', withoutEnlargement: true })
-        .flatten({ background: '#ffffff' })
-        .jpeg({ quality: size === 's' ? 78 : 84, mozjpeg: true })
-        .toFile(thumbPath(dataDir, assetId, size)),
-    ),
+    (Object.keys(THUMB_SIZES) as ThumbSize[]).map(async (size) => {
+      const img = base.clone().resize(THUMB_SIZES[size], THUMB_SIZES[size], { fit: 'inside', withoutEnlargement: true });
+      // Remove the other format's file so the route never serves a stale one.
+      await rm(thumbPath(dataDir, assetId, size, transparent ? 'jpg' : 'webp'), { force: true });
+      if (transparent) return img.webp({ quality: size === 's' ? 80 : 86, alphaQuality: 90 }).toFile(thumbPath(dataDir, assetId, size, 'webp'));
+      return img.flatten({ background: '#ffffff' }).jpeg({ quality: size === 's' ? 78 : 84, mozjpeg: true }).toFile(thumbPath(dataDir, assetId, size));
+    }),
   );
 }
 
@@ -117,6 +143,7 @@ export async function makeThumbnails(workPath: string, dataDir: string, assetId:
 export async function analyze(workPath: string): Promise<PhotoAnalysis> {
   const { data, info } = await sharp(workPath, { failOn: 'none' })
     .rotate()
+    .flatten({ background: '#ffffff' }) // cutouts are judged as they look on white paper
     .resize(256, 256, { fit: 'inside' })
     .greyscale()
     .raw()
@@ -159,7 +186,7 @@ export async function analyze(workPath: string): Promise<PhotoAnalysis> {
   }
   const mean = lapSum / n;
 
-  const small = await sharp(workPath, { failOn: 'none' }).rotate().greyscale().resize(9, 8, { fit: 'fill' }).raw().toBuffer();
+  const small = await sharp(workPath, { failOn: 'none' }).rotate().flatten({ background: '#ffffff' }).greyscale().resize(9, 8, { fit: 'fill' }).raw().toBuffer();
   let bits = '';
   for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) bits += small[y * 9 + x] < small[y * 9 + x + 1] ? '1' : '0';
   let dHash = '';
@@ -174,6 +201,7 @@ export async function analyze(workPath: string): Promise<PhotoAnalysis> {
     saliencyX: et > 0 ? Math.round((ex / et) * 1000) / 1000 : 0.5,
     saliencyY: et > 0 ? Math.round((ey / et) * 1000) / 1000 : 0.5,
     ...(await colorFeatures(workPath, true)),
+    transparent: await hasTransparency(workPath),
   };
 }
 
@@ -184,8 +212,8 @@ export async function analyze(workPath: string): Promise<PhotoAnalysis> {
 export async function colorFeatures(path: string, orient: boolean): Promise<{ avgColor: [number, number, number]; colorGrid: number[] }> {
   const base = sharp(path, { failOn: 'none' });
   const img = orient ? base.rotate() : base;
-  const grid = await img.clone().removeAlpha().resize(3, 3, { fit: 'fill' }).raw().toBuffer();
-  const avg = await img.clone().removeAlpha().resize(1, 1, { fit: 'fill' }).raw().toBuffer();
+  const grid = await img.clone().flatten({ background: '#ffffff' }).resize(3, 3, { fit: 'fill' }).raw().toBuffer();
+  const avg = await img.clone().flatten({ background: '#ffffff' }).resize(1, 1, { fit: 'fill' }).raw().toBuffer();
   return { avgColor: [avg[0], avg[1], avg[2]], colorGrid: Array.from(grid.subarray(0, 27)) };
 }
 

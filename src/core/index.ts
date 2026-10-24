@@ -19,3 +19,4 @@ export * from './collage';
 export * from './poster';
 export * from './typography';
 export * from './quickStyles';
+export * from './background';

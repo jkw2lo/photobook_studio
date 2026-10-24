@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { findSurface } from '../../core';
+import { findSurface, useAsBackground } from '../../core';
 import { duplicate, remove, reorder, togglePin, toggleKeepCrop, toggleLock } from '../elementActions';
 import { useEditor, type Selection } from '../store';
 import { Icon } from './Icon';
@@ -44,6 +44,11 @@ export function ContextMenu({ target, onClose, onEditText }: { target: MenuTarge
   const poster = doc.settings.product === 'poster';
   const photo = el.type === 'image' && !!el.assetId;
   const { setCrop, setSwapSource } = useEditor.getState();
+  const makeBackground = () => {
+    const asset = el.type === 'image' && el.assetId ? useEditor.getState().assetMap.get(el.assetId) : undefined;
+    if (!asset) return;
+    if (useEditor.getState().run('Use as background', (d) => useAsBackground(d, sel.spreadId, el.id, asset))) useEditor.getState().select(null);
+  };
   const go = (fn: () => void) => () => {
     fn();
     onClose();
@@ -71,6 +76,7 @@ export function ContextMenu({ target, onClose, onEditText }: { target: MenuTarge
         <>
           <MenuItem icon="pin" label={el.pinned ? 'Unpin' : 'Pin in place'} hint="P" checked={!!el.pinned} onClick={go(() => togglePin(sel, el))} />
           <MenuItem icon="crop" label="Keep crop when arranging" checked={!!el.keepCrop && !el.pinned} disabled={el.pinned || !photo} onClick={go(() => toggleKeepCrop(sel, el))} />
+          {photo && <MenuItem icon="image" label="Use as sheet background" onClick={go(() => makeBackground())} />}
           <div className="ctx-sep" />
         </>
       )}

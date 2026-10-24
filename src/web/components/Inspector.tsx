@@ -3,7 +3,7 @@ import {
   COVER_INDEX, TEXT_ROLES, addChapter, applyMosaicLayout, nearestWeight, resetTextToStyle, roleLabel, saveTextAsRoleStyle, setTextRole, weightName, addTextAt, applyTemplate, defaultCrop, duplicateElement, duplicateSpread, effectiveDpi,
   fitFrameToPhoto, fontFamily, insertSpreadAfter, isPrintable, removeElements, removeSpread, reorderElement, setFramePhoto,
   setSpreadChapter, setSpreadLocked, setSurfaceBackground, shuffleSpreadLayout, spreadPagesLabel, templateName, updateElement,
-  MM_PER_PT, TEXT_QUICK_STYLES, applyQuickStyle, estimateTextHeightMm, boldWeight, isBold, type BookDocument, type ImageElement, type TextElement, type TextRole,
+  MM_PER_PT, TEXT_QUICK_STYLES, useAsBackground, applyQuickStyle, estimateTextHeightMm, boldWeight, isBold, type BookDocument, type ImageElement, type TextElement, type TextRole,
 } from '../../core';
 import { thumbUrl } from '../api';
 import { duplicate, remove, togglePin, toggleKeepCrop, toggleLock } from '../elementActions';
@@ -177,6 +177,13 @@ function ElementPanel() {
                     <Icon name="crop" /> {el.keepCrop && !el.pinned ? 'Crop kept' : 'Keep crop'}
                   </button>
                 </div>
+                {asset && (
+                  <button className="btn btn-small" disabled={el.locked} title="Take this photo out of the collage and put it behind everything, filling the sheet" onClick={() => {
+                    if (run('Use as background', (d) => useAsBackground(d, sel.spreadId, el.id, asset))) select(null);
+                  }}>
+                    <Icon name="image" /> Use as sheet background
+                  </button>
+                )}
                 <p className="muted small">
                   {el.pinned || el.locked
                     ? 'Arrange and Shuffle leave this photo exactly as it is and fill in around it.'

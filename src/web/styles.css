@@ -463,3 +463,16 @@ input[type='checkbox'] { accent-color: var(--accent); width: 15px; height: 15px;
 .size-row { display: flex; align-items: flex-end; gap: 6px; }
 .size-row .field { flex: 1; }
 .size-row .icon-btn { height: 30px; min-width: 32px; }
+
+/* Background image field; checkerboard behind see-through photos */
+.checker { background-color: #fff; background-image: linear-gradient(45deg, #ddd 25%, transparent 25%), linear-gradient(-45deg, #ddd 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ddd 75%), linear-gradient(-45deg, transparent 75%, #ddd 75%); background-size: 12px 12px; background-position: 0 0, 0 6px, 6px -6px, -6px 0; }
+.bg-drop { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; padding: 12px 10px; border: 1.5px dashed var(--line); border-radius: 8px; color: var(--muted); }
+.bg-drop.over, .bg-field.over { border-color: var(--accent); background: rgba(231, 166, 95, 0.08); }
+.bg-field { border: 1.5px solid transparent; border-radius: 8px; }
+.bg-current { display: flex; gap: 8px; align-items: center; }
+.bg-thumb { width: 52px; height: 52px; border-radius: 5px; overflow: hidden; flex: none; background: var(--panel-3); }
+.bg-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.bg-thumb.checker img { object-fit: contain; }
+.bg-meta { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.link.danger { color: var(--error); }
+.tile-cutout img, .preview-img.checker img { object-fit: contain; }

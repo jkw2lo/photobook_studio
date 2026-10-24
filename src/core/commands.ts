@@ -3,7 +3,7 @@ import type { BindingId, BookDocument, BookSettings, BookStyle, Element, ImageEl
 import { blankSpread, pageContentRect, pageTrimRect, type PageSide } from './book';
 import { aspectOf, dateRangeOf } from './curation';
 import { defaultCrop } from './geometry';
-import { chooseTemplate, keepSubjectOutOfGutter, layoutPage, makeImageElement, makeTextElement, pageOfElement, templateOrThrow } from './layout';
+import { chooseTemplate, isCutout, keepSubjectOutOfGutter, layoutPage, makeImageElement, makeTextElement, pageOfElement, templateOrThrow } from './layout';
 import { mulberry32, newId } from './random';
 import { stylePreset, styleFromPreset } from './styles';
 import { template as findTemplate } from './templates';
@@ -84,7 +84,17 @@ export function setFramePhoto(doc: BookDocument, spreadId: string, elementId: st
     if (el.locked) throw new CommandError('Frame is locked');
     el.assetId = asset?.id ?? null;
     el.crop = defaultCrop(asset);
+    cutoutLook(el, asset);
   });
+}
+
+/** A cutout put into a frame is shown whole and loses the frame's border; a photo replacing a
+ * cutout goes back to filling the frame. */
+function cutoutLook(el: Draft<ImageElement>, asset: PhotoAsset | null | undefined, previous?: PhotoAsset | null) {
+  if (isCutout(asset)) {
+    el.fit = 'contain';
+    el.borderMm = 0;
+  } else if (asset && isCutout(previous)) el.fit = 'cover';
 }
 
 /** Swap the photos of two frames (possibly on different spreads); each keeps its frame geometry. */
@@ -104,6 +114,8 @@ export function swapFramePhotos(
     eb.assetId = ida;
     ea.crop = defaultCrop(idb ? assets.get(idb) : null);
     eb.crop = defaultCrop(ida ? assets.get(ida) : null);
+    cutoutLook(ea, idb ? assets.get(idb) : null, ida ? assets.get(ida) : null);
+    cutoutLook(eb, ida ? assets.get(ida) : null, idb ? assets.get(idb) : null);
   });
 }
 

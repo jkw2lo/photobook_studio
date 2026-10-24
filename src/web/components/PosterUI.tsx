@@ -8,6 +8,7 @@ import { CollageControls, gapOptions, marginOptions } from './CollageControls';
 import { ColorInput } from './ColorInput';
 import { Icon } from './Icon';
 import { AddTextMenu } from './TypePanel';
+import { BackgroundImageField } from './BackgroundImageField';
 
 /** Sensible first settings for a sheet: spacing and border scaled to its size. */
 export function initialCollageSettings(doc: BookDocument, usable: number): CollageSettings {
@@ -193,6 +194,10 @@ export function PosterPanel() {
         <span>Background</span>
         <ColorInput value={sheet?.background ?? doc.style.background} label="Poster background" apply={(d, c) => setSurfaceBackground(d, d.spreads[0].id, c)} />
       </label>
+      <div className="field">
+        <span>Background image</span>
+        <BackgroundImageField surfaceId={sheet.id} />
+      </div>
       <p className="muted small">Arranging replaces manual moves on the sheet — pin a photo (right-click it) to keep it where it is, or undo (⌘Z). Posters warn below {s.minDpiWarning} DPI: they're seen from further away than book pages.</p>
     </div>
   );

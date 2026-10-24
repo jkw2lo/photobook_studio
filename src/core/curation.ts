@@ -29,6 +29,14 @@ export interface SimilarityOptions {
 
 export const DEFAULT_SIMILARITY: SimilarityOptions = { maxDistance: 12, maxDistanceUndated: 6, maxMinutesApart: 120 };
 
+/** Mean colours far apart (when both are known): not the same scene, whatever the shapes say. */
+function colorsDiffer(a: PhotoAsset, b: PhotoAsset): boolean {
+  const ca = a.analysis?.avgColor;
+  const cb = b.analysis?.avgColor;
+  if (!ca || !cb) return false;
+  return Math.hypot(ca[0] - cb[0], ca[1] - cb[1], ca[2] - cb[2]) > 70;
+}
+
 /** Group near-duplicate photos (burst shots, re-takes). Returns assetId → groupId (the group's first member). */
 export function groupSimilar(assets: PhotoAsset[], opts = DEFAULT_SIMILARITY): Map<string, string> {
   const parent = new Map<string, string>();
@@ -49,6 +57,9 @@ export function groupSimilar(assets: PhotoAsset[], opts = DEFAULT_SIMILARITY): M
       const dated = !Number.isNaN(ta) && !Number.isNaN(tb);
       if (dated && Math.abs(ta - tb) > opts.maxMinutesApart * 60_000) continue;
       const limit = dated ? opts.maxDistance : opts.maxDistanceUndated;
+      // dHash only sees shape and light; shots of one moment share their colours too. Without this,
+      // same-shaped cutouts in different colours (stickers) would count as one burst.
+      if (colorsDiffer(a, b)) continue;
       if (hamming(a.analysis!.dHash, b.analysis!.dHash) <= limit) parent.set(find(a.id), find(b.id));
     }
   }

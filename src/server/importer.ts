@@ -3,7 +3,7 @@ import { readdir } from 'node:fs/promises';
 import { basename, extname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Store } from './db';
-import { analyze, fileStat, hashFile, isSupported, makeThumbnails, orientedSize, readMetadata, thumbPath, workingFile } from './media';
+import { analyze, existingThumb, fileStat, hashFile, isSupported, makeThumbnails, orientedSize, readMetadata, workingFile } from './media';
 
 // Background import jobs. The HTTP request returns immediately with a job id; the UI polls progress
 // and sees photos appear as they finish. A bounded worker pool keeps memory flat for large folders.
@@ -103,7 +103,7 @@ export class Importer {
     const existing = this.store.assetByPath(path);
     const dataDir = this.store.dataDir;
     // Unchanged file already catalogued: just add it to this project.
-    if (existing && existing.file_size === st.size && existing.mtime_ms === st.mtimeMs && existsSync(thumbPath(dataDir, existing.id, 's'))) {
+    if (existing && existing.file_size === st.size && existing.mtime_ms === st.mtimeMs && existingThumb(dataDir, existing.id, 's')) {
       this.store.linkAsset(job.projectId, existing.id);
       job.alreadyInLibrary++;
       return;
@@ -112,7 +112,7 @@ export class Importer {
     const id = existing?.id ?? randomUUID();
     const work = await workingFile(path, dataDir, contentHash);
     const [size, meta, analysis] = await Promise.all([orientedSize(work.path), readMetadata(path), analyze(work.path)]);
-    await makeThumbnails(work.path, dataDir, id);
+    await makeThumbnails(work.path, dataDir, id, !!analysis.transparent);
     const dup = this.store.firstAssetWithHash(contentHash, id);
     this.store.tx(() => {
       this.store.upsertAsset({

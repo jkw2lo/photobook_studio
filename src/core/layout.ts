@@ -33,6 +33,9 @@ export function makeTextElement(
   };
 }
 
+/** A photo with see-through areas (a cutout or sticker). */
+export const isCutout = (asset: PhotoAsset | null | undefined) => !!asset?.analysis?.transparent;
+
 export function makeImageElement(
   doc: Pick<BookDocument, 'style'>,
   asset: PhotoAsset | null,
@@ -43,9 +46,11 @@ export function makeImageElement(
   return {
     id: newId(), type: 'image', assetId: asset?.id ?? null,
     xMm: rect.x, yMm: rect.y, widthMm: rect.w, heightMm: rect.h, rotationDeg, locked: false,
-    crop: defaultCrop(asset), fit: 'cover',
+    // Cutouts (photos with transparency) are shown whole, never cropped, and never get a border —
+    // it would print as a box around the shape.
+    crop: defaultCrop(asset), fit: isCutout(asset) ? 'contain' : 'cover',
     // Bleed photos never get a border: it would print as a white frame at the trim edge.
-    borderMm: fullBleed ? 0 : doc.style.imageBorderMm,
+    borderMm: fullBleed || isCutout(asset) ? 0 : doc.style.imageBorderMm,
     borderColor: doc.style.imageBorderColor,
   };
 }

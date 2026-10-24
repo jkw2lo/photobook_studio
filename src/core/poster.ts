@@ -234,7 +234,9 @@ export function generatePoster(
   const sheet = sheetImages(doc);
   const pinnedIds = new Set(sheet.filter(isPinned).flatMap((e) => (e.assetId ? [e.assetId] : [])));
   const keepIds = new Set(sheet.filter((e) => e.keepCrop && !isPinned(e)).flatMap((e) => (e.assetId ? [e.assetId] : [])));
-  const usable = (list: PhotoAsset[]) => list.filter((a) => !pinnedIds.has(a.id));
+  // The background photo is already on the sheet, behind everything: don't repeat it in the collage.
+  const bgId = doc.spreads[0]?.backgroundImage?.assetId;
+  const usable = (list: PhotoAsset[]) => list.filter((a) => !pinnedIds.has(a.id) && a.id !== bgId);
   const allCount = Math.min(300, reps.length + alternates.length);
   const want = Math.max(0, (source === 'all' ? allCount : settings.photoCount) - pinnedIds.size);
   let candidates = usable(reps);

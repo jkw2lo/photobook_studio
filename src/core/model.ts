@@ -141,6 +141,8 @@ export interface ImageElement extends ElementBase {
   fit: FitMode;
   borderMm: number;
   borderColor: string;
+  /** 0–1. Missing = 1 (used by sheet background images). */
+  opacity?: number;
   /** Collages: stays exactly where it is (position, size, crop) and auto layouts flow around it. */
   pinned?: boolean;
   /** Collages: auto layouts may move this frame but keep its crop, fit and border, and keep the
@@ -183,6 +185,15 @@ export interface ShapeElement extends ElementBase {
 
 export type Element = ImageElement | TextElement | ShapeElement;
 
+export interface BackgroundImage {
+  assetId: ID;
+  /** 'cover' fills the surface (cropping the photo); 'contain' shows all of it. */
+  fit: FitMode;
+  /** 0–1. */
+  opacity: number;
+  crop: Crop;
+}
+
 export interface SpreadLayout {
   left?: string;
   right?: string;
@@ -195,6 +206,9 @@ export interface Spread {
   locked: boolean;
   chapterId?: ID;
   background?: string;
+  /** A photo filling the whole surface (out to the bleed), behind every element. Auto layouts
+   * never touch it. */
+  backgroundImage?: BackgroundImage;
   layout?: SpreadLayout;
   /** Where an auto layout came from. `generatedIds`: elements the generator made besides photos
    * (e.g. a collage title band) — replaced on re-layout, unlike text the user added. */
@@ -261,6 +275,8 @@ export interface PhotoAnalysis {
   avgColor?: [number, number, number];
   /** 3 × 3 grid of mean colours (27 numbers, row-major RGB): palette plus rough composition. */
   colorGrid?: number[];
+  /** Has see-through pixels (a cutout or sticker). Missing = opaque (checked on next library load). */
+  transparent?: boolean;
 }
 
 export interface PhotoAsset {
