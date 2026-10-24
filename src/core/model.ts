@@ -12,7 +12,7 @@ export const SCHEMA_VERSION = 3 as const;
  * Bumped whenever the client/server contract changes. The page compares it with the running
  * server's and warns when they differ (e.g. the page was rebuilt but the server wasn't restarted).
  */
-export const API_VERSION = 6;
+export const API_VERSION = 7;
 
 export type ID = string;
 
@@ -52,6 +52,10 @@ export interface CollageSettings {
   seed: number;
   /** How photos are ordered on the sheet. Missing = 'time'. */
   order?: 'time' | 'similar' | 'color';
+  /** Cut every collage photo to this library shape (circle, heart, arch…). Missing = rectangles. */
+  frameShape?: string;
+  /** Where the photos go, as fractions of the sheet (templates leave room for text). Missing = the whole sheet inside the margin. */
+  area?: Rect;
   /** Which photos Arrange and Shuffle use: the strongest `photoCount`, every usable photo, or only
    * the photos already on the sheet. Missing = 'best'. */
   source?: CollageSource;
@@ -131,6 +135,8 @@ interface ElementBase {
   heightMm: number;
   rotationDeg: number;
   locked: boolean;
+  /** Collages: drawn behind the photos, and kept there through Arrange and Shuffle. */
+  behind?: boolean;
 }
 
 export interface ImageElement extends ElementBase {
@@ -148,6 +154,25 @@ export interface ImageElement extends ElementBase {
   /** Collages: auto layouts may move this frame but keep its crop, fit and border, and keep the
    * photo on the sheet through shuffles. */
   keepCrop?: boolean;
+  /** Collages: auto layouts keep this frame's tilt (and keep the photo on the sheet). */
+  keepRotation?: boolean;
+  /** Cut the photo to a shape or to the outline of some text. */
+  mask?: PhotoMask;
+}
+
+/**
+ * A photo cut to a shape (from the shape library, stretched to the frame) or to text (glyph
+ * outlines measured once by the server and stored here, fitted into the frame without distortion).
+ */
+export type PhotoMask =
+  | { kind: 'shape'; shape: string }
+  | { kind: 'text'; text: string; fontFamily: string; fontWeight: number; italic?: boolean; uppercase?: boolean; letterSpacingEm?: number; d: string; aspect: number };
+
+/** Two-colour linear gradient. Angle as in CSS: 0 = bottom → top, 90 = left → right. */
+export interface Gradient {
+  from: string;
+  to: string;
+  angleDeg: number;
 }
 
 export type TextRole = 'title' | 'subtitle' | 'heading' | 'caption' | 'body' | 'quote' | 'label';
@@ -172,6 +197,17 @@ export interface TextElement extends ElementBase {
   backgroundOpacity?: number;
   /** Space between the box edge and the text, on every side. Missing = 0. */
   paddingMm?: number;
+  /** Rounded corners for the background fill. */
+  backgroundRadiusMm?: number;
+  /** Fills the letters instead of `color`. */
+  gradient?: Gradient;
+  /** Outline around the letters. */
+  strokeColor?: string;
+  strokeWidthMm?: number;
+  /** Hard drop shadow (prints exactly as shown). */
+  shadow?: { color: string; dxMm: number; dyMm: number; opacity: number };
+  /** Bend the text along an arc: −100 (a frown) … 100 (a smile). Single line only. */
+  arch?: number;
   /** Follows its role's style; false once its font or size is edited by hand. */
   styleLinked: boolean;
 }
@@ -181,6 +217,11 @@ export interface ShapeElement extends ElementBase {
   type: 'shape';
   fill: string;
   opacity: number;
+  /** Id in the shape library (shapes, banners, icons, lines). Missing = a plain rectangle. */
+  shape?: string;
+  gradient?: Gradient;
+  strokeColor?: string;
+  strokeWidthMm?: number;
 }
 
 export type Element = ImageElement | TextElement | ShapeElement;
@@ -246,6 +287,22 @@ export interface BookDocument {
   cover?: Cover;
   /** Last collage settings used (posters, and book pages laid out as collages). */
   collage?: CollageSettings;
+  /** Colour grade applied to every photo (and the background image) when shown and printed. */
+  grade?: ColorGrade;
+  /** Poster template it was last started from (highlighted in the picker). */
+  template?: string;
+}
+
+/** A whole-document colour grade. Sliders are −100…100 (fade 0…100); 0 = unchanged. */
+export interface ColorGrade {
+  preset: string;
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  warmth: number;
+  fade: number;
+  /** Tint shadows-to-highlights through a single colour (black & white, sepia). */
+  mono?: 'bw' | 'sepia';
 }
 
 /**

@@ -76,6 +76,24 @@ export function posterPhotoBox(doc: BookDocument, marginMm: number): Rect {
   return { x: m, y: m, w: s.trimWidthMm - 2 * m, h: s.trimHeightMm - 2 * m };
 }
 
+/**
+ * The box photos are laid out in: a template's area (fractions of the sheet; edges at 0 or 1 run
+ * into the bleed), or the sheet inside the margin.
+ */
+export function photoArea(doc: BookDocument, settings: CollageSettings): Rect {
+  const a = settings.area;
+  if (!a) return posterPhotoBox(doc, settings.marginMm);
+  const s = doc.settings;
+  const b = s.bleedMm;
+  const W = s.trimWidthMm;
+  const H = s.trimHeightMm;
+  const x0 = a.x <= 0 ? -b : a.x * W;
+  const y0 = a.y <= 0 ? -b : a.y * H;
+  const x1 = a.x + a.w >= 1 ? W + b : (a.x + a.w) * W;
+  const y1 = a.y + a.h >= 1 ? H + b : (a.y + a.h) * H;
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
 export interface PosterReport {
   available: number;
   placed: number;
@@ -137,6 +155,9 @@ function hashId(id: string): number {
 
 const sheetImages = (doc: BookDocument) => doc.spreads[0]?.elements.filter((e): e is ImageElement => e.type === 'image') ?? [];
 
+/** Photos whose crop or tilt the user asked to keep: they always stay on the sheet. */
+const isKept = (e: ImageElement) => !!(e.keepCrop || e.keepRotation);
+
 /** Pinned (or locked) frames stay exactly where they are; layouts flow around them. */
 export const isPinned = (e: Element) => e.type === 'image' && (!!e.pinned || e.locked);
 
@@ -159,7 +180,7 @@ export function layoutPoster(
   const range = dateRangeOf(photos);
   // Keep wording the user typed into the previous title band.
   const prev = previousTitleText(doc);
-  const { elements: titleEls, rest } = titleBand(doc, posterPhotoBox(doc, settings.marginMm), safe, settings.titlePosition, prev.title ?? doc.title, prev.subtitle ?? (doc.subtitle || range), settings.gapMm);
+  const { elements: titleEls, rest } = titleBand(doc, photoArea(doc, settings), safe, settings.titlePosition, prev.title ?? doc.title, prev.subtitle ?? (doc.subtitle || range), settings.gapMm);
   const pinned = sheetImages(doc).filter(isPinned);
   const pinnedIds = new Set(pinned.map((e) => e.assetId));
   const free = photos.filter((p) => !pinnedIds.has(p.id));
@@ -168,13 +189,22 @@ export function layoutPoster(
     { style: settings.style as CollageStyle, gapMm: settings.gapMm, seed: settings.seed, hero: heroPick, keepOrder: (settings.order ?? 'time') !== 'time' },
     pinned.map(elementBounds),
   );
-  // Photos marked "keep crop" get their crop, fit and border (and identity) back in the new frame.
-  const kept = new Map(sheetImages(doc).filter((e) => e.keepCrop && !isPinned(e) && e.assetId).map((e) => [e.assetId!, e]));
+  // Photos marked "keep crop" get their crop, fit, border and cut-out shape back in the new frame;
+  // "keep rotation" keeps their tilt. Either way they keep their identity.
+  const kept = new Map(sheetImages(doc).filter((e) => isKept(e) && !isPinned(e) && e.assetId).map((e) => [e.assetId!, e]));
   const restored = elements.map((e) => {
-    const k = e.type === 'image' && e.assetId ? kept.get(e.assetId) : undefined;
-    if (!k || e.type !== 'image') return e;
+    if (e.type !== 'image') return e;
+    // Collage-wide photo shape (circles, hearts…) unless the photo keeps its own look.
+    const shaped: ImageElement = settings.frameShape ? { ...e, mask: { kind: 'shape', shape: settings.frameShape }, borderMm: 0 } : e;
+    const k = e.assetId ? kept.get(e.assetId) : undefined;
+    if (!k) return shaped;
     kept.delete(e.assetId!);
-    return { ...e, id: k.id, crop: k.crop, fit: k.fit, borderMm: k.borderMm, borderColor: k.borderColor, keepCrop: true };
+    return {
+      ...shaped,
+      id: k.id,
+      ...(k.keepCrop ? { crop: k.crop, fit: k.fit, borderMm: k.borderMm, borderColor: k.borderColor, mask: k.mask, keepCrop: true } : {}),
+      ...(k.keepRotation ? { rotationDeg: k.rotationDeg, keepRotation: true } : {}),
+    };
   });
   return { elements: [...restored, ...titleEls], used, generatedIds: titleEls.map((e) => e.id) };
 }
@@ -200,6 +230,10 @@ function previousTitleText(doc: BookDocument): { title?: string; subtitle?: stri
 
 function sheetWith(doc: BookDocument, settings: CollageSettings, laid: { elements: Element[]; used: PhotoAsset[]; generatedIds: string[] }): BookDocument {
   const sheet = doc.spreads[0];
+  // Keep the user's layering: elements marked "behind" (or sent below the photos) stay under them.
+  const firstPhoto = sheet.elements.findIndex((e) => e.type === 'image' && !isPinned(e));
+  const user = userElements(doc);
+  const below = (e: Element) => e.behind || (firstPhoto >= 0 && sheet.elements.indexOf(e) < firstPhoto);
   return {
     ...doc,
     collage: settings,
@@ -208,7 +242,7 @@ function sheetWith(doc: BookDocument, settings: CollageSettings, laid: { element
       locked: false,
       layout: { spread: `collage-${settings.style}` },
       provenance: { generatedAt: new Date().toISOString(), seed: settings.seed, assetIds: [...laid.used.map((a) => a.id), ...sheetImages(doc).filter(isPinned).flatMap((e) => (e.assetId ? [e.assetId] : []))], generatedIds: laid.generatedIds },
-      elements: [...laid.elements, ...userElements(doc)],
+      elements: [...user.filter(below), ...laid.elements, ...user.filter((e) => !below(e))],
     }],
   };
 }
@@ -233,7 +267,7 @@ export function generatePoster(
   // Pinned photos stay put and count towards the total; "keep crop" photos always stay in.
   const sheet = sheetImages(doc);
   const pinnedIds = new Set(sheet.filter(isPinned).flatMap((e) => (e.assetId ? [e.assetId] : [])));
-  const keepIds = new Set(sheet.filter((e) => e.keepCrop && !isPinned(e)).flatMap((e) => (e.assetId ? [e.assetId] : [])));
+  const keepIds = new Set(sheet.filter((e) => isKept(e) && !isPinned(e)).flatMap((e) => (e.assetId ? [e.assetId] : [])));
   // The background photo is already on the sheet, behind everything: don't repeat it in the collage.
   const bgId = doc.spreads[0]?.backgroundImage?.assetId;
   const usable = (list: PhotoAsset[]) => list.filter((a) => !pinnedIds.has(a.id) && a.id !== bgId);

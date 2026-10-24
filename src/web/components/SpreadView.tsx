@@ -1,7 +1,8 @@
-import { memo, useMemo, type CSSProperties, type ReactNode } from 'react';
+import { memo, useId, useMemo, type CSSProperties, type ReactNode } from 'react';
 import {
-  COVER_INDEX, backgroundFrame, elementPlacement, geometryFor, pageNumberRect, roleStyle, type BookSettings, type BookStyle, type Element,
-  type ImageElement, type PhotoAsset, type ShapeElement, type Spread, type TextElement, MM_PER_PT,
+  COVER_INDEX, archGeometry, backgroundFrame, elementPlacement, geometryFor, gradeSvgMatrix, gradientLine, isNeutralGrade, maskPath, pageNumberRect,
+  roleStyle, scalePath, shapeDef, type BookSettings, type BookStyle, type ColorGrade, type Element, type Gradient, type ImageElement, type PhotoAsset,
+  type ShapeElement, type Spread, type TextElement, MM_PER_PT,
 } from '../../core';
 import { thumbUrl } from '../api';
 
@@ -22,9 +23,13 @@ interface Props {
   /** Overlay drawn inside the surface's coordinate box (guides, handles). */
   children?: ReactNode;
   hiddenElementId?: string | null;
+  /** Colour grade for the photos (the document's). */
+  grade?: ColorGrade;
 }
 
-export const SpreadView = memo(function SpreadView({ settings, style, spreadCount, index, surface, scale, assets, thumbSize = 'm', children, hiddenElementId }: Props) {
+export const SpreadView = memo(function SpreadView({ settings, style, spreadCount, index, surface, scale, assets, thumbSize = 'm', children, hiddenElementId, grade }: Props) {
+  const filterId = `grade${useId().replace(/:/g, '')}`;
+  const graded = !isNeutralGrade(grade);
   const g = useMemo(() => geometryFor(settings, spreadCount, index), [settings, spreadCount, index]);
   const b = g.bleed;
   const bg = surface.background ?? style.background;
@@ -34,6 +39,13 @@ export const SpreadView = memo(function SpreadView({ settings, style, spreadCoun
   const bgFrame = backgroundFrame(surface, g);
   return (
     <div className="spread" style={{ width: px(g.width + 2 * b), height: px(g.height + 2 * b), background: isCover ? bg : undefined }}>
+      {graded && (
+        <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden>
+          <filter id={filterId} colorInterpolationFilters="sRGB">
+            <feColorMatrix type="matrix" values={gradeSvgMatrix(grade!)} />
+          </filter>
+        </svg>
+      )}
       {!isCover &&
         g.panels.map((p, i) => (
           <div
@@ -48,10 +60,10 @@ export const SpreadView = memo(function SpreadView({ settings, style, spreadCoun
             }}
           />
         ))}
-      {bgFrame && <ElementView el={bgFrame} scale={scale} offset={b} asset={assets.get(bgFrame.assetId!)} thumbSize={thumbSize} />}
+      {bgFrame && <ElementView el={bgFrame} scale={scale} offset={b} asset={assets.get(bgFrame.assetId!)} thumbSize={thumbSize} filter={graded ? `url(#${filterId})` : undefined} />}
       {surface.elements.map((el) =>
         el.id === hiddenElementId ? null : (
-          <ElementView key={el.id} el={el} scale={scale} offset={b} asset={el.type === 'image' && el.assetId ? assets.get(el.assetId) : undefined} thumbSize={thumbSize} />
+          <ElementView key={el.id} el={el} scale={scale} offset={b} asset={el.type === 'image' && el.assetId ? assets.get(el.assetId) : undefined} thumbSize={thumbSize} filter={graded ? `url(#${filterId})` : undefined} />
         ),
       )}
       {!isCover && settings.pageNumbers &&
@@ -78,7 +90,7 @@ export const SpreadView = memo(function SpreadView({ settings, style, spreadCoun
   );
 });
 
-export const ElementView = memo(function ElementView({ el, scale, offset, asset, thumbSize }: { el: Element; scale: number; offset: number; asset?: PhotoAsset; thumbSize: 's' | 'm' }) {
+export const ElementView = memo(function ElementView({ el, scale, offset, asset, thumbSize, filter }: { el: Element; scale: number; offset: number; asset?: PhotoAsset; thumbSize: 's' | 'm'; filter?: string }) {
   const style: CSSProperties = {
     left: (el.xMm + offset) * scale,
     top: (el.yMm + offset) * scale,
@@ -86,23 +98,31 @@ export const ElementView = memo(function ElementView({ el, scale, offset, asset,
     height: el.heightMm * scale,
     transform: el.rotationDeg ? `rotate(${el.rotationDeg}deg)` : undefined,
   };
-  if (el.type === 'image') return <ImageView el={el} scale={scale} style={style} asset={asset} thumbSize={thumbSize} />;
-  if (el.type === 'shape') return <ShapeView el={el} style={style} />;
+  if (el.type === 'image') return <ImageView el={el} scale={scale} style={style} asset={asset} thumbSize={thumbSize} filter={filter} />;
+  if (el.type === 'shape') return <ShapeView el={el} scale={scale} style={style} />;
   return <TextView el={el} scale={scale} style={style} />;
 });
 
-function ImageView({ el, scale, style, asset, thumbSize }: { el: ImageElement; scale: number; style: CSSProperties; asset?: PhotoAsset; thumbSize: 's' | 'm' }) {
-  const frameStyle: CSSProperties = { ...style, background: el.borderMm > 0 ? el.borderColor : undefined, opacity: el.opacity };
+function ImageView({ el, scale, style, asset, thumbSize, filter }: { el: ImageElement; scale: number; style: CSSProperties; asset?: PhotoAsset; thumbSize: 's' | 'm'; filter?: string }) {
+  // A photo cut to a shape or to text: clip the frame to that outline (borders don't apply).
+  const clip = el.mask ? maskPath(el.mask, el.widthMm * scale, el.heightMm * scale) : null;
+  const border = clip ? 0 : el.borderMm;
+  const frameStyle: CSSProperties = {
+    ...style,
+    background: border > 0 ? el.borderColor : undefined,
+    opacity: el.opacity,
+    clipPath: clip ? `path(${clip.evenOdd ? 'evenodd, ' : ''}'${clip.d}')` : undefined,
+  };
   if (!el.assetId || !asset) {
     return (
-      <div className={`el el-image el-empty ${el.borderMm > 0 ? 'el-print' : ''}`} style={frameStyle}>
+      <div className={`el el-image el-empty ${border > 0 ? 'el-print' : ''}`} style={frameStyle}>
         {el.assetId && !asset ? <span>Photo not in library</span> : <span>Drop a photo here</span>}
       </div>
     );
   }
-  const { box, placement } = elementPlacement(el, asset);
+  const { box, placement } = elementPlacement(clip ? { ...el, borderMm: 0 } : el, asset);
   return (
-    <div className={`el el-image ${el.borderMm > 0 ? 'el-print' : ''}`} style={frameStyle}>
+    <div className={`el el-image ${border > 0 ? 'el-print' : ''}`} style={frameStyle}>
       <div className="el-image-inner" style={{ left: box.x * scale, top: box.y * scale, width: box.w * scale, height: box.h * scale }}>
         <img
           src={thumbUrl(asset.id, thumbSize)}
@@ -110,7 +130,7 @@ function ImageView({ el, scale, style, asset, thumbSize }: { el: ImageElement; s
           draggable={false}
           decoding="async"
           loading={thumbSize === 's' ? 'lazy' : 'eager'}
-          style={{ left: placement.x * scale, top: placement.y * scale, width: placement.w * scale, height: placement.h * scale }}
+          style={{ left: placement.x * scale, top: placement.y * scale, width: placement.w * scale, height: placement.h * scale, filter }}
         />
       </div>
       {asset.missing && <div className="el-badge el-badge-error">Missing original</div>}
@@ -118,8 +138,34 @@ function ImageView({ el, scale, style, asset, thumbSize }: { el: ImageElement; s
   );
 }
 
-function ShapeView({ el, style }: { el: ShapeElement; style: CSSProperties }) {
-  return <div className="el el-shape" style={{ ...style, background: el.fill, opacity: el.opacity }} />;
+/** SVG <linearGradient> across a w × h box, matching the PDF's gradient line. */
+function GradientDef({ id, gradient, w, h }: { id: string; gradient: Gradient; w: number; h: number }) {
+  const l = gradientLine(gradient.angleDeg, w, h);
+  return (
+    <linearGradient id={id} gradientUnits="userSpaceOnUse" x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}>
+      <stop offset="0" stopColor={gradient.from} />
+      <stop offset="1" stopColor={gradient.to} />
+    </linearGradient>
+  );
+}
+
+function ShapeView({ el, scale, style }: { el: ShapeElement; scale: number; style: CSSProperties }) {
+  const gid = `sg${useId().replace(/:/g, '')}`;
+  const w = el.widthMm * scale;
+  const h = el.heightMm * scale;
+  if (!el.shape && !el.gradient && !el.strokeWidthMm) return <div className="el el-shape" style={{ ...style, background: el.fill, opacity: el.opacity }} />;
+  const def = shapeDef(el.shape);
+  return (
+    <div className="el el-shape" style={{ ...style, opacity: el.opacity }}>
+      <svg width={w} height={h} style={{ overflow: 'visible', display: 'block' }}>
+        {el.gradient && <defs><GradientDef id={gid} gradient={el.gradient} w={w} h={h} /></defs>}
+        <path
+          d={scalePath(def.d, w, h)} fillRule={def.evenOdd ? 'evenodd' : 'nonzero'} fill={el.gradient ? `url(#${gid})` : el.fill}
+          stroke={el.strokeWidthMm ? el.strokeColor ?? '#000000' : undefined} strokeWidth={el.strokeWidthMm ? el.strokeWidthMm * scale : undefined} strokeLinejoin="round"
+        />
+      </svg>
+    </div>
+  );
 }
 
 /** Typography and box styling of a text element, shared by the page view and the inline editor. */
@@ -135,6 +181,7 @@ export function textCss(el: TextElement, scale: number): CSSProperties {
     textAlign: el.align,
     color: el.color,
     background: el.backgroundColor ? hexToRgba(el.backgroundColor, el.backgroundOpacity ?? 1) : undefined,
+    borderRadius: el.backgroundColor && el.backgroundRadiusMm ? el.backgroundRadiusMm * scale : undefined,
     padding: el.paddingMm ? el.paddingMm * scale : undefined,
     boxSizing: 'border-box',
   };
@@ -147,10 +194,65 @@ export function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+/** Letter effects (gradient fill, outline, shadow) for straight text, on an inner span so the box
+ * background stays separate. Outlines are drawn under the fill, as in the PDF. */
+function letterCss(el: TextElement, scale: number): CSSProperties {
+  const css: CSSProperties = { display: 'block', minHeight: '100%' };
+  if (el.gradient) {
+    css.backgroundImage = `linear-gradient(${el.gradient.angleDeg}deg, ${el.gradient.from}, ${el.gradient.to})`;
+    css.WebkitBackgroundClip = 'text';
+    css.backgroundClip = 'text';
+    css.color = 'transparent';
+  }
+  if (el.strokeWidthMm) {
+    css.WebkitTextStroke = `${el.strokeWidthMm * scale}px ${el.strokeColor ?? '#000000'}`;
+    css.paintOrder = 'stroke fill';
+  }
+  if (el.shadow) css.filter = `drop-shadow(${el.shadow.dxMm * scale}px ${el.shadow.dyMm * scale}px 0 ${hexToRgba(el.shadow.color, el.shadow.opacity)})`;
+  return css;
+}
+
 function TextView({ el, scale, style }: { el: TextElement; scale: number; style: CSSProperties }) {
+  const css = textCss(el, scale);
+  const arch = archGeometry(el.widthMm, el.heightMm, el.arch ?? 0, el.fontSizePt * MM_PER_PT);
+  if (arch) return <ArchedText el={el} scale={scale} style={{ ...style, ...css, padding: 0 }} />;
   return (
-    <div className="el el-text" style={{ ...style, ...textCss(el, scale) }}>
-      {el.text}
+    <div className="el el-text" style={{ ...style, ...css }}>
+      <span style={letterCss(el, scale)}>{el.text}</span>
+    </div>
+  );
+}
+
+/** Text on an arc: SVG textPath on the same circle the PDF uses. */
+function ArchedText({ el, scale, style }: { el: TextElement; scale: number; style: CSSProperties }) {
+  const uid = useId().replace(/:/g, '');
+  const w = el.widthMm * scale;
+  const h = el.heightMm * scale;
+  const arch = archGeometry(w, h, el.arch ?? 0, el.fontSizePt * MM_PER_PT * scale)!;
+  const text = (el.uppercase ? el.text.toUpperCase() : el.text).replace(/\n/g, ' ');
+  const common = {
+    fontFamily: `'${el.fontFamily}'`, fontWeight: el.fontWeight, fontStyle: el.italic ? 'italic' : undefined,
+    fontSize: el.fontSizePt * MM_PER_PT * scale, letterSpacing: el.letterSpacingEm ? `${el.letterSpacingEm}em` : undefined,
+  };
+  const path = <textPath href={`#p${uid}`} startOffset="50%" textAnchor="middle">{text}</textPath>;
+  return (
+    <div className="el el-text" style={{ ...style, color: undefined }}>
+      <svg width={w} height={h} style={{ overflow: 'visible', display: 'block' }}>
+        <defs>
+          <path id={`p${uid}`} d={arch.path} />
+          {el.gradient && <GradientDef id={`g${uid}`} gradient={el.gradient} w={w} h={h} />}
+        </defs>
+        {el.shadow && (
+          <text style={common} fill={el.shadow.color} fillOpacity={el.shadow.opacity} transform={`translate(${el.shadow.dxMm * scale} ${el.shadow.dyMm * scale})`}
+            stroke={el.strokeWidthMm ? el.shadow.color : undefined} strokeWidth={el.strokeWidthMm ? el.strokeWidthMm * scale : undefined} strokeOpacity={el.shadow.opacity}>
+            {path}
+          </text>
+        )}
+        <text style={common} fill={el.gradient ? `url(#g${uid})` : el.color} stroke={el.strokeWidthMm ? el.strokeColor ?? '#000000' : undefined}
+          strokeWidth={el.strokeWidthMm ? el.strokeWidthMm * scale : undefined} paintOrder="stroke fill" strokeLinejoin="round">
+          {path}
+        </text>
+      </svg>
     </div>
   );
 }

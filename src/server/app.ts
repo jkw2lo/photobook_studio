@@ -5,6 +5,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { API_VERSION, SCHEMA_VERSION, UnknownSizeError, createBook, createPoster, posterSize, migrateDocument, type BookDocument, type PhotoAnalysis, type PhotoAsset } from '../core';
 import { Store, toPhotoAsset, type AssetRow } from './db';
 import { Importer, scanFolder } from './importer';
+import { textOutline } from './textOutline';
 import { ALPHA_FORMATS, colorFeatures, existingThumb, hashFile, hasTransparency, isSupported, makeThumbnails, THUMB_SIZES, type ThumbSize } from './media';
 import { exportCoverPdf, exportPdf, exportPosterPdf, type ExportAsset, type ExportOptions } from './pdf';
 
@@ -142,6 +143,18 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
     if (!path) throw new HttpError(404, 'No thumbnail');
     res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
     res.sendFile(path);
+  }));
+
+  // ---- text outlines (photos cut to the shape of a word)
+  app.post('/api/text-outline', wrap((req, res) => {
+    const b = req.body ?? {};
+    if (typeof b.text !== 'string' || !b.text.trim()) throw new HttpError(400, 'Type some text for the photo to fill');
+    if (b.text.length > 200) throw new HttpError(400, 'That is a lot of text for a cut-out — keep it to a few words');
+    try {
+      res.json(textOutline({ text: b.text, fontFamily: String(b.fontFamily), fontWeight: Number(b.fontWeight) || 400, italic: !!b.italic, uppercase: !!b.uppercase, letterSpacingEm: Number(b.letterSpacingEm) || 0 }));
+    } catch (e) {
+      throw new HttpError(400, e instanceof Error ? e.message : String(e));
+    }
   }));
 
   // ---- import

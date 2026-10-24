@@ -20,3 +20,8 @@ export * from './poster';
 export * from './typography';
 export * from './quickStyles';
 export * from './background';
+export * from './shapes';
+export * from './decorations';
+export * from './grade';
+export * from './textEffects';
+export * from './posterTemplates';

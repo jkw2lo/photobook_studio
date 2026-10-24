@@ -9,6 +9,8 @@ import { ColorInput } from './ColorInput';
 import { Icon } from './Icon';
 import { AddTextMenu } from './TypePanel';
 import { BackgroundImageField } from './BackgroundImageField';
+import { ElementsPalette, GradeControls } from './DesignPanel';
+import { PosterTemplates } from './PosterTemplates';
 
 /** Sensible first settings for a sheet: spacing and border scaled to its size. */
 export function initialCollageSettings(doc: BookDocument, usable: number): CollageSettings {
@@ -165,12 +167,21 @@ export function PosterPanel() {
         )}
       </div>
 
+      <div className="section-title">Templates</div>
+      <PosterTemplates />
+
       <div className="section-title">Layout</div>
       {hasPhotos && <p className="muted small">Style, spacing, border and title re-flow the photos already on the sheet.</p>}
       <CollageControls doc={doc} value={settings} compact onChange={(next) => reflow(next.style !== settings.style ? 'Change collage style' : 'Adjust collage', next)} />
 
       <div className="section-title">Text</div>
       <AddTextMenu surfaceId={sheet.id} at={{ x: s.trimWidthMm / 2, y: s.trimHeightMm * 0.9 }} />
+
+      <div className="section-title">Design elements</div>
+      <ElementsPalette surfaceId={sheet.id} at={{ x: s.trimWidthMm / 2, y: s.trimHeightMm / 2 }} />
+
+      <div className="section-title">Colour grade</div>
+      <GradeControls />
 
       <div className="section-title">Sheet</div>
       <label className="field">

@@ -155,5 +155,6 @@ const NavItem = memo(function NavItem(p: NavItemProps) {
 function ThumbScale({ index, surface, settings, style, spreadCount, assets, height }: NavItemProps & { height: number }) {
   const g = useMemo(() => geometryFor(settings, spreadCount, index), [settings, spreadCount, index]);
   const scale = height / (g.height + 2 * g.bleed);
-  return <SpreadView settings={settings} style={style} spreadCount={spreadCount} index={index} surface={surface} scale={scale} assets={assets} thumbSize="s" />;
+  const grade = useEditor((s) => s.doc?.grade);
+  return <SpreadView settings={settings} style={style} spreadCount={spreadCount} index={index} surface={surface} scale={scale} assets={assets} grade={grade} thumbSize="s" />;
 }

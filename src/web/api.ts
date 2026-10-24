@@ -82,6 +82,8 @@ export interface ExportResponse {
 }
 
 export const api = {
+  textOutline: (body: { text: string; fontFamily: string; fontWeight: number; italic?: boolean; uppercase?: boolean; letterSpacingEm?: number }) =>
+    call<{ d: string; aspect: number }>('POST', '/api/text-outline', body),
   listProjects: () => call<ProjectSummary[]>('GET', '/api/projects'),
   createProject: (body: { title: string; sizeId: string; stylePresetId?: string; pages?: number; printerId?: string; bindingId?: string; product?: 'book' | 'poster'; landscape?: boolean }) =>
     call<{ doc: BookDocument; revision: number }>('POST', '/api/projects', body),

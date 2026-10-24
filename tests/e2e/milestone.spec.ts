@@ -151,6 +151,16 @@ test('make a collage poster: import, auto collage, switch style, export', async 
   await expect.poll(async () => frames.evaluateAll((els) => els.filter((e) => (e as HTMLElement).style.transform.includes('rotate')).length)).toBeGreaterThan(5);
   await expect(page.locator('.save')).toHaveText('Saved');
 
+  // A template restyles the sheet: round photos, its own type and stars; then an icon from the palette.
+  await page.locator('.template-card', { hasText: 'Night circles' }).click();
+  await expect.poll(() => page.locator('.canvas .el-image').first().evaluate((e) => (e as HTMLElement).style.clipPath)).toContain('path(');
+  await expect(page.locator('.canvas .el-shape')).toHaveCount(3);
+  await page.locator('.palette .seg button', { hasText: 'Icons' }).click();
+  await page.locator('.palette [aria-label="Add Heart"]').click();
+  await expect(page.locator('.canvas .el-shape svg path')).toHaveCount(4);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.save')).toHaveText('Saved');
+
   await page.getByRole('button', { name: 'Export PDF' }).first().click();
   await page.locator('.modal').getByRole('button', { name: 'Export PDF' }).click();
   await expect(page.locator('.export-result').first()).toContainText('Poster · Verified', { timeout: 60_000 });

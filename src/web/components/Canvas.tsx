@@ -448,7 +448,7 @@ export function Canvas() {
           </button>
         )}
         <div className="canvas-spread">
-          <SpreadView settings={doc.settings} style={doc.style} spreadCount={spreadCount} index={index} surface={surface} scale={scale} assets={assets} hiddenElementId={editingText}>
+          <SpreadView settings={doc.settings} style={doc.style} spreadCount={spreadCount} index={index} surface={surface} scale={scale} assets={assets} grade={doc.grade} hiddenElementId={editingText}>
             {showGuides && <Guides g={g} scale={scale} />}
             {cropEl && cropAsset && <CropGhost el={cropEl} scale={scale} offset={b} assetId={cropAsset.id} asset={cropAsset} />}
             {guides.map((gl, i) =>
@@ -561,10 +561,10 @@ function PinBadges({ elements, scale, offset }: { elements: Element[]; scale: nu
   return (
     <>
       {elements.map((el) =>
-        el.type === 'image' && (el.pinned || el.keepCrop) ? (
+        el.type === 'image' && (el.pinned || el.keepCrop || el.keepRotation) ? (
           <div key={el.id} className="pin-badge-frame" style={frameStyle(el, scale, offset)}>
-            <span className={`pin-badge ${el.pinned ? '' : 'pin-badge-crop'}`} title={el.pinned ? 'Pinned: Arrange leaves it where it is' : 'Crop kept when arranging'}>
-              <Icon name={el.pinned ? 'pin' : 'crop'} size={11} />
+            <span className={`pin-badge ${el.pinned ? '' : 'pin-badge-crop'}`} title={el.pinned ? 'Pinned: Arrange leaves it where it is' : `${[el.keepCrop && 'Crop', el.keepRotation && 'rotation'].filter(Boolean).join(' and ')} kept when arranging`}>
+              <Icon name={el.pinned ? 'pin' : el.keepCrop ? 'crop' : 'rotate'} size={11} />
             </span>
           </div>
         ) : null,

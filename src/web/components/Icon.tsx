@@ -10,6 +10,7 @@ const PATHS: Record<string, string> = {
   undo: 'M9 14L4 9l5-5M4 9h10.5a5.5 5.5 0 010 11H11',
   redo: 'M15 14l5-5-5-5M20 9H9.5a5.5 5.5 0 000 11H13',
   lock: 'M6 11h12v9H6zM8 11V8a4 4 0 018 0v3',
+  rotate: 'M20 11a8 8 0 10-2.3 5.7M20 4v7h-7',
   pin: 'M9 3.5h6M10 3.5l-.6 6L6.5 13v1.5h11V13l-2.9-3.5-.6-6M12 14.5V21',
   unlock: 'M6 11h12v9H6zM8 11V8a4 4 0 017.7-1.5',
   trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',

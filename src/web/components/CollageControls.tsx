@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
-import { COLLAGE_STYLES, PHOTO_ORDERS, type BookDocument, type CollageSettings } from '../../core';
+import { COLLAGE_STYLES, PHOTO_ORDERS, PHOTO_SHAPES, type BookDocument, type CollageSettings } from '../../core';
+import { ShapeGlyph } from './DesignPanel';
 
 // Shared controls for collage settings: used by the Auto collage dialog and the poster panel.
 // Spacing and borders scale with the sheet, so "Small" looks the same on 11 × 14 and 24 × 36.
@@ -45,6 +46,20 @@ export function CollageControls({ doc, value, onChange, compact }: { doc: BookDo
         <div className="seg seg-wide">
           {PHOTO_ORDERS.map((o) => (
             <button key={o.id} type="button" title={o.description} className={(value.order ?? 'time') === o.id ? 'on' : ''} onClick={() => onChange({ ...value, order: o.id })}>{o.label}</button>
+          ))}
+        </div>
+      </div>
+      <div className="field">
+        <span>Photo shape</span>
+        <div className="palette-grid compact">
+          {PHOTO_SHAPES.map((sh) => (
+            <button
+              key={sh.id} type="button" title={sh.id === 'rect' ? 'Rectangles' : sh.name}
+              className={`palette-item ${(value.frameShape ?? 'rect') === sh.id ? 'on' : ''}`}
+              onClick={() => onChange({ ...value, frameShape: sh.id === 'rect' ? undefined : sh.id })}
+            >
+              <ShapeGlyph id={sh.id} size={18} />
+            </button>
           ))}
         </div>
       </div>

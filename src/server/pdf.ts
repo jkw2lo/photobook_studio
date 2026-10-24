@@ -6,9 +6,9 @@ import PDFDocument from 'pdfkit';
 import { PDFDocument as PdfLibDocument, PDFName, PDFArray, PDFNumber } from 'pdf-lib';
 import sharp from 'sharp';
 import {
-  COVER_INDEX, backgroundFrame, coverGeometry, geometryFor, posterGeometry, elementBounds, elementPlacement, fontFilePath, intersects, mmToInch, mmToPt, nearestWeight,
+  COVER_INDEX, archGeometry, backgroundFrame, coverGeometry, geometryFor, gradeKey, gradeMatrix, gradientLine, isNeutralGrade, maskPath, pointOnArch, scalePath, shapeDef, posterGeometry, elementBounds, elementPlacement, fontFilePath, intersects, mmToInch, mmToPt, nearestWeight,
   pageNumberRect, preflight, printablePages, roleStyle, type BleedMode, type BookDocument, type Element, type ImageElement,
-  type PhotoAsset, type PreflightIssue, type Rect, type Spread, type TextElement,
+  type ColorGrade, type Gradient, type PhotoAsset, type PreflightIssue, type Rect, type ShapeElement, type Spread, type TextElement,
 } from '../core';
 
 // Print export. Geometry comes from core (same functions the editor preview uses); this module only
@@ -64,7 +64,7 @@ class PdfWriter {
   private readonly imageCache = new Map<string, Buffer>();
   readonly overflow: { elementId: string; label: string; spreadIndex: number }[] = [];
 
-  constructor(readonly outPath: string, title: string, private readonly assets: Map<string, ExportAsset>) {
+  constructor(readonly outPath: string, title: string, private readonly assets: Map<string, ExportAsset>, private readonly grade?: ColorGrade) {
     this.pdf = new PDFDocument({ autoFirstPage: false, compress: true, info: { Title: title, Creator: 'Photobook Studio', Producer: 'Photobook Studio (PDFKit)' } });
     const stream = createWriteStream(outPath);
     this.pdf.pipe(stream);
@@ -109,17 +109,40 @@ class PdfWriter {
       if (el.rotationDeg) pdf.rotate(el.rotationDeg);
       pdf.translate(-mmToPt(el.widthMm / 2), -mmToPt(el.heightMm / 2));
       if (el.type === 'image') await this.image(el);
-      else if (el.type === 'shape') {
-        pdf.fillOpacity(el.opacity).rect(0, 0, mmToPt(el.widthMm), mmToPt(el.heightMm)).fill(el.fill);
-      } else if (this.text(el) && !this.overflow.some((o) => o.elementId === el.id)) {
+      else if (el.type === 'shape') this.shape(el);
+      else if (this.text(el) && !this.overflow.some((o) => o.elementId === el.id)) {
         this.overflow.push({ elementId: el.id, label, spreadIndex });
       }
       pdf.restore();
     }
   }
 
+  /** A gradient fill across a w × h box (points), CSS angle semantics. */
+  private gradient(g: Gradient, w: number, h: number) {
+    const l = gradientLine(g.angleDeg, w, h);
+    return this.pdf.linearGradient(l.x1, l.y1, l.x2, l.y2).stop(0, g.from).stop(1, g.to);
+  }
+
+  private shape(el: ShapeElement) {
+    const { pdf } = this;
+    const w = mmToPt(el.widthMm);
+    const h = mmToPt(el.heightMm);
+    const def = shapeDef(el.shape);
+    const rule = def.evenOdd ? 'even-odd' : 'non-zero';
+    const d = scalePath(def.d, w, h);
+    pdf.fillOpacity(el.opacity).strokeOpacity(el.opacity);
+    pdf.path(d).fill(el.gradient ? this.gradient(el.gradient, w, h) : el.fill, rule);
+    if (el.strokeWidthMm) pdf.path(d).lineWidth(mmToPt(el.strokeWidthMm)).lineJoin('round').stroke(el.strokeColor ?? '#000000');
+  }
+
   private async image(el: ImageElement) {
     const { pdf } = this;
+    // Cut to a shape or to text: clip to the outline; borders don't apply.
+    if (el.mask) {
+      const m = maskPath(el.mask, mmToPt(el.widthMm), mmToPt(el.heightMm));
+      pdf.path(m.d).clip(m.evenOdd ? 'even-odd' : 'non-zero');
+      el = { ...el, borderMm: 0 };
+    }
     if (el.borderMm > 0) pdf.rect(0, 0, mmToPt(el.widthMm), mmToPt(el.heightMm)).fill(el.borderColor);
     const entry = el.assetId ? this.assets.get(el.assetId) : undefined;
     if (!entry) return; // empty frame or missing photo: preflight reports it; nothing is printed
@@ -133,18 +156,26 @@ class PdfWriter {
     // Never upsample; downsample to 300 DPI at the printed size.
     const tw = Math.max(1, Math.min(width, Math.round(mmToInch(visible.dest.w) * TARGET_DPI)));
     const th = Math.max(1, Math.min(height, Math.round(mmToInch(visible.dest.h) * TARGET_DPI)));
-    const key = `${asset.id}|${left},${top},${width},${height}|${tw}x${th}`;
+    const grade = isNeutralGrade(this.grade) ? null : gradeMatrix(this.grade!);
+    const key = `${asset.id}|${left},${top},${width},${height}|${tw}x${th}|${gradeKey(this.grade)}`;
     let buf = this.imageCache.get(key);
     if (!buf) {
-      const img = sharp(entry.workPath, { failOn: 'none' })
+      let img = sharp(entry.workPath, { failOn: 'none' })
         .rotate() // EXIF orientation first, so extract() works in the same oriented space as the preview
         .extract({ left, top, width, height })
         .resize(tw, th, { fit: 'fill' });
+      const cutout = !!asset.analysis?.transparent;
+      img = cutout ? img.ensureAlpha() : img.flatten({ background: '#ffffff' });
+      // The colour grade: the same rgb' = M·rgb + o the editor applies (alpha untouched).
+      if (grade) {
+        const { m, o } = grade;
+        img = cutout
+          ? img.recomb([[m[0], m[1], m[2], 0], [m[3], m[4], m[5], 0], [m[6], m[7], m[8], 0], [0, 0, 0, 1]]).linear([1, 1, 1, 1], [o[0] * 255, o[1] * 255, o[2] * 255, 0])
+          : img.recomb([[m[0], m[1], m[2]], [m[3], m[4], m[5]], [m[6], m[7], m[8]]]).linear([1, 1, 1], [o[0] * 255, o[1] * 255, o[2] * 255]);
+      }
       // Cutouts keep their transparency (PNG with alpha → PDF soft mask) so whatever is behind them
       // — the sheet colour, a background image, other photos — shows through. Photos stay JPEG.
-      buf = asset.analysis?.transparent
-        ? await img.ensureAlpha().png({ compressionLevel: 6 }).toBuffer()
-        : await img.flatten({ background: '#ffffff' }).jpeg({ quality: 92, chromaSubsampling: '4:4:4' }).toBuffer();
+      buf = cutout ? await img.png({ compressionLevel: 6 }).toBuffer() : await img.jpeg({ quality: 92, chromaSubsampling: '4:4:4' }).toBuffer();
       this.imageCache.set(key, buf);
     }
     if (el.opacity !== undefined && el.opacity < 1) pdf.opacity(el.opacity);
@@ -154,27 +185,81 @@ class PdfWriter {
   /** Returns true if the text overflows its box. */
   private text(el: TextElement): boolean {
     const { pdf } = this;
-    // Fill behind the text: the whole box, like the editor's CSS background.
+    const W = mmToPt(el.widthMm);
+    const H = mmToPt(el.heightMm);
+    // Fill behind the text: the whole box (rounded if asked), like the editor's CSS background.
     if (el.backgroundColor) {
       pdf.save();
-      pdf.fillOpacity(el.backgroundOpacity ?? 1).rect(0, 0, mmToPt(el.widthMm), mmToPt(el.heightMm)).fill(el.backgroundColor);
+      const r = mmToPt(el.backgroundRadiusMm ?? 0);
+      (r > 0 ? pdf.roundedRect(0, 0, W, H, Math.min(r, W / 2, H / 2)) : pdf.rect(0, 0, W, H)).fillOpacity(el.backgroundOpacity ?? 1).fill(el.backgroundColor);
       pdf.restore();
     }
     const pad = mmToPt(el.paddingMm ?? 0);
     this.useFont(el.fontFamily, el.fontWeight, !!el.italic);
-    pdf.fontSize(el.fontSizePt).fillColor(el.color);
+    pdf.fontSize(el.fontSizePt);
     // Same transforms as the editor's CSS (text-transform: uppercase, letter-spacing in em).
     const text = el.uppercase ? el.text.toUpperCase() : el.text;
     const characterSpacing = (el.letterSpacingEm ?? 0) * el.fontSizePt;
+    const fill = el.gradient ? this.gradient(el.gradient, W, H) : el.color;
+    const stroke = el.strokeWidthMm ? { width: mmToPt(el.strokeWidthMm), color: el.strokeColor ?? '#000000' } : null;
+
+    // Each pass draws the same glyphs: shadow (offset, faded), outline (under), then the fill.
+    const passes = (draw: (mode: 'fill' | 'stroke') => void) => {
+      if (el.shadow) {
+        pdf.save();
+        pdf.translate(mmToPt(el.shadow.dxMm), mmToPt(el.shadow.dyMm));
+        pdf.fillColor(el.shadow.color).fillOpacity(el.shadow.opacity).strokeColor(el.shadow.color).strokeOpacity(el.shadow.opacity);
+        if (stroke) {
+          pdf.lineWidth(stroke.width).lineJoin('round');
+          draw('stroke');
+        }
+        draw('fill');
+        pdf.restore();
+      }
+      if (stroke) {
+        pdf.save();
+        pdf.lineWidth(stroke.width).lineJoin('round').strokeColor(stroke.color);
+        draw('stroke');
+        pdf.restore();
+      }
+      pdf.save();
+      pdf.fillColor(fill);
+      draw('fill');
+      pdf.restore();
+    };
+
+    const arch = archGeometry(W, H, el.arch ?? 0, el.fontSizePt);
+    if (arch) {
+      // One line along the arc: each glyph centred on its arc position and turned to the tangent.
+      const line = text.replace(/\n/g, ' ');
+      const chars = [...line];
+      const widths = chars.map((c) => pdf.widthOfString(c) + characterSpacing);
+      const total = widths.reduce((a, b) => a + b, 0) - characterSpacing;
+      const ascent = ((pdf as unknown as { _font: { ascender: number } })._font.ascender / 1000) * el.fontSizePt;
+      passes((mode) => {
+        let t = (arch.length - total) / 2;
+        chars.forEach((c, i) => {
+          const adv = widths[i] - characterSpacing;
+          const p = pointOnArch(arch, t + adv / 2);
+          pdf.save();
+          pdf.translate(p.x, p.y).rotate(p.rotDeg);
+          pdf.text(c, -adv / 2, -ascent, { lineBreak: false, fill: mode === 'fill', stroke: mode === 'stroke' });
+          pdf.restore();
+          t += widths[i];
+        });
+      });
+      return false;
+    }
+
     // Match CSS line-height: line box = lineHeight × size, with half-leading above the first line.
     const natural = pdf.currentLineHeight(false);
     const lineBox = el.lineHeight * el.fontSizePt;
     const lineGap = lineBox - natural;
-    const opts = { width: Math.max(1, mmToPt(el.widthMm) - 2 * pad), align: el.align, lineGap, characterSpacing } as const;
-    const boxH = mmToPt(el.heightMm) - 2 * pad;
+    const opts = { width: Math.max(1, W - 2 * pad), align: el.align, lineGap, characterSpacing } as const;
+    const boxH = H - 2 * pad;
     const overflow = pdf.heightOfString(text, opts) > boxH + 1;
     // A bounded height also stops PDFKit from ever starting a new page for long text.
-    pdf.text(text, pad, pad + lineGap / 2, { ...opts, height: boxH * 1.5 + lineBox });
+    passes((mode) => pdf.text(text, pad, pad + lineGap / 2, { ...opts, height: boxH * 1.5 + lineBox, fill: mode === 'fill', stroke: mode === 'stroke' }));
     return overflow;
   }
 
@@ -203,7 +288,7 @@ export async function exportPdf(doc: BookDocument, assets: Map<string, ExportAss
   const pageW = W + b + spineBleed;
   const pageH = H + 2 * b;
   const issues = preflight(doc, new Map([...assets].map(([id, a]) => [id, a.asset])));
-  const w = new PdfWriter(outPath, doc.title, assets);
+  const w = new PdfWriter(outPath, doc.title, assets, doc.grade);
   const specs: PageSpec[] = [];
 
   for (const page of printablePages(doc)) {
@@ -232,7 +317,7 @@ export async function exportCoverPdf(doc: BookDocument, assets: Map<string, Expo
   if (!doc.cover) throw new Error('This book has no cover');
   const g = coverGeometry(doc);
   const spec: PageSpec = { pageW: g.width + 2 * g.bleed, pageH: g.height + 2 * g.bleed, trim: { x: g.bleed, y: g.bleed, w: g.width, h: g.height } };
-  const w = new PdfWriter(outPath, `${doc.title} — cover`, assets);
+  const w = new PdfWriter(outPath, `${doc.title} — cover`, assets, doc.grade);
   w.page(spec, doc.cover.background ?? doc.style.background);
   await w.elements(withBackground(doc.cover, g), { x: -g.bleed, y: -g.bleed, w: spec.pageW, h: spec.pageH }, COVER_INDEX, 'Cover');
   const bytes = await w.finish();
@@ -247,7 +332,7 @@ export async function exportPosterPdf(doc: BookDocument, assets: Map<string, Exp
   const g = posterGeometry(doc);
   const issues = preflight(doc, new Map([...assets].map(([id, a]) => [id, a.asset])));
   const spec: PageSpec = { pageW: g.width + 2 * g.bleed, pageH: g.height + 2 * g.bleed, trim: { x: g.bleed, y: g.bleed, w: g.width, h: g.height } };
-  const w = new PdfWriter(outPath, doc.title, assets);
+  const w = new PdfWriter(outPath, doc.title, assets, doc.grade);
   w.page(spec, sheet.background ?? doc.style.background);
   await w.elements(withBackground(sheet, g), { x: -g.bleed, y: -g.bleed, w: spec.pageW, h: spec.pageH }, 0, 'Poster');
   const bytes = await w.finish();

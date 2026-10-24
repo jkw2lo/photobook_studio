@@ -6,7 +6,7 @@ import {
   MM_PER_PT, TEXT_QUICK_STYLES, useAsBackground, applyQuickStyle, estimateTextHeightMm, boldWeight, isBold, type BookDocument, type ImageElement, type TextElement, type TextRole,
 } from '../../core';
 import { thumbUrl } from '../api';
-import { duplicate, remove, togglePin, toggleKeepCrop, toggleLock } from '../elementActions';
+import { duplicate, remove, togglePin, toggleKeepCrop, toggleKeepRotation, toggleLock } from '../elementActions';
 import { selectedElement, useEditor } from '../store';
 import { ColorInput } from './ColorInput';
 import { BookPanel } from './BookPanel';
@@ -15,6 +15,7 @@ import { FontPicker } from './FontPicker';
 import { PosterPanel } from './PosterUI';
 import { DraftPanel } from './DraftPanel';
 import { AddTextMenu } from './TypePanel';
+import { ElementsPalette, PhotoShapeControls, ShapeControls, TextEffects } from './DesignPanel';
 import { Icon } from './Icon';
 import { PreflightPanel } from './PreflightPanel';
 import { TemplatePicker } from './TemplatePicker';
@@ -176,6 +177,9 @@ function ElementPanel() {
                   <button className={`btn btn-small ${el.keepCrop && !el.pinned ? 'btn-on' : ''}`} disabled={el.pinned || !asset} onClick={() => toggleKeepCrop(sel, el)} title="Arrange may move this photo, but keeps its crop, zoom, fit and border — and always keeps it on the sheet">
                     <Icon name="crop" /> {el.keepCrop && !el.pinned ? 'Crop kept' : 'Keep crop'}
                   </button>
+                  <button className={`btn btn-small ${el.keepRotation && !el.pinned ? 'btn-on' : ''}`} disabled={el.pinned || !asset} onClick={() => toggleKeepRotation(sel, el)} title="Arrange may move this photo, but keeps its tilt — and always keeps it on the sheet">
+                    <Icon name="rotate" /> {el.keepRotation && !el.pinned ? 'Rotation kept' : 'Keep rotation'}
+                  </button>
                 </div>
                 {asset && (
                   <button className="btn btn-small" disabled={el.locked} title="Take this photo out of the collage and put it behind everything, filling the sheet" onClick={() => {
@@ -187,8 +191,8 @@ function ElementPanel() {
                 <p className="muted small">
                   {el.pinned || el.locked
                     ? 'Arrange and Shuffle leave this photo exactly as it is and fill in around it.'
-                    : el.keepCrop
-                      ? 'Arrange can move this photo, but keeps its crop and keeps it on the sheet.'
+                    : el.keepCrop || el.keepRotation
+                      ? `Arrange can move this photo, but keeps its ${[el.keepCrop && 'crop', el.keepRotation && 'rotation'].filter(Boolean).join(' and ')} and keeps it on the sheet.`
                       : 'Arrange and Shuffle lay this photo out again. Pin it to keep your changes.'}
                 </p>
               </div>
@@ -221,6 +225,8 @@ function ElementPanel() {
                 Empty frame
               </button>
             </div>
+            <div className="section-title">Cut-out</div>
+            <PhotoShapeControls el={el} spreadId={sel.spreadId} />
             <div className="field-row">
               <NumField label="Border" value={el.borderMm} min={0} max={20} suffix="mm" onCommit={(v) => upd('Border', { borderMm: v })} />
               <label className="field">
@@ -234,22 +240,7 @@ function ElementPanel() {
 
       {el.type === 'text' && <TextControls el={el} spreadId={sel.spreadId} />}
 
-      {el.type === 'shape' && (
-        <div className="field-row">
-          <label className="field">
-            <span>Fill</span>
-            <ColorInput value={el.fill} label="Fill colour" apply={(d, c) => updateElement(d, sel.spreadId, el.id, { fill: c })} />
-          </label>
-          <label className="field">
-            <span>Opacity</span>
-            <input
-              type="range" min={0.1} max={1} step={0.01} value={el.opacity}
-              onChange={(e) => useEditor.getState().gesture((d) => updateElement(d, sel.spreadId, el.id, { opacity: Number(e.target.value) }))}
-              onPointerUp={() => useEditor.getState().endGesture('Opacity')}
-            />
-          </label>
-        </div>
-      )}
+      {el.type === 'shape' && <ShapeControls el={el} spreadId={sel.spreadId} />}
 
       <div className="section-title">Position</div>
       <div className="field-row">
@@ -342,7 +333,7 @@ function TextControls({ el, spreadId }: { el: TextElement; spreadId: string }) {
           <span className="small">Custom look</span>
           <div className="row">
             <button className="link small" onClick={() => run('Reset to style', (d) => resetTextToStyle(d, spreadId, el.id))}>Reset to {roleLabel(el.role)}</button>
-            <button className="link small" onClick={() => run(`Update ${roleLabel(el.role)} style`, (d) => saveTextAsRoleStyle(d, spreadId, el.id))}>Use for all {roleLabel(el.role).toLowerCase()}s</button>
+            <button className="link small" onClick={() => run(`Update ${roleLabel(el.role)} style`, (d) => saveTextAsRoleStyle(d, spreadId, el.id))}>Use for all {roleLabel(el.role).toLowerCase().replace(/y$/, 'ie')}s</button>
           </div>
         </div>
       )}
@@ -416,9 +407,15 @@ function TextControls({ el, spreadId }: { el: TextElement; spreadId: string }) {
               onKeyUp={() => useEditor.getState().endGesture('Background opacity')}
             />
           </label>
-          <NumField label="Padding" value={el.paddingMm ?? 0} min={0} max={50} step={0.5} suffix="mm" apply={(d, v) => updateElement(d, spreadId, el.id, { paddingMm: v })} undoLabel="Text padding" />
+          <div className="field-row">
+            <NumField label="Padding" value={el.paddingMm ?? 0} min={0} max={50} step={0.5} suffix="mm" apply={(d, v) => updateElement(d, spreadId, el.id, { paddingMm: v })} undoLabel="Text padding" />
+            <NumField label="Corners" value={el.backgroundRadiusMm ?? 0} min={0} max={100} step={0.5} suffix="mm" apply={(d, v) => updateElement(d, spreadId, el.id, { backgroundRadiusMm: v })} undoLabel="Background corners" />
+          </div>
         </>
       )}
+
+      <div className="section-title">Effects</div>
+      <TextEffects el={el} spreadId={spreadId} />
     </>
   );
 }
@@ -517,6 +514,8 @@ function SpreadPanel() {
             </div>
           ))}
           <p className="muted small">Highlighted layouts fit the number of photos already on the page. Extra photos go back to the library; extra frames start empty.</p>
+          <div className="section-title">Add an element</div>
+          <ElementsPalette surfaceId={spread.id} at={{ x: doc.settings.trimWidthMm * (isPrintable(i, 'right', n) ? 1.5 : 0.5), y: doc.settings.trimHeightMm / 2 }} />
         </>
       )}
     </div>

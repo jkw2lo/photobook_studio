@@ -1,0 +1,355 @@
+import { useEffect, useState } from 'react';
+import {
+  GRADE_PRESETS, MM_PER_PT, PHOTO_SHAPES, SHAPES, SHAPE_CATEGORIES, addShapeAt, fontFamily, gradeColor, gradeFromPreset, isNeutralGrade, nearestWeight, scalePath,
+  updateElement, weightName, NO_GRADE, type BookDocument, type ColorGrade, type Gradient, type ImageElement, type ShapeCategory, type ShapeElement,
+  type TextElement,
+} from '../../core';
+import { api } from '../api';
+import { useEditor } from '../store';
+import { ColorInput } from './ColorInput';
+import { FontPicker } from './FontPicker';
+import { Icon } from './Icon';
+import { NumField } from './Inspector';
+
+// Design tools: the elements palette (shapes, banners, lines, icons), shape settings, photo
+// cut-outs, text effects and the colour grade.
+
+/** A library shape drawn small, for pickers. */
+export function ShapeGlyph({ id, d, evenOdd, size = 26 }: { id?: string; d?: string; evenOdd?: boolean; size?: number }) {
+  const def = SHAPES.find((s) => s.id === id);
+  const path = d ?? def?.d ?? '';
+  const aspect = def ? Math.min(3, Math.max(0.5, def.aspect)) : 1;
+  const w = aspect >= 1 ? size : size * aspect;
+  const h = aspect >= 1 ? size / aspect : size;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
+      <g transform={`translate(${(size - w) / 2} ${(size - h) / 2})`}>
+        <path d={scalePath(path, w, Math.max(h, def?.category === 'line' ? 3 : h))} fill="currentColor" fillRule={(evenOdd ?? def?.evenOdd) ? 'evenodd' : 'nonzero'} />
+      </g>
+    </svg>
+  );
+}
+
+// ---- elements palette ------------------------------------------------------------------------------
+
+export function ElementsPalette({ surfaceId, at }: { surfaceId: string; at: { x: number; y: number } }) {
+  const [cat, setCat] = useState<ShapeCategory>('shape');
+  const add = (shapeId: string, name: string) => {
+    let id = '';
+    // Each new element lands a little offset from the last, so they don't stack exactly.
+    const n = useEditor.getState().doc?.spreads.find((s) => s.id === surfaceId)?.elements.length ?? 0;
+    const off = ((n % 5) - 2) * 6;
+    useEditor.getState().run(`Add ${name.toLowerCase()}`, (d) => {
+      const r = addShapeAt(d, surfaceId, shapeId, at.x + off, at.y + off);
+      id = r.newId;
+      return r.doc;
+    });
+    if (id) useEditor.getState().select({ spreadId: surfaceId, elementId: id });
+  };
+  return (
+    <div className="palette">
+      <div className="seg seg-wide">
+        {SHAPE_CATEGORIES.map((c) => (
+          <button key={c.id} className={cat === c.id ? 'on' : ''} onClick={() => setCat(c.id)}>{c.label}</button>
+        ))}
+      </div>
+      <div className="palette-grid">
+        {SHAPES.filter((s) => s.category === cat).map((s) => (
+          <button key={s.id} className="palette-item" title={s.name} aria-label={`Add ${s.name}`} onClick={() => add(s.id, s.name)}>
+            <ShapeGlyph id={s.id} />
+          </button>
+        ))}
+      </div>
+      <p className="muted small">{cat === 'banner' ? 'Banners come with a text box on top.' : 'Click to add; drag and resize it on the page. Text and shapes stay put when you Arrange.'}</p>
+    </div>
+  );
+}
+
+// ---- gradient editor (text and shapes) --------------------------------------------------------------
+
+function GradientFields({ value, apply, label }: { value: Gradient; apply: (d: BookDocument, g: Gradient) => BookDocument; label: string }) {
+  const { gesture, endGesture, run } = useEditor.getState();
+  return (
+    <div className="stack tight">
+      <div className="field-row">
+        <label className="field">
+          <span>From</span>
+          <ColorInput value={value.from} label={`${label} gradient`} apply={(d, c) => apply(d, { ...value, from: c })} />
+        </label>
+        <label className="field">
+          <span>To</span>
+          <ColorInput value={value.to} label={`${label} gradient`} apply={(d, c) => apply(d, { ...value, to: c })} />
+        </label>
+        <button className="icon-btn" title="Swap colours" onClick={() => run('Swap gradient colours', (d) => apply(d, { ...value, from: value.to, to: value.from }))}>⇄</button>
+      </div>
+      <label className="field">
+        <span>Direction — {value.angleDeg}°</span>
+        <input
+          type="range" min={0} max={360} step={15} value={value.angleDeg} aria-label="Gradient direction"
+          onChange={(e) => gesture((d) => apply(d, { ...value, angleDeg: Number(e.target.value) }))}
+          onPointerUp={() => endGesture(`${label} gradient direction`)} onKeyUp={() => endGesture(`${label} gradient direction`)}
+        />
+      </label>
+    </div>
+  );
+}
+
+const defaultGradient = (doc: BookDocument, base: string): Gradient => ({ from: base, to: base.toLowerCase() === doc.style.textColor.toLowerCase() ? '#d4626e' : doc.style.textColor, angleDeg: 90 });
+
+// ---- shape element ---------------------------------------------------------------------------------
+
+export function ShapeControls({ el, spreadId }: { el: ShapeElement; spreadId: string }) {
+  const doc = useEditor((s) => s.doc)!;
+  const { run, gesture, endGesture } = useEditor.getState();
+  const upd = (label: string, patch: Partial<ShapeElement>) => run(label, (d) => updateElement(d, spreadId, el.id, patch));
+  const [picking, setPicking] = useState(false);
+  const current = SHAPES.find((s) => s.id === (el.shape ?? 'rect'));
+  return (
+    <div className="stack">
+      <div className="field">
+        <span>Shape</span>
+        <button className="btn btn-small shape-current" onClick={() => setPicking(!picking)}>
+          <ShapeGlyph id={current?.id} size={20} /> {current?.name ?? 'Rectangle'} <Icon name="down" size={12} />
+        </button>
+      </div>
+      {picking && (
+        <div className="palette-grid">
+          {SHAPES.map((s) => (
+            <button key={s.id} className={`palette-item ${s.id === (el.shape ?? 'rect') ? 'on' : ''}`} title={s.name} onClick={() => { upd(`Shape: ${s.name}`, { shape: s.id }); setPicking(false); }}>
+              <ShapeGlyph id={s.id} />
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="field">
+        <span>Fill</span>
+        <div className="seg seg-wide">
+          <button className={!el.gradient ? 'on' : ''} onClick={() => upd('Solid fill', { gradient: undefined })}>Solid</button>
+          <button className={el.gradient ? 'on' : ''} onClick={() => !el.gradient && upd('Gradient fill', { gradient: defaultGradient(doc, el.fill) })}>Gradient</button>
+        </div>
+      </div>
+      {el.gradient ? (
+        <GradientFields value={el.gradient} label="Shape" apply={(d, g) => updateElement(d, spreadId, el.id, { gradient: g })} />
+      ) : (
+        <label className="field">
+          <span>Colour</span>
+          <ColorInput value={el.fill} label="Fill colour" apply={(d, c) => updateElement(d, spreadId, el.id, { fill: c })} />
+        </label>
+      )}
+      <div className="field-row">
+        <label className="field">
+          <span>Outline</span>
+          <ColorInput value={el.strokeColor ?? '#000000'} label="Outline colour" apply={(d, c) => updateElement(d, spreadId, el.id, { strokeColor: c, strokeWidthMm: el.strokeWidthMm || 0.5 })} />
+        </label>
+        <NumField label="Width" value={el.strokeWidthMm ?? 0} min={0} max={20} step={0.25} suffix="mm" apply={(d, v) => updateElement(d, spreadId, el.id, { strokeWidthMm: v })} undoLabel="Outline width" />
+      </div>
+      <label className="field">
+        <span>Opacity — {Math.round(el.opacity * 100)}%</span>
+        <input
+          type="range" min={0.05} max={1} step={0.01} value={el.opacity}
+          onChange={(e) => gesture((d) => updateElement(d, spreadId, el.id, { opacity: Number(e.target.value) }))}
+          onPointerUp={() => endGesture('Opacity')} onKeyUp={() => endGesture('Opacity')}
+        />
+      </label>
+    </div>
+  );
+}
+
+// ---- photo cut-outs --------------------------------------------------------------------------------
+
+export function PhotoShapeControls({ el, spreadId }: { el: ImageElement; spreadId: string }) {
+  const doc = useEditor((s) => s.doc)!;
+  const { run, toast } = useEditor.getState();
+  const textMask = el.mask?.kind === 'text' ? el.mask : null;
+  // On posters a hand-picked cut-out is kept through Arrange (it would otherwise be replaced by the
+  // collage's photo shape).
+  const keep = doc.settings.product === 'poster' ? { keepCrop: true } : {};
+  const [text, setText] = useState(textMask?.text ?? doc.title.split(' ')[0]?.toUpperCase() ?? 'LOVE');
+  const [family, setFamily] = useState(textMask?.fontFamily ?? 'Abril Fatface');
+  const [weight, setWeight] = useState(textMask?.fontWeight ?? 400);
+  const [mode, setMode] = useState<'shape' | 'text'>(textMask ? 'text' : 'shape');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (textMask) {
+      setText(textMask.text);
+      setFamily(textMask.fontFamily);
+      setWeight(textMask.fontWeight);
+    }
+    // only when switching photos
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [el.id]);
+
+  const applyText = async (t = text, f = family, w = weight) => {
+    if (!t.trim()) return;
+    setBusy(true);
+    try {
+      const o = await api.textOutline({ text: t, fontFamily: f, fontWeight: w, uppercase: false });
+      run('Cut photo to text', (d) => updateElement(d, spreadId, el.id, { mask: { kind: 'text', text: t, fontFamily: f, fontWeight: w, d: o.d, aspect: o.aspect }, ...keep }));
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="stack">
+      <div className="seg seg-wide">
+        <button className={mode === 'shape' ? 'on' : ''} onClick={() => setMode('shape')}>Shape</button>
+        <button className={mode === 'text' ? 'on' : ''} onClick={() => setMode('text')}>Text</button>
+      </div>
+      {mode === 'shape' ? (
+        <div className="palette-grid">
+          <button className={`palette-item ${!el.mask ? 'on' : ''}`} title="No shape" onClick={() => run('Remove photo shape', (d) => updateElement(d, spreadId, el.id, { mask: undefined }))}>
+            <Icon name="x" />
+          </button>
+          {PHOTO_SHAPES.filter((s) => s.id !== 'rect').map((s) => (
+            <button
+              key={s.id} className={`palette-item ${el.mask?.kind === 'shape' && el.mask.shape === s.id ? 'on' : ''}`} title={s.name}
+              onClick={() => run(`Photo shape: ${s.name}`, (d) => updateElement(d, spreadId, el.id, { mask: { kind: 'shape', shape: s.id }, ...keep }))}
+            >
+              <ShapeGlyph id={s.id} />
+            </button>
+          ))}
+        </div>
+      ) : (
+        <>
+          <div className="row">
+            <input className="text-mask-input" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') void applyText(); }} placeholder="A word or two" aria-label="Cut-out text" />
+            <button className="btn btn-small btn-primary" disabled={busy || !text.trim()} onClick={() => void applyText()}>{textMask ? 'Update' : 'Cut'}</button>
+          </div>
+          <div className="field-row">
+            <div className="field">
+              <span>Font</span>
+              <FontPicker value={family} onChange={(f) => { const w = nearestWeight(f, 900); setFamily(f); setWeight(w); if (textMask) void applyText(text, f, w); }} />
+            </div>
+            <label className="field">
+              <span>Weight</span>
+              <select value={weight} onChange={(e) => { const w = Number(e.target.value); setWeight(w); if (textMask) void applyText(text, family, w); }}>
+                {fontFamily(family).weights.map((w) => <option key={w} value={w}>{weightName(w)}</option>)}
+              </select>
+            </label>
+          </div>
+          <p className="muted small">The photo fills the letters. Heavy fonts (Abril Fatface, Black weights) show the most photo. Size the frame to the word.</p>
+          {textMask && <button className="link small" onClick={() => run('Remove text cut-out', (d) => updateElement(d, spreadId, el.id, { mask: undefined }))}>Remove text cut-out</button>}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---- text effects ----------------------------------------------------------------------------------
+
+export function TextEffects({ el, spreadId }: { el: TextElement; spreadId: string }) {
+  const doc = useEditor((s) => s.doc)!;
+  const { run, gesture, endGesture } = useEditor.getState();
+  const upd = (label: string, patch: Partial<TextElement>) => run(label, (d) => updateElement(d, spreadId, el.id, { ...patch, styleLinked: false }));
+  const live = (patch: (v: number) => Partial<TextElement>) => (d: BookDocument, v: number) => updateElement(d, spreadId, el.id, patch(v));
+  const shadow = el.shadow;
+  return (
+    <div className="stack">
+      <div className="field">
+        <span>Letters</span>
+        <div className="seg seg-wide">
+          <button className={!el.gradient ? 'on' : ''} onClick={() => upd('Solid text colour', { gradient: undefined })}>Solid</button>
+          <button className={el.gradient ? 'on' : ''} onClick={() => !el.gradient && upd('Gradient text', { gradient: defaultGradient(doc, el.color) })}>Gradient</button>
+        </div>
+      </div>
+      {el.gradient && <GradientFields value={el.gradient} label="Text" apply={(d, g) => updateElement(d, spreadId, el.id, { gradient: g, styleLinked: false })} />}
+
+      <label className="field">
+        <span>Curve — {el.arch ? `${Math.abs(el.arch)}% ${el.arch > 0 ? 'arch' : 'smile'}` : 'straight'}</span>
+        <input
+          type="range" min={-100} max={100} step={1} value={el.arch ?? 0} aria-label="Text curve"
+          onChange={(e) => {
+            // A stronger curve needs a taller box (the arc's rise plus a line of text).
+            const arch = Number(e.target.value) || undefined;
+            const need = ((Math.abs(arch ?? 0) / 100) * el.widthMm) / 2 + el.fontSizePt * MM_PER_PT * 1.3;
+            gesture((d) => updateElement(d, spreadId, el.id, { arch, heightMm: Math.max(el.heightMm, need) }));
+          }}
+          onPointerUp={() => endGesture('Curve text')} onKeyUp={() => endGesture('Curve text')} onDoubleClick={() => upd('Straighten text', { arch: undefined })}
+        />
+      </label>
+      {!!el.arch && <p className="muted small">Curved text is one line. Make the box wider for a gentler curve; double-click the slider to straighten.</p>}
+
+      <div className="field-row">
+        <label className="field">
+          <span>Outline</span>
+          <ColorInput value={el.strokeColor ?? '#ffffff'} label="Text outline" apply={(d, c) => updateElement(d, spreadId, el.id, { strokeColor: c, strokeWidthMm: el.strokeWidthMm || Math.max(0.3, el.fontSizePt * 0.02), styleLinked: false })} />
+        </label>
+        <NumField label="Width" value={el.strokeWidthMm ?? 0} min={0} max={10} step={0.1} suffix="mm" apply={live((v) => ({ strokeWidthMm: v || undefined }))} undoLabel="Outline width" />
+      </div>
+
+      <div className="field">
+        <span>Shadow</span>
+        <div className="seg seg-wide">
+          <button className={!shadow ? 'on' : ''} onClick={() => upd('No shadow', { shadow: undefined })}>None</button>
+          <button className={shadow ? 'on' : ''} onClick={() => !shadow && upd('Text shadow', { shadow: { color: '#000000', dxMm: Math.max(0.4, el.fontSizePt * 0.012), dyMm: Math.max(0.4, el.fontSizePt * 0.012), opacity: 0.35 } })}>Drop shadow</button>
+        </div>
+      </div>
+      {shadow && (
+        <>
+          <div className="field-row">
+            <label className="field">
+              <span>Colour</span>
+              <ColorInput value={shadow.color} label="Shadow colour" apply={(d, c) => updateElement(d, spreadId, el.id, { shadow: { ...shadow, color: c } })} />
+            </label>
+            <NumField label="Offset" value={shadow.dxMm} min={0} max={20} step={0.1} suffix="mm" apply={live((v) => ({ shadow: { ...shadow, dxMm: v, dyMm: v } }))} undoLabel="Shadow offset" />
+          </div>
+          <label className="field">
+            <span>Shadow opacity — {Math.round(shadow.opacity * 100)}%</span>
+            <input
+              type="range" min={0.05} max={1} step={0.01} value={shadow.opacity}
+              onChange={(e) => gesture((d) => updateElement(d, spreadId, el.id, { shadow: { ...shadow, opacity: Number(e.target.value) } }))}
+              onPointerUp={() => endGesture('Shadow opacity')} onKeyUp={() => endGesture('Shadow opacity')}
+            />
+          </label>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---- colour grade ----------------------------------------------------------------------------------
+
+const SWATCH: [number, number, number][] = [[214, 98, 82], [236, 196, 112], [96, 160, 120], [84, 132, 196], [230, 216, 200]];
+
+export function GradeControls() {
+  const grade = useEditor((s) => s.doc?.grade) ?? NO_GRADE;
+  const { run, gesture, endGesture } = useEditor.getState();
+  const set = (label: string, next: ColorGrade | undefined) => run(label, (d) => ({ ...d, grade: next && !isNeutralGrade(next) ? next : undefined }));
+  const slider = (key: 'brightness' | 'contrast' | 'saturation' | 'warmth' | 'fade', label: string, min = -100) => (
+    <label className="field" key={key}>
+      <span>{label} — {grade[key] > 0 ? '+' : ''}{grade[key]}</span>
+      <input
+        type="range" min={min} max={100} step={1} value={grade[key]} aria-label={label}
+        onChange={(e) => gesture((d) => ({ ...d, grade: { ...(d.grade ?? NO_GRADE), [key]: Number(e.target.value), preset: 'custom' } }))}
+        onPointerUp={() => endGesture(`Grade: ${label.toLowerCase()}`)} onKeyUp={() => endGesture(`Grade: ${label.toLowerCase()}`)}
+        onDoubleClick={() => set(`Reset ${label.toLowerCase()}`, { ...grade, [key]: 0, preset: 'custom' })}
+      />
+    </label>
+  );
+  return (
+    <div className="stack">
+      <div className="grade-presets">
+        {GRADE_PRESETS.map((p) => {
+          const g = gradeFromPreset(p.id);
+          return (
+            <button key={p.id} className={`grade-preset ${grade.preset === p.id || (p.id === 'none' && isNeutralGrade(grade)) ? 'on' : ''}`} onClick={() => set(`Grade: ${p.name}`, p.id === 'none' ? undefined : g)} title={p.name}>
+              <span className="grade-swatch">
+                {SWATCH.map((c, i) => <i key={i} style={{ background: `rgb(${gradeColor(g, c).join(',')})` }} />)}
+              </span>
+              <span className="small">{p.name}</span>
+            </button>
+          );
+        })}
+      </div>
+      {slider('brightness', 'Brightness')}
+      {slider('contrast', 'Contrast')}
+      {slider('saturation', 'Saturation')}
+      {slider('warmth', 'Warmth')}
+      {slider('fade', 'Fade', 0)}
+      <p className="muted small">Applies to every photo on the poster (and the background image), on screen and in the PDF. Text and shapes keep their colours. Double-click a slider to reset it.</p>
+    </div>
+  );
+}

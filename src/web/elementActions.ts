@@ -15,6 +15,11 @@ export function toggleKeepCrop(sel: Selection, el: Element) {
   st().run(el.keepCrop ? 'Stop keeping crop' : 'Keep crop', (d) => updateElement(d, sel.spreadId, el.id, { keepCrop: !el.keepCrop }));
 }
 
+export function toggleKeepRotation(sel: Selection, el: Element) {
+  if (el.type !== 'image') return;
+  st().run(el.keepRotation ? 'Stop keeping rotation' : 'Keep rotation', (d) => updateElement(d, sel.spreadId, el.id, { keepRotation: !el.keepRotation }));
+}
+
 export function toggleLock(sel: Selection, el: Element) {
   st().run(el.locked ? 'Unlock' : 'Lock', (d) => updateElement(d, sel.spreadId, el.id, { locked: !el.locked }));
 }

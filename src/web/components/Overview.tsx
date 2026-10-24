@@ -40,7 +40,7 @@ export function Overview() {
                 {it.chapter && <span className="overview-chapter">{it.chapter}</span>}
                 {it.surface.locked && <Icon name="lock" size={12} />}
               </div>
-              <SpreadView settings={doc.settings} style={doc.style} spreadCount={n} index={it.index} surface={it.surface} scale={scale} assets={assets} thumbSize="s" />
+              <SpreadView settings={doc.settings} style={doc.style} spreadCount={n} index={it.index} surface={it.surface} scale={scale} assets={assets} grade={doc.grade} thumbSize="s" />
             </button>
           );
         })}

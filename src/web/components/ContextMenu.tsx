@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { findSurface, useAsBackground } from '../../core';
-import { duplicate, remove, reorder, togglePin, toggleKeepCrop, toggleLock } from '../elementActions';
+import { duplicate, remove, reorder, togglePin, toggleKeepCrop, toggleKeepRotation, toggleLock } from '../elementActions';
 import { useEditor, type Selection } from '../store';
 import { Icon } from './Icon';
 
@@ -76,6 +76,7 @@ export function ContextMenu({ target, onClose, onEditText }: { target: MenuTarge
         <>
           <MenuItem icon="pin" label={el.pinned ? 'Unpin' : 'Pin in place'} hint="P" checked={!!el.pinned} onClick={go(() => togglePin(sel, el))} />
           <MenuItem icon="crop" label="Keep crop when arranging" checked={!!el.keepCrop && !el.pinned} disabled={el.pinned || !photo} onClick={go(() => toggleKeepCrop(sel, el))} />
+          <MenuItem icon="rotate" label="Keep rotation when arranging" checked={!!el.keepRotation && !el.pinned} disabled={el.pinned || !photo} onClick={go(() => toggleKeepRotation(sel, el))} />
           {photo && <MenuItem icon="image" label="Use as sheet background" onClick={go(() => makeBackground())} />}
           <div className="ctx-sep" />
         </>
