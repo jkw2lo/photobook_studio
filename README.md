@@ -30,7 +30,7 @@ This writes 21 synthetic trip photos to `fixtures/generated/trip`: mixed orienta
 
 1. **New book** → choose a printer (Lulu, Blurb, or custom), binding, size and style.
 2. **Import** a folder. Originals are referenced in place, never copied or modified. Thumbnails, quality analysis and near-duplicate fingerprints are computed in the background.
-3. **Auto draft** → choose the page count and style. The generator picks the best frame of each burst, skips duplicates and hidden photos, always keeps favourites (★), sequences chronologically with day chapters, puts true panoramas across spreads (keeping the subject out of the fold), and gives low-resolution photos small frames.
+3. **Auto draft** (the Draft tab in the side panel, beside the pages) → choose the page count and style, then **Regenerate** or **Another variation** while you look at the result; you stay on the spread you're viewing, and every regenerate is one undo step. Variations explore layouts widely, so each one changes most spreads even with few photos. The generator picks the best frame of each burst, skips duplicates and hidden photos, always keeps favourites (★), sequences chronologically with day chapters, puts true panoramas across spreads (keeping the subject out of the fold), and gives low-resolution photos small frames.
 4. **Edit:**
    - drag, resize (Shift keeps the ratio) and rotate (Shift snaps to 15°) photos, with snapping to margins, centre lines and other photos (hold Alt to turn snapping off);
    - double-click a photo to crop it (drag to pan, scroll to zoom), or double-click text to edit it;
@@ -54,7 +54,7 @@ Choose **Poster / collage** in New book: 11 × 14 up to 24 × 36 in, A3–A1 and
 | Hero + mosaic | One standout photo — chosen to be sharp enough at that size — with the rest as a mosaic |
 | Pinboard | Tilted, overlapping prints with white borders |
 
-Spacing, border (edge-to-edge into the bleed, or a margin), title position and background are set from the Poster panel, which re-flows the photos already on the sheet. Posters warn below 150 DPI (they're seen from further away than book pages). Export is one verified PDF with bleed.
+Auto collage lives in the Poster side panel, next to the sheet, so every change is visible as you make it: drag the photo-count slider and the collage updates live; **Best photos** re-picks the strongest set in time order; **Shuffle** brings in a different strong selection (when there are more photos than fit) in a new arrangement. Each is one undo step. Spacing, border (edge-to-edge into the bleed, or a margin), title position and background re-flow the photos already on the sheet. Posters warn below 150 DPI (they're seen from further away than book pages). Export is one verified PDF with bleed.
 
 For books, the **Collage** style builds every multi-photo page as a mosaic, and any page can be switched to **Mosaic** from the layout picker.
 

@@ -3,7 +3,8 @@ import { SCHEMA_VERSION } from './model';
 import { blankSpread, defaultSettings } from './book';
 import { layoutCollage, titleBand, type CollageStyle } from './collage';
 import { aspectOf, chronological, dateRangeOf } from './curation';
-import { curatePool, selectWithCoverage } from './generator';
+import { curatePool, selectWithCoverage, type CuratedPool } from './generator';
+import { mulberry32 } from './random';
 import { coverDpi } from './layout';
 import { newId } from './random';
 import { styleFromPreset } from './styles';
@@ -112,8 +113,18 @@ export function layoutPoster(doc: BookDocument, photos: PhotoAsset[], settings: 
 }
 
 /** Automatic poster: curate, pick `photoCount` photos for coverage and quality, lay out. */
-export function generatePoster(doc: BookDocument, assets: PhotoAsset[], settings: CollageSettings): { doc: BookDocument; report: PosterReport } {
-  const { reps, alternates, scores, excluded, exactDuplicates } = curatePool(assets);
+export function generatePoster(
+  doc: BookDocument,
+  assets: PhotoAsset[],
+  settings: CollageSettings,
+  /** Pass a precomputed pool when regenerating repeatedly (e.g. while dragging the photo count). */
+  curated: CuratedPool = curatePool(assets),
+): { doc: BookDocument; report: PosterReport } {
+  const { reps, alternates, excluded, exactDuplicates } = curated;
+  // Seed 1 picks the strongest photos; other seeds nudge scores so "Shuffle photos" brings in a
+  // different — still good — selection. Favourites are always kept regardless.
+  const rng = mulberry32(settings.seed * 7919);
+  const scores = new Map([...curated.scores].map(([id, sc]) => [id, settings.seed === 1 ? sc : { ...sc, total: sc.total + (rng() - 0.5) * 0.4 }]));
   const score = (a: PhotoAsset) => scores.get(a.id)?.total ?? 0;
   const notes: string[] = [];
   let candidates = reps;
@@ -136,6 +147,9 @@ export function generatePoster(doc: BookDocument, assets: PhotoAsset[], settings
     }
     heroPick = best ?? heroPick;
   }
+  // Seed 1 tells the story in time order; shuffles also rearrange, so even when every photo is
+  // already on the sheet a shuffle gives a visibly different collage.
+  if (settings.seed !== 1) chosen = chosen.map((a) => ({ a, k: rng() })).sort((x, y) => x.k - y.k).map((x) => x.a);
   const { elements, used } = layoutPoster(doc, chosen, settings, heroPick);
   if (used.length < chosen.length) notes.push(`The grid uses ${used.length} of ${chosen.length} photos to keep every row complete.`);
   const sheet = doc.spreads[0];
@@ -157,8 +171,9 @@ export function relayoutPoster(doc: BookDocument, assets: Map<string, PhotoAsset
     .filter((e): e is ImageElement => e.type === 'image' && !!e.assetId)
     .map((e) => assets.get(e.assetId!))
     .filter((a): a is PhotoAsset => !!a);
-  // Original order (chronological) rather than the shuffled pinboard order.
-  const photos = chronological([...new Set(current)]);
+  // Time order for the default arrangement; after a shuffle, keep the shuffled order.
+  const unique = [...new Set(current)];
+  const photos = settings.seed === 1 ? chronological(unique) : unique;
   const { elements } = layoutPoster(doc, photos, settings, pickHero(doc, photos, settings.marginMm));
   return { ...doc, collage: settings, spreads: [{ ...sheet, layout: { spread: `collage-${settings.style}` }, elements }] };
 }

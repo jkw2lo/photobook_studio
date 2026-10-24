@@ -113,6 +113,19 @@ describe('posters', () => {
     expect(preflight(doc, assets).filter((i) => i.code === 'low-dpi')).toEqual([]);
   });
 
+  it('a different seed shuffles in other photos but keeps favourites', () => {
+    const assets = Array.from({ length: 80 }, (_, i) => fakeAsset({ favorite: i === 5 }));
+    const settings = { style: 'mosaic' as const, photoCount: 25, gapMm: 2, marginMm: 12, titlePosition: 'none' as const, seed: 1 };
+    const base = generatePoster(createPoster({ title: 'X', sizeId: 'p16x20' }), assets, settings).doc;
+    const again = generatePoster(createPoster({ title: 'X', sizeId: 'p16x20' }), assets, settings).doc;
+    const shuffled = generatePoster(createPoster({ title: 'X', sizeId: 'p16x20' }), assets, { ...settings, seed: 2 }).doc;
+    const ids = (d: typeof base) => new Set(imgs(d.spreads[0].elements).map((f) => f.assetId));
+    expect(ids(again)).toEqual(ids(base));
+    const overlap = [...ids(shuffled)].filter((id) => ids(base).has(id)).length;
+    expect(overlap).toBeLessThan(25);
+    expect(ids(shuffled).has(assets[5].id)).toBe(true);
+  });
+
   it('uses 150 DPI as the poster warning threshold', () => {
     const p = createPoster({ title: 'X', sizeId: 'p24x36' });
     expect(p.settings.minDpiWarning).toBe(150);

@@ -3,21 +3,40 @@ import { duplicateElement, issueCounts, removeElements, updateElement } from '..
 import { retrySave, selectedElement, useEditor } from '../store';
 import { Canvas } from './Canvas';
 import { ExportDialog } from './ExportDialog';
-import { GenerateDialog } from './GenerateDialog';
 import { Icon } from './Icon';
 import { Inspector } from './Inspector';
 import { Library } from './Library';
 import { Navigator } from './Navigator';
 import { Overview } from './Overview';
 import { usePreflight } from './PreflightPanel';
-import { PosterDialog } from './PosterUI';
+import { generateFirstCollage } from './PosterUI';
+import { generateFirstDraft } from './DraftPanel';
+
+/** Books: Auto draft lives in the side panel's Draft tab; an empty book is drafted right away. */
+function focusAutoDraft() {
+  const st = useEditor.getState();
+  st.select(null);
+  if (st.doc && st.doc.spreads.every((s) => s.elements.length === 0)) generateFirstDraft(st.assets);
+  useEditor.setState({ draftFocus: st.draftFocus + 1 });
+}
+
+/**
+ * Posters: Auto collage lives in the side panel next to the sheet. This shows that panel, and fills
+ * an empty sheet right away so there is a result to look at and refine.
+ */
+function focusAutoCollage() {
+  const st = useEditor.getState();
+  st.select(null);
+  if (st.doc && !st.doc.spreads[0]?.elements.some((e) => e.type === 'image')) generateFirstCollage(st.assets);
+  useEditor.setState({ collageFocus: st.collageFocus + 1 });
+}
 
 export function Editor({ projectId }: { projectId: string }) {
   // Narrow selectors: the editor shell must not re-render (and re-render every panel) on each drag step.
   const loaded = useEditor((s) => !!s.doc);
   const loadError = useEditor((s) => s.loadError);
   const view = useEditor((s) => s.view);
-  const [dialog, setDialog] = useState<'generate' | 'export' | null>(null);
+  const [dialog, setDialog] = useState<'export' | null>(null);
   const issues = usePreflight();
   const counts = issueCounts(issues);
   const assetsCount = useEditor((s) => s.assets.length);
@@ -47,7 +66,7 @@ export function Editor({ projectId }: { projectId: string }) {
 
   return (
     <div className="editor">
-      <TopBar onGenerate={() => setDialog('generate')} onExport={() => setDialog('export')} />
+      <TopBar onGenerate={poster ? focusAutoCollage : focusAutoDraft} onExport={() => setDialog('export')} />
       <div className="workspace">
         <Library />
         <main className="stage">
@@ -61,7 +80,7 @@ export function Editor({ projectId }: { projectId: string }) {
                   : 'Use Import in the library. Photos never leave this computer.'}
               </p>
               {assetsCount > 0 && (
-                <button className="btn btn-primary" onClick={() => setDialog('generate')}>
+                <button className="btn btn-primary" onClick={poster ? focusAutoCollage : focusAutoDraft}>
                   <Icon name="sparkle" /> {poster ? 'Generate collage' : 'Generate first draft'}
                 </button>
               )}
@@ -69,10 +88,9 @@ export function Editor({ projectId }: { projectId: string }) {
           )}
           {!poster && <Navigator />}
         </main>
-        <Inspector issueCount={counts} onAutoCollage={() => setDialog('generate')} />
+        <Inspector issueCount={counts} />
       </div>
       <Toasts />
-      {dialog === 'generate' && (poster ? <PosterDialog onClose={() => setDialog(null)} /> : <GenerateDialog onClose={() => setDialog(null)} />)}
       {dialog === 'export' && <ExportDialog onClose={() => setDialog(null)} />}
     </div>
   );

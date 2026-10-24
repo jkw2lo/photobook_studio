@@ -94,6 +94,17 @@ describe('draft generation', () => {
     }
   });
 
+  it('every “Another variation” visibly changes the book, even with few photos (regression)', () => {
+    const assets = Array.from({ length: 21 }, (_, i) => fakeAsset({ day: 1 + Math.floor(i / 7) }));
+    const book = createBook({ title: 'T', printerId: 'lulu', bindingId: 'hardcover', sizeId: 'lulu-sq85', pages: 24 });
+    const sig = (seed: number) => generateDraft(book, assets, { ...settingsFor(24), seed }).doc.spreads.map((s) => JSON.stringify(s.elements.map((e) => [e.type, Math.round(e.xMm), Math.round(e.widthMm), e.type === 'image' ? e.assetId : ''])));
+    const base = sig(1);
+    for (const seed of [2, 3, 4, 5]) {
+      const v = sig(seed);
+      expect(base.filter((x, i) => x !== v[i]).length, `seed ${seed}`).toBeGreaterThanOrEqual(4);
+    }
+  });
+
   it('is deterministic for the same seed', () => {
     const assets = Array.from({ length: 30 }, () => fakeAsset());
     const book = createBook({ title: 'Trip' });

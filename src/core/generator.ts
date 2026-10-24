@@ -152,7 +152,9 @@ export function generateDraft(doc: BookDocument, assets: PhotoAsset[], settings:
     if (u.kind === 'pair' && !u.hero) pageSides.push({ unit: u, side: 'left' }, { unit: u, side: 'right' });
     if (u.kind === 'page') pageSides.push({ unit: u, side: u.side });
   }
-  const counts = distributeCounts(flow.length, pageSides.length, preset.maxPerPage, rng);
+  // Seed 1 is the considered "best" draft; other seeds explore layouts much more widely.
+  const explore = settings.seed !== 1;
+  const counts = distributeCounts(flow.length, pageSides.length, preset.maxPerPage, rng, explore);
   const dividerPages = counts.filter((c) => c === 0).length;
   if (dividerPages) notes.push(`Not enough photos for every page: added ${dividerPages} chapter/title page${dividerPages > 1 ? 's' : ''}.`);
 
@@ -209,7 +211,7 @@ export function generateDraft(doc: BookDocument, assets: PhotoAsset[], settings:
           prevTemplate = MOSAIC_LAYOUT;
           continue;
         }
-        const t = chooseTemplate(preset, photos, [prevTemplate, layout.left ?? ''], rng, base, side);
+        const t = chooseTemplate(preset, photos, [prevTemplate, layout.left ?? ''], rng, base, side, explore ? 1.4 : 0.5);
         elements.push(...layoutPage(base, t, side, photos, { caption: caption(photos) }));
         used.push(...photos);
         layout[side] = t.id;
@@ -375,12 +377,17 @@ function placeHeroes(pairs: Extract<Unit, { kind: 'pair' }>[], heroes: PhotoAsse
   }
 }
 
-export function distributeCounts(total: number, n: number, maxPer: number, rng: Rng): number[] {
+export function distributeCounts(total: number, n: number, maxPer: number, rng: Rng, explore = false): number[] {
   if (n <= 0) return [];
   if (total <= n) {
     const counts = Array<number>(n).fill(1);
     const zeros = n - total;
-    for (let k = 0; k < zeros; k++) counts[Math.floor(((k + 0.5) * n) / zeros)] = 0;
+    for (let k = 0; k < zeros; k++) {
+      // Variations move the text-only pages around instead of always spacing them evenly.
+      const jitter = explore ? (rng() - 0.5) * 0.9 : 0;
+      const i = Math.min(n - 1, Math.max(0, Math.floor(((k + 0.5 + jitter) * n) / zeros)));
+      counts[counts[i] === 0 ? (i + 1) % n : i] = 0;
+    }
     return counts;
   }
   const baseCount = Math.floor(total / n);
@@ -388,7 +395,7 @@ export function distributeCounts(total: number, n: number, maxPer: number, rng: 
   const counts = Array.from({ length: n }, (_, i) => baseCount + (Math.floor(((i + 1) * extra) / n) - Math.floor((i * extra) / n)));
   // Variety: break up runs of identical density without changing the total.
   for (let i = 0; i < n - 1; i++) {
-    if (counts[i] !== counts[i + 1] || rng() > 0.55) continue;
+    if (counts[i] !== counts[i + 1] || rng() > (explore ? 0.8 : 0.55)) continue;
     const [lo, hi] = rng() < 0.5 ? [i, i + 1] : [i + 1, i];
     if (counts[lo] > 1 && counts[hi] < maxPer) {
       counts[lo]--;

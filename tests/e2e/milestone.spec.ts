@@ -22,10 +22,17 @@ test('import, draft, edit, reopen and export a book', async ({ page }) => {
   await expect(page.locator('.library .tile')).toHaveCount(21);
 
   // Automatic draft
+  // Auto draft fills the book straight away; its controls are in the side panel, next to the pages.
   await page.getByRole('button', { name: 'Generate first draft' }).click();
-  await page.getByRole('button', { name: 'Generate', exact: true }).click();
-  await expect(page.locator('.report')).toContainText('24 pages');
-  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.locator('.auto-collage')).toContainText('24 pages');
+  await expect(page.locator('.modal')).toHaveCount(0);
+  // The whole book as the filmstrip shows it: photos and frame geometry on every spread.
+  const spreadPhotos = () => page.locator('.navigator .el').evaluateAll((els) => els.map((e) => `${e.querySelector('img')?.getAttribute('src') ?? ''}@${(e as HTMLElement).style.left},${(e as HTMLElement).style.width}`).join('|'));
+  const firstDraft = await spreadPhotos();
+  await page.locator('.auto-collage').getByRole('button', { name: 'Another variation' }).click();
+  await expect.poll(spreadPhotos).not.toBe(firstDraft);
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(spreadPhotos).toBe(firstDraft);
   await expect(page.locator('.save')).toHaveText('Saved');
 
   // Manual edit: move the right-page photo on the first spread by dragging it.
@@ -87,12 +94,17 @@ test('make a collage poster: import, auto collage, switch style, export', async 
   await page.getByRole('button', { name: 'Import this folder' }).click();
   await expect(page.getByText(/Imported 21 photos|already in library/)).toBeVisible({ timeout: 60_000 });
 
+  // Auto collage fills the sheet immediately and its controls sit in the side panel, beside the result.
   await page.getByRole('button', { name: 'Generate collage' }).click();
-  await page.locator('.modal').getByRole('button', { name: 'Generate', exact: true }).click();
-  await expect(page.locator('.report')).toContainText('photos placed');
-  await page.getByRole('button', { name: 'Done' }).click();
   const frames = page.locator('.canvas .el-image');
-  expect(await frames.count()).toBeGreaterThan(10);
+  await expect.poll(() => frames.count()).toBeGreaterThan(10);
+  await expect(page.locator('.modal')).toHaveCount(0);
+  // Order on the sheet (a shuffle changes the selection and/or the arrangement).
+  const photoIds = () => frames.evaluateAll((els) => els.map((e) => e.querySelector('img')?.getAttribute('src') ?? '').join('|'));
+  const before = await photoIds();
+  await page.locator('.auto-collage').getByRole('button', { name: 'Shuffle' }).click();
+  await expect.poll(photoIds).not.toBe(before);
+  await expect(page.locator('.auto-collage')).toContainText('placed from');
 
   // Re-flow as a pinboard from the side panel: same photos, tilted prints.
   await page.locator('.inspector .collage-style', { hasText: 'Pinboard' }).click();

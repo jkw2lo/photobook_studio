@@ -148,6 +148,8 @@ export function chooseTemplate(
   rng: Rng,
   doc: Pick<BookDocument, 'settings' | 'style'>,
   side: PageSide,
+  /** 0.5 = mild randomness (the default "best" draft); larger values explore more for variations. */
+  explore = 0.5,
 ): LayoutTemplate {
   let candidates = pageTemplatesFor(photos.length).filter((t) => (preset.templateWeights[t.id] ?? 0) > 0);
   if (!candidates.length) candidates = pageTemplatesFor(photos.length);
@@ -160,7 +162,7 @@ export function chooseTemplate(
     const { cost } = bestAssignment(slots.map((r) => r.rect), photos, minDpiFor(doc));
     const fit = Math.exp(-2.2 * cost);
     const repeat = avoid.includes(t.id) ? 0.3 : 1;
-    const score = weight * fit * repeat * (0.75 + 0.5 * rng());
+    const score = weight * fit * repeat * (1 - explore / 2 + explore * rng());
     if (score > bestScore) {
       bestScore = score;
       best = t;

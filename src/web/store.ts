@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { CommandError, findSurface, reconcileCover, type BookDocument, type PhotoAsset } from '../core';
+import { CommandError, findSurface, reconcileCover, type BookDocument, type DraftReport, type PhotoAsset } from '../core';
 import { api, ApiError, type ImportJob } from './api';
 
 // Editor state. The document is immutable; every committed edit pushes the previous document onto
@@ -47,6 +47,12 @@ interface EditorState {
   saveError: string | null;
   lastSavedAt: number | null;
   importJob: ImportJob | null;
+  /** Bumped to bring the poster's Auto collage controls into view. */
+  collageFocus: number;
+  /** Bumped to open the book's Draft tab. */
+  draftFocus: number;
+  /** Result of the last book draft, shown in the Draft tab. */
+  draftReport: DraftReport | null;
   toasts: Toast[];
   loadError: string | null;
 
@@ -96,6 +102,9 @@ export const useEditor = create<EditorState>((set, get) => ({
   saveError: null,
   lastSavedAt: null,
   importJob: null,
+  collageFocus: 0,
+  draftFocus: 0,
+  draftReport: null,
   toasts: [],
   loadError: null,
 
@@ -113,7 +122,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   unload() {
-    set({ projectId: null, doc: null, assets: [], assetMap: new Map(), past: [], future: [], importJob: null });
+    set({ projectId: null, doc: null, assets: [], assetMap: new Map(), past: [], future: [], importJob: null, draftReport: null });
   },
 
   run(label, fn) {

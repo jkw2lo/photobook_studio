@@ -12,18 +12,31 @@ import { BookPanel } from './BookPanel';
 import { CoverPanel } from './CoverPanel';
 import { FontPicker } from './FontPicker';
 import { PosterPanel } from './PosterUI';
+import { DraftPanel } from './DraftPanel';
 import { AddTextMenu } from './TypePanel';
 import { Icon } from './Icon';
 import { PreflightPanel } from './PreflightPanel';
 import { TemplatePicker } from './TemplatePicker';
 
-type Tab = 'edit' | 'book' | 'preflight';
+type Tab = 'edit' | 'draft' | 'book' | 'preflight';
 
-export function Inspector({ issueCount, onAutoCollage }: { issueCount: { error: number; warning: number }; onAutoCollage: () => void }) {
+export function Inspector({ issueCount }: { issueCount: { error: number; warning: number } }) {
   const [tab, setTab] = useState<Tab>('edit');
   const selected = useEditor(selectedElement);
   const onCover = useEditor((s) => s.currentSpread === COVER_INDEX);
   const poster = useEditor((s) => s.doc?.settings.product === 'poster');
+  const collageFocus = useEditor((s) => s.collageFocus);
+  const draftFocus = useEditor((s) => s.draftFocus);
+  useEffect(() => {
+    if (collageFocus) setTab('edit');
+  }, [collageFocus]);
+  useEffect(() => {
+    if (draftFocus) setTab('draft');
+  }, [draftFocus]);
+  // Posters have no Draft tab (Auto collage lives in the Poster panel).
+  useEffect(() => {
+    if (poster && tab === 'draft') setTab('edit');
+  }, [poster, tab]);
   useEffect(() => {
     if (selected) setTab('edit');
   }, [selected?.id]);
@@ -31,6 +44,7 @@ export function Inspector({ issueCount, onAutoCollage }: { issueCount: { error: 
     <aside className="inspector">
       <div className="tabs">
         <button className={tab === 'edit' ? 'on' : ''} onClick={() => setTab('edit')}>{selected ? ({ image: 'Photo', text: 'Text', shape: 'Shape' } as const)[selected.type] : poster ? 'Poster' : onCover ? 'Cover' : 'Spread'}</button>
+        {!poster && <button className={tab === 'draft' ? 'on' : ''} onClick={() => setTab('draft')}>Draft</button>}
         <button className={tab === 'book' ? 'on' : ''} onClick={() => setTab('book')}>{poster ? 'Print' : 'Book'}</button>
         <button className={tab === 'preflight' ? 'on' : ''} onClick={() => setTab('preflight')}>
           Preflight
@@ -38,7 +52,8 @@ export function Inspector({ issueCount, onAutoCollage }: { issueCount: { error: 
         </button>
       </div>
       <div className="inspector-body">
-        {tab === 'edit' && (selected ? <ElementPanel /> : poster ? <PosterPanel onAutoCollage={onAutoCollage} /> : onCover ? <CoverPanel /> : <SpreadPanel />)}
+        {tab === 'edit' && (selected ? <ElementPanel /> : poster ? <PosterPanel /> : onCover ? <CoverPanel /> : <SpreadPanel />)}
+        {tab === 'draft' && <DraftPanel />}
         {tab === 'book' && <BookPanel />}
         {tab === 'preflight' && <PreflightPanel />}
       </div>
