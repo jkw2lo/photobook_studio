@@ -4,7 +4,7 @@ Honest list of what this version does not do, or does only partly.
 
 ## Platform
 - **macOS only for HEIC.** HEIC is converted with `/usr/bin/sips`; other platforms would need libheif with HEVC support.
-- **Not a packaged desktop app yet.** It runs as a local server plus a browser tab. Tauri was deferred because Rust is not installed; core logic is shell-independent so this can be added.
+- **The Mac app is a launcher, not a packaged app.** `Photobook Studio.app` starts the local server from this project folder and opens the editor in your browser; it needs Node.js and this folder (rebuild it with `npm run launcher` if the folder moves). A self-contained Tauri app is still possible later; core logic is shell-independent.
 
 ## Print
 - **Blurb cover numbers are estimates.** Blurb publishes no spine formula or ImageWrap dimensions; the preset starts from an estimate and preflight warns until you enter the values from Blurb's Specification Calculator.

@@ -4,6 +4,16 @@ A local-first photobook editor: import a folder of photos, get an automatic firs
 
 ## Run it
 
+**The easy way:** open **Photobook Studio** from your Applications folder (`~/Applications`), Launchpad or Spotlight.
+
+- It starts the app, clears out any leftover Photobook server, rebuilds the editor if the code changed, and opens the editor in your browser.
+- Click its Dock icon to reopen the editor; **quit it** (⌘Q or Dock → Quit) to stop the server.
+- If something goes wrong it says what, and the details are in `data/launcher.log`.
+
+Build or update the app with `npm run launcher` (it points at this folder, so run it again if you move the project). Use either the app or `npm run dev`, not both at once: they share the same port.
+
+### From the terminal
+
 Requires macOS (HEIC import uses the built-in `sips`) and Node 22.13+ (uses built-in `node:sqlite`).
 
 ```bash
