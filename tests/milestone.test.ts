@@ -12,6 +12,7 @@ import {
   type BookDocument, type ImageElement, type PhotoAsset,
 } from '../src/core';
 import { createApp } from '../src/server/app';
+import { Store } from '../src/server/db';
 
 const FIXTURES = join(process.cwd(), 'fixtures', 'generated', 'trip');
 let dataDir: string;
@@ -119,6 +120,18 @@ describe('milestone 1: import → draft → edit → reopen → export', () => {
     const thumb = await fetch(`${base}/api/assets/${assets[0].id}/thumb?size=s`);
     expect(thumb.status).toBe(200);
     expect(thumb.headers.get('content-type')).toContain('image/jpeg');
+  });
+
+  it('records colour features at import, and fills them in for older photos (backfill)', async () => {
+    expect(assets.every((a) => a.analysis?.colorGrid?.length === 27 && a.analysis.avgColor)).toBe(true);
+    // Simulate a photo imported before colour analysis existed.
+    const db = new Store(dataDir);
+    const victim = assets[0];
+    const { colorGrid, avgColor, ...older } = victim.analysis!;
+    db.updateAnalysis(victim.id, older);
+    db.close();
+    const after = (await api<PhotoAsset[]>('GET', `/api/projects/${projectId}/assets`)).body.find((a) => a.id === victim.id)!;
+    expect(after.analysis?.colorGrid).toHaveLength(27);
   });
 
   it('re-importing the same folder adds nothing new', async () => {

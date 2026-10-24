@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  COLLAGE_STYLES, containsRect, createBook, createPoster, elementBounds, generateDraft, generatePoster, layoutCollage,
-  mosaicRows, posterGeometry, preflight, printablePages, relayoutPoster, MOSAIC_LAYOUT, type ImageElement, type PhotoAsset,
+  COLLAGE_STYLES, addTextAt, updateElement, containsRect, createBook, createPoster, elementBounds, generateDraft, generatePoster, layoutCollage,
+  mosaicRows, orderPhotos, posterGeometry, preflight, printablePages, relayoutPoster, MOSAIC_LAYOUT, type ImageElement, type PhotoAsset,
 } from '../src/core';
 import { fakeAsset, resetFakeAssets } from './helpers';
 
@@ -126,6 +126,37 @@ describe('posters', () => {
     expect(ids(shuffled).has(assets[5].id)).toBe(true);
   });
 
+  it('shuffling a hero poster features different photos (regression)', () => {
+    const assets = Array.from({ length: 40 }, (_, i) => fakeAsset({ widthPx: 6000, heightPx: 4000, minute: i * 30 }));
+    let doc = createPoster({ title: 'X', sizeId: 'p18x24' });
+    const heroes = new Set<string>();
+    let prev = '';
+    for (let seed = 1; seed <= 6; seed++) {
+      doc = generatePoster(doc, assets, { style: 'hero', photoCount: 15, gapMm: 3, marginMm: 15, titlePosition: 'none', seed }).doc;
+      const hero = imgs(doc.spreads[0].elements).sort((a, b) => b.widthMm * b.heightMm - a.widthMm * a.heightMm)[0].assetId!;
+      if (seed > 1) expect(hero, `seed ${seed} repeated the previous hero`).not.toBe(prev);
+      heroes.add(hero);
+      prev = hero;
+    }
+    expect(heroes.size).toBeGreaterThanOrEqual(4);
+  });
+
+  it('keeps text the user added, and their title wording, through re-flows and regenerates', () => {
+    const assets = Array.from({ length: 30 }, () => fakeAsset());
+    const settings = { style: 'mosaic' as const, photoCount: 20, gapMm: 2, marginMm: 12, titlePosition: 'bottom' as const, seed: 1 };
+    let doc = generatePoster(createPoster({ title: 'Summer', sizeId: 'p16x20' }), assets, settings).doc;
+    const sheetId = doc.spreads[0].id;
+    doc = addTextAt(doc, sheetId, 100, 100, 'Our first trip', 'quote').doc;
+    const title = doc.spreads[0].elements.find((e) => e.type === 'text' && e.role === 'title')!;
+    doc = updateElement(doc, sheetId, title.id, { text: 'Summer ’26' });
+    doc = relayoutPoster(doc, assetMap(assets), { ...settings, style: 'grid' });
+    doc = generatePoster(doc, assets, { ...settings, seed: 3 }).doc;
+    const texts = doc.spreads[0].elements.filter((e) => e.type === 'text').map((e) => (e as { text: string }).text);
+    expect(texts).toContain('Our first trip');
+    expect(texts).toContain('Summer ’26');
+    expect(texts.filter((t) => t === 'Summer ’26')).toHaveLength(1);
+  });
+
   it('uses 150 DPI as the poster warning threshold', () => {
     const p = createPoster({ title: 'X', sizeId: 'p24x36' });
     expect(p.settings.minDpiWarning).toBe(150);
@@ -142,5 +173,41 @@ describe('collage book style', () => {
     expect(mosaics.length).toBeGreaterThan(8);
     const problems = preflight(doc, assetMap(assets)).filter((i) => ['bleed-gap', 'off-page', 'inside-cover'].includes(i.code));
     expect(problems).toEqual([]);
+  });
+});
+
+describe('arranging by look', () => {
+  const tinted = (rgb: [number, number, number], i: number) =>
+    fakeAsset({ minute: i * 10, analysis: { sharpness: 300, meanLuma: 0.5, clippedShadows: 0, clippedHighlights: 0, dHash: (i * 7919).toString(16).padStart(16, '0').slice(0, 16), saliencyX: 0.5, saliencyY: 0.5, avgColor: rgb, colorGrid: Array.from({ length: 9 }, () => rgb).flat() } });
+
+  it('“Similar look” puts look-alike photos next to each other', () => {
+    // Interleaved in time: blue, orange, blue, orange…
+    const photos = Array.from({ length: 12 }, (_, i) => tinted(i % 2 ? [230, 140, 40] : [40, 90, 210], i));
+    const ordered = orderPhotos(photos, 'similar');
+    const isBlue = (p: PhotoAsset) => p.analysis!.avgColor![2] > 150;
+    // Only one switch between the two groups.
+    let switches = 0;
+    for (let i = 1; i < ordered.length; i++) if (isBlue(ordered[i]) !== isBlue(ordered[i - 1])) switches++;
+    expect(switches).toBe(1);
+    expect(new Set(ordered)).toEqual(new Set(photos));
+  });
+
+  it('“Colour” runs through the hues, with muted photos last', () => {
+    const red = tinted([220, 40, 40], 0);
+    const green = tinted([40, 200, 60], 1);
+    const blue = tinted([40, 60, 220], 2);
+    const grey = tinted([128, 128, 128], 3);
+    expect(orderPhotos([grey, blue, green, red], 'color')).toEqual([red, green, blue, grey]);
+  });
+
+  it('a poster arranged by look keeps the same photos and stays tidy', () => {
+    const photos = Array.from({ length: 24 }, (_, i) => tinted(i % 3 === 0 ? [40, 90, 210] : i % 3 === 1 ? [230, 140, 40] : [60, 170, 80], i));
+    const settings = { style: 'mosaic' as const, photoCount: 24, gapMm: 2, marginMm: 12, titlePosition: 'none' as const, seed: 1 };
+    const byTime = generatePoster(createPoster({ title: 'X', sizeId: 'p16x20' }), photos, settings).doc;
+    const byLook = relayoutPoster(byTime, assetMap(photos), { ...settings, order: 'similar' });
+    const ids = (d: typeof byTime) => imgs(d.spreads[0].elements).map((f) => f.assetId);
+    expect(new Set(ids(byLook))).toEqual(new Set(ids(byTime)));
+    expect(ids(byLook)).not.toEqual(ids(byTime));
+    expect(preflight(byLook, assetMap(photos)).filter((i) => i.severity === 'error')).toEqual([]);
   });
 });

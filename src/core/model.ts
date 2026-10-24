@@ -50,6 +50,8 @@ export interface CollageSettings {
   marginMm: number;
   titlePosition: 'none' | 'top' | 'bottom';
   seed: number;
+  /** How photos are ordered on the sheet. Missing = 'time'. */
+  order?: 'time' | 'similar' | 'color';
 }
 
 export type PrinterId = 'lulu' | 'blurb' | 'custom';
@@ -177,7 +179,9 @@ export interface Spread {
   chapterId?: ID;
   background?: string;
   layout?: SpreadLayout;
-  provenance?: { generatedAt: string; seed: number; assetIds: ID[] };
+  /** Where an auto layout came from. `generatedIds`: elements the generator made besides photos
+   * (e.g. a collage title band) — replaced on re-layout, unlike text the user added. */
+  provenance?: { generatedAt: string; seed: number; assetIds: ID[]; generatedIds?: ID[] };
   /** Painted in array order: later elements are on top. */
   elements: Element[];
 }
@@ -236,6 +240,10 @@ export interface PhotoAnalysis {
   /** Edge-energy centre of mass, normalized 0..1 — a cheap stand-in for "where the subject is". */
   saliencyX: number;
   saliencyY: number;
+  /** Mean colour (sRGB 0–255). Photos imported before colour analysis get it on next library load. */
+  avgColor?: [number, number, number];
+  /** 3 × 3 grid of mean colours (27 numbers, row-major RGB): palette plus rough composition. */
+  colorGrid?: number[];
 }
 
 export interface PhotoAsset {

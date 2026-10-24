@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  STYLE_PRESETS, TEMPLATES, applyTemplate, containsRect, createBook, effectiveDpi, elementBounds, generateDraft,
+  STYLE_PRESETS, TEMPLATES, applyTemplate, panCrop, zoomCropAt, containsRect, createBook, effectiveDpi, elementBounds, generateDraft,
   imagePlacement, migrateDocument, pageBleedRect, pageContentRect, preflight, printablePages, resolveTemplate,
   setSpreadLocked, shuffleSpreadLayout, spreadBleedRect, updateElement, visibleRegion, type BookDocument,
   type ImageElement, type PhotoAsset,
@@ -270,5 +270,27 @@ describe('architecture boundaries', () => {
       const urls = src.match(/https?:\/\/[^\s'"`)]+/g) ?? [];
       expect(urls.filter((u) => !/^https?:\/\/(127\.0\.0\.1|localhost)/.test(u)), f).toEqual([]);
     }
+  });
+});
+
+describe('crop editing', () => {
+  const box = { w: 100, h: 80 };
+  const img = { w: 4000, h: 3000 };
+  it('zooming keeps the point under the cursor fixed', () => {
+    const crop = { cx: 0.5, cy: 0.5, zoom: 1.5 };
+    const at = { x: 30, y: 20 };
+    const before = imagePlacement(box, img, crop, 'cover');
+    const u = (at.x - before.x) / before.w;
+    const next = zoomCropAt(box, img, crop, 'cover', 1.4, at);
+    const after = imagePlacement(box, img, next, 'cover');
+    expect(next.zoom).toBeCloseTo(2.1, 6);
+    expect((at.x - after.x) / after.w).toBeCloseTo(u, 6);
+  });
+  it('never zooms out past filling the frame, and panning is clamped', () => {
+    const z = zoomCropAt(box, img, { cx: 0.5, cy: 0.5, zoom: 1.2 }, 'cover', 0.2, { x: 50, y: 40 });
+    expect(z.zoom).toBe(1);
+    const p = panCrop(box, img, { cx: 0.5, cy: 0.5, zoom: 2 }, 'cover', 10_000, 0);
+    const placed = imagePlacement(box, img, p, 'cover');
+    expect(placed.x).toBeCloseTo(0, 6); // pushed to the left edge, no gap
   });
 });

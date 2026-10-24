@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
-  COVER_INDEX, addPhotoAt, cropFromPlacement, elementBounds, elementPlacement, geometryFor, imagePlacement, innerBox,
+  COVER_INDEX, addPhotoAt, defaultCrop, effectiveDpi, elementBounds, elementPlacement, geometryFor, innerBox, panCrop, toInnerBox, zoomCropAt,
   pageContentRect, pointInElement, setFramePhoto, surfaceAt, swapFramePhotos, updateElement, type BookDocument,
-  type Element, type ImageElement, type SurfaceGeometry, MM_PER_PT,
+  type Element, type ImageElement, type PhotoAsset, type SurfaceGeometry, MM_PER_PT,
 } from '../../core';
 import { thumbUrl } from '../api';
 import { useEditor } from '../store';
@@ -21,6 +21,7 @@ type Gesture =
   | { kind: 'resize'; start: Pt; orig: Element; handle: Handle }
   | { kind: 'rotate'; orig: Element }
   | { kind: 'crop'; start: Pt; orig: ImageElement }
+  | { kind: 'cropzoom'; startDist: number; orig: ImageElement }
   | { kind: 'swap'; orig: ImageElement; at: Pt; client: Pt; target: string | null };
 
 interface Pt {
@@ -84,6 +85,8 @@ export function Canvas() {
       if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
       const st = useEditor.getState();
+      // While cropping, a pinch zooms the photo (handled on the overlay), not the canvas.
+      if (st.cropElementId) return;
       st.setZoom(st.zoom * Math.exp(-e.deltaY * 0.01));
     };
     el.addEventListener('wheel', onWheel, { passive: false });
@@ -158,6 +161,17 @@ export function Canvas() {
     if (e.button !== 0 || editingText) return;
     const p = toMm(e.clientX, e.clientY);
     const handle = (e.target as HTMLElement).dataset.handle;
+
+    if (handle === 'cropzoom' && cropId) {
+      const el = surface.elements.find((x) => x.id === cropId) as ImageElement | undefined;
+      if (el) {
+        capture(e.pointerId);
+        const cx = el.xMm + el.widthMm / 2;
+        const cy = el.yMm + el.heightMm / 2;
+        gestureRef.current = { kind: 'cropzoom', startDist: Math.max(1, Math.hypot(p.x - cx, p.y - cy)), orig: el };
+        return;
+      }
+    }
 
     if (handle && selected && !selected.locked) {
       capture(e.pointerId);
@@ -280,16 +294,21 @@ export function Canvas() {
       const o = gst.orig;
       const asset = o.assetId ? assets.get(o.assetId) : undefined;
       if (!asset) return;
-      const rad = (o.rotationDeg * Math.PI) / 180;
-      const dxw = p.x - gst.start.x;
-      const dyw = p.y - gst.start.y;
-      const lx = dxw * Math.cos(rad) + dyw * Math.sin(rad);
-      const ly = -dxw * Math.sin(rad) + dyw * Math.cos(rad);
+      const a = toInnerBox(o, gst.start.x, gst.start.y);
+      const b2 = toInnerBox(o, p.x, p.y);
+      const crop = panCrop(innerBox(o), { w: asset.widthPx, h: asset.heightPx }, o.crop, o.fit, b2.x - a.x, b2.y - a.y);
+      gesture((d) => updateElement(d, sid, id, { crop }));
+    } else if (gst.kind === 'cropzoom') {
+      // Dragging a corner of the photo outline scales the photo about the frame centre.
+      const o = gst.orig;
+      const asset = o.assetId ? assets.get(o.assetId) : undefined;
+      if (!asset) return;
+      const cx = o.xMm + o.widthMm / 2;
+      const cy = o.yMm + o.heightMm / 2;
+      const factor = Math.hypot(p.x - cx, p.y - cy) / gst.startDist;
       const box = innerBox(o);
-      const img = { w: asset.widthPx, h: asset.heightPx };
-      const start = imagePlacement(box, img, o.crop, o.fit);
-      const moved = imagePlacement(box, img, { ...o.crop, cx: (box.w / 2 - (start.x + lx)) / start.w, cy: (box.h / 2 - (start.y + ly)) / start.h }, o.fit);
-      gesture((d) => updateElement(d, sid, id, { crop: cropFromPlacement(box, moved, o.crop.zoom) }));
+      const crop = zoomCropAt(box, { w: asset.widthPx, h: asset.heightPx }, o.crop, o.fit, factor, { x: box.w / 2, y: box.h / 2 });
+      gesture((d) => updateElement(d, sid, id, { crop }));
     }
   };
 
@@ -333,7 +352,7 @@ export function Canvas() {
       }
       return;
     }
-    const labels = { move: 'Move', resize: 'Resize', rotate: 'Rotate', crop: 'Adjust crop' } as const;
+    const labels = { move: 'Move', resize: 'Resize', rotate: 'Rotate', crop: 'Adjust crop', cropzoom: 'Zoom photo' } as const;
     endGesture(`${labels[gst.kind]} ${gst.orig.type === 'image' ? 'photo' : gst.orig.type === 'text' ? 'text' : 'shape'}`);
   };
 
@@ -341,17 +360,23 @@ export function Canvas() {
     const hit = hitTest(toMm(e.clientX, e.clientY));
     if (!hit || hit.locked) return;
     select({ spreadId: surface.id, elementId: hit.id });
-    if (hit.type === 'image' && hit.assetId) setCrop(hit.id);
+    // Double-click a photo to crop it; double-click again to finish.
+    if (hit.type === 'image' && hit.assetId) setCrop(cropId === hit.id ? null : hit.id);
     if (hit.type === 'text') setEditingText(hit.id);
   };
 
   const onWheel = (e: React.WheelEvent) => {
-    if (!cropId || e.ctrlKey || e.metaKey) return;
+    if (!cropId) return;
     const el = surface.elements.find((x) => x.id === cropId) as ImageElement | undefined;
-    if (!el) return;
-    const zoomNext = Math.max(1, Math.min(5, el.crop.zoom * Math.exp(-e.deltaY * 0.0015)));
+    const asset = el?.assetId ? assets.get(el.assetId) : undefined;
+    if (!el || !asset) return;
+    // Scroll or pinch zooms the photo around the point under the pointer.
+    const factor = Math.exp(-e.deltaY * (e.ctrlKey || e.metaKey ? 0.01 : 0.0015));
+    const p = toMm(e.clientX, e.clientY);
+    const at = toInnerBox(el, p.x, p.y);
+    const crop = zoomCropAt(innerBox(el), { w: asset.widthPx, h: asset.heightPx }, el.crop, el.fit, factor, at);
     // Consecutive wheel ticks merge into one undo step.
-    gesture((d) => updateElement(d, surface.id, el.id, { crop: { ...el.crop, zoom: Math.round(zoomNext * 1000) / 1000 } }));
+    gesture((d) => updateElement(d, surface.id, el.id, { crop }));
     if (wheelTimer.current) clearTimeout(wheelTimer.current);
     wheelTimer.current = setTimeout(() => endGesture('Zoom photo'), 300);
   };
@@ -440,6 +465,7 @@ export function Canvas() {
               onDrop={onDrop}
             >
               {selected && !selected.locked && !editingText && !cropId && <HandleLayer el={selected} scale={scale} offset={b} />}
+              {cropEl && cropAsset && <CropHandles el={cropEl} asset={cropAsset} scale={scale} offset={b} />}
             </div>
           </SpreadView>
           <div className="page-labels" style={{ width: totalW }}>
@@ -460,7 +486,7 @@ export function Canvas() {
         </div>
       )}
       {swapSource && <div className="canvas-hint">Click another photo to swap with — on any spread. Esc to cancel.</div>}
-      {cropId && <div className="canvas-hint">Drag to reposition · scroll to zoom · Esc or click outside when done</div>}
+      {cropEl && cropAsset && <CropToolbar el={cropEl} asset={cropAsset} surfaceId={surface.id} />}
     </div>
   );
 }
@@ -513,7 +539,65 @@ function Outline({ el, scale, offset, className }: { el: Element; scale: number;
 }
 
 function SelectionBox({ el, scale, offset, cropping }: { el: Element; scale: number; offset: number; cropping: boolean }) {
-  return <div className={`selection ${el.locked ? 'selection-locked' : ''} ${cropping ? 'selection-crop' : ''}`} style={frameStyle(el, scale, offset)} />;
+  return (
+    <div className={`selection ${el.locked ? 'selection-locked' : ''} ${cropping ? 'selection-crop' : ''}`} style={frameStyle(el, scale, offset)}>
+      {/* Rule-of-thirds guide while cropping. */}
+      {cropping && <div className="crop-grid"><i /><i /><i /><i /></div>}
+    </div>
+  );
+}
+
+/** Corner handles on the whole photo (the faint ghost) while cropping: drag to scale it. */
+function CropHandles({ el, asset, scale, offset }: { el: ImageElement; asset: PhotoAsset; scale: number; offset: number }) {
+  const { box, placement } = elementPlacement(el, asset);
+  const x0 = (box.x + placement.x) * scale;
+  const y0 = (box.y + placement.y) * scale;
+  const w = placement.w * scale;
+  const h = placement.h * scale;
+  return (
+    <div className="handles" style={frameStyle(el, scale, offset)}>
+      <div className="crop-outline" style={{ left: x0, top: y0, width: w, height: h }} />
+      {[[x0, y0], [x0 + w, y0], [x0, y0 + h], [x0 + w, y0 + h]].map(([x, y], i) => (
+        <div key={i} className="handle crop-handle" data-handle="cropzoom" style={{ left: x, top: y }} title="Drag to resize the photo" />
+      ))}
+    </div>
+  );
+}
+
+/** Floating controls while cropping: zoom, fill/fit, reset, done — and the print resolution. */
+function CropToolbar({ el, asset, surfaceId }: { el: ImageElement; asset: PhotoAsset; surfaceId: string }) {
+  const doc = useEditor((s) => s.doc)!;
+  const { run, gesture, endGesture, setCrop } = useEditor.getState();
+  const box = innerBox(el);
+  const img = { w: asset.widthPx, h: asset.heightPx };
+  const setZoom = (z: number, live: boolean) => {
+    const crop = zoomCropAt(box, img, el.crop, el.fit, z / (el.crop.zoom || 1), { x: box.w / 2, y: box.h / 2 });
+    if (live) gesture((d) => updateElement(d, surfaceId, el.id, { crop }));
+    else run('Zoom photo', (d) => updateElement(d, surfaceId, el.id, { crop }));
+  };
+  const dpi = Math.round(effectiveDpi(el, asset));
+  const dpiClass = dpi >= doc.settings.minDpiWarning ? 'ok' : dpi >= doc.settings.minDpiError ? 'warn' : 'error';
+  return (
+    <div className="crop-toolbar" onPointerDown={(e) => e.stopPropagation()}>
+      <button className="icon-btn" title="Zoom out (−)" onClick={() => setZoom(Math.max(1, el.crop.zoom / 1.15), false)}>−</button>
+      <input
+        type="range" min={1} max={5} step={0.01} value={el.crop.zoom} aria-label="Photo zoom"
+        onChange={(e) => setZoom(Number(e.target.value), true)}
+        onPointerUp={() => endGesture('Zoom photo')}
+        onKeyUp={() => endGesture('Zoom photo')}
+      />
+      <button className="icon-btn" title="Zoom in (+)" onClick={() => setZoom(Math.min(5, el.crop.zoom * 1.15), false)}>+</button>
+      <span className="crop-pct">{Math.round(el.crop.zoom * 100)}%</span>
+      <span className={`dpi dpi-${dpiClass}`} title="Print resolution at this crop">{dpi} DPI</span>
+      <div className="seg seg-compact">
+        <button className={el.fit === 'cover' ? 'on' : ''} onClick={() => run('Fill frame', (d) => updateElement(d, surfaceId, el.id, { fit: 'cover' }))} title="Fill the frame (crops the photo)">Fill</button>
+        <button className={el.fit === 'contain' ? 'on' : ''} onClick={() => run('Fit whole photo', (d) => updateElement(d, surfaceId, el.id, { fit: 'contain' }))} title="Show the whole photo">Fit</button>
+      </div>
+      <button className="btn btn-small btn-ghost" onClick={() => run('Reset crop', (d) => updateElement(d, surfaceId, el.id, { crop: defaultCrop(asset) }))}>Reset</button>
+      <button className="btn btn-small btn-primary" onClick={() => setCrop(null)}>Done</button>
+      <span className="crop-tip muted">Drag photo · scroll or pinch to zoom · arrows nudge · Enter when done</span>
+    </div>
+  );
 }
 
 function HandleLayer({ el, scale, offset }: { el: Element; scale: number; offset: number }) {

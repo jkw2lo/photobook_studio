@@ -140,3 +140,44 @@ export function pointInElement(el: Element, px: number, py: number): boolean {
   const ly = dx * Math.sin(rad) + dy * Math.cos(rad);
   return Math.abs(lx) <= el.widthMm / 2 && Math.abs(ly) <= el.heightMm / 2;
 }
+
+// ---- crop editing (pure, shared by the canvas and tests) ------------------------------------
+
+/**
+ * Zoom a frame's photo by `factor`, keeping the image point under `at` (inner-box mm coordinates)
+ * fixed on screen — like pinch-zooming a photo in place. Result is clamped so cover crops never
+ * show a gap.
+ */
+export function zoomCropAt(box: Size, img: Size, crop: Crop, fit: FitMode, factor: number, at: { x: number; y: number }, maxZoom = 5): Crop {
+  const zoom = clamp((crop.zoom || 1) * factor, 1, maxZoom);
+  const p = imagePlacement(box, img, crop, fit);
+  const u = (at.x - p.x) / p.w;
+  const v = (at.y - p.y) / p.h;
+  const k = zoom / (crop.zoom || 1);
+  const w = p.w * k;
+  const h = p.h * k;
+  const nx = at.x - u * w;
+  const ny = at.y - v * h;
+  const next = imagePlacement(box, img, { cx: (box.w / 2 - nx) / w, cy: (box.h / 2 - ny) / h, zoom }, fit);
+  return cropFromPlacement(box, next, zoom);
+}
+
+/** Move a frame's photo by (dx, dy) mm inside its frame, clamped. */
+export function panCrop(box: Size, img: Size, crop: Crop, fit: FitMode, dx: number, dy: number): Crop {
+  const p = imagePlacement(box, img, crop, fit);
+  const moved = imagePlacement(box, img, { ...crop, cx: (box.w / 2 - (p.x + dx)) / p.w, cy: (box.h / 2 - (p.y + dy)) / p.h }, fit);
+  return cropFromPlacement(box, moved, crop.zoom || 1);
+}
+
+/** Spread-space point → a frame's inner-box coordinates (undoing the frame's rotation). */
+export function toInnerBox(el: Pick<ImageElement, 'xMm' | 'yMm' | 'widthMm' | 'heightMm' | 'rotationDeg' | 'borderMm'>, px: number, py: number): { x: number; y: number } {
+  const cx = el.xMm + el.widthMm / 2;
+  const cy = el.yMm + el.heightMm / 2;
+  const rad = (-el.rotationDeg * Math.PI) / 180;
+  const dx = px - cx;
+  const dy = py - cy;
+  const lx = dx * Math.cos(rad) - dy * Math.sin(rad) + el.widthMm / 2;
+  const ly = dx * Math.sin(rad) + dy * Math.cos(rad) + el.heightMm / 2;
+  const box = innerBox(el);
+  return { x: lx - box.x, y: ly - box.y };
+}

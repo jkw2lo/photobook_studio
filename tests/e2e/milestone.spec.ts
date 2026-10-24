@@ -106,6 +106,28 @@ test('make a collage poster: import, auto collage, switch style, export', async 
   await expect.poll(photoIds).not.toBe(before);
   await expect(page.locator('.auto-collage')).toContainText('placed from');
 
+  // Library preview: clicking a photo shows it with its details.
+  await page.locator('.library .tile').first().click();
+  await expect(page.locator('.preview-pane img')).toBeVisible();
+  await expect(page.locator('.preview-pane .preview-meta')).toContainText('MP');
+
+  // Text can be added to a poster, and survives re-arranging.
+  await page.locator('.inspector').getByRole('button', { name: 'Add text' }).click();
+  await page.getByRole('menuitem', { name: 'Quote' }).click();
+  await expect(page.locator('.canvas .el-text')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await page.locator('.auto-collage').getByRole('button', { name: /Arrange the \d+ photos/ }).click();
+  await expect(page.locator('.canvas .el-text')).toHaveCount(1);
+
+  // Crop mode shows the floating crop toolbar; Enter finishes.
+  const firstFrame = page.locator('.canvas .el-image').first();
+  const fb = (await firstFrame.boundingBox())!;
+  await page.mouse.dblclick(fb.x + fb.width / 2, fb.y + fb.height / 2);
+  await expect(page.locator('.crop-toolbar')).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.crop-toolbar')).toHaveCount(0);
+  await page.keyboard.press('Escape'); // deselect: back to the Poster panel
+
   // Re-flow as a pinboard from the side panel: same photos, tilted prints.
   await page.locator('.inspector .collage-style', { hasText: 'Pinboard' }).click();
   await expect.poll(async () => frames.evaluateAll((els) => els.filter((e) => (e as HTMLElement).style.transform.includes('rotate')).length)).toBeGreaterThan(5);

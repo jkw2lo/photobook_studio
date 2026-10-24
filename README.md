@@ -43,13 +43,15 @@ This writes 21 synthetic trip photos to `fixtures/generated/trip`: mixed orienta
 3. **Auto draft** (the Draft tab in the side panel, beside the pages) → choose the page count and style, then **Regenerate** or **Another variation** while you look at the result; you stay on the spread you're viewing, and every regenerate is one undo step. Variations explore layouts widely, so each one changes most spreads even with few photos. The generator picks the best frame of each burst, skips duplicates and hidden photos, always keeps favourites (★), sequences chronologically with day chapters, puts true panoramas across spreads (keeping the subject out of the fold), and gives low-resolution photos small frames.
 4. **Edit:**
    - drag, resize (Shift keeps the ratio) and rotate (Shift snaps to 15°) photos, with snapping to margins, centre lines and other photos (hold Alt to turn snapping off);
-   - double-click a photo to crop it (drag to pan, scroll to zoom), or double-click text to edit it;
+   - double-click a photo to crop it: drag to reposition, scroll or pinch to zoom around the pointer, drag the photo's corner handles to resize it, arrow keys to nudge, Enter (or double-click) when done. A floating toolbar has the zoom slider, Fill/Fit, Reset and the live print DPI; a rule-of-thirds grid helps framing. Double-click text to edit it;
    - drag a library photo onto a frame to replace it, or onto empty space to add it; "Swap with…" swaps photos between frames, even across spreads;
    - lay out a page or spread from a template, shuffle a spread's layout, lock spreads, add, duplicate, delete or reorder spreads (drag in the filmstrip), and assign chapters;
    - undo/redo with ⌘Z / ⇧⌘Z, nudge with the arrow keys, ⌘D duplicates, L locks.
 5. **Cover** (first item in the filmstrip): back · spine · front, sized from the printer preset and page count. Three layouts (photo + title band, framed photo, wraparound photo); spine text appears only when the book is thick enough. The spine follows page-count changes automatically and the front cover stays aligned. Enter exact numbers from your printer's calculator in the Cover panel when the preset only has an estimate (Blurb).
 6. **Preflight** tab: low DPI, photos stopping inside the bleed, text near the trim or binding, inside covers, missing originals. Click an issue to jump to it.
 7. **Export PDFs:** an interior PDF (one page per book page, trim + bleed, bleed at the spine or not per printer) and a one-page cover PDF (back + spine + front + wrap), both with TrimBox/BleedBox, both re-opened and verified automatically.
+
+The **Preview** pane at the bottom of the library shows the photo you click (or select on a page) larger, with its date, size, favourite/hide buttons and a link to where it's used.
 
 Autosave runs about 0.6 s after every edit. Version history in the **Book** tab restores any of the last 50 saves.
 
@@ -64,7 +66,7 @@ Choose **Poster / collage** in New book: 11 × 14 up to 24 × 36 in, A3–A1 and
 | Hero + mosaic | One standout photo — chosen to be sharp enough at that size — with the rest as a mosaic |
 | Pinboard | Tilted, overlapping prints with white borders |
 
-Auto collage lives in the Poster side panel, next to the sheet, so every change is visible as you make it: drag the photo-count slider and the collage updates live; **Best photos** re-picks the strongest set in time order; **Shuffle** brings in a different strong selection (when there are more photos than fit) in a new arrangement. Each is one undo step. Spacing, border (edge-to-edge into the bleed, or a margin), title position and background re-flow the photos already on the sheet. Posters warn below 150 DPI (they're seen from further away than book pages). Export is one verified PDF with bleed.
+Auto collage lives in the Poster side panel, next to the sheet, so every change is visible as you make it: drag the photo-count slider and the collage updates live; **Best photos** re-picks the strongest set in time order; **Shuffle** brings in a different strong selection (when there are more photos than fit) in a new arrangement. Each is one undo step. **Arrange the photos on the sheet** re-flows just the photos still on the poster (after you delete or add some). **Arrange** orders them by **Time**, **Similar look** (photos with similar colours and composition side by side) or **Colour** (a rainbow). Shuffling a hero layout rotates through the strongest sharp-enough photos. Text you add to a poster — and wording you type into the title — is kept through every re-flow and regenerate. Spacing, border (edge-to-edge into the bleed, or a margin), title position and background re-flow the photos already on the sheet. Posters warn below 150 DPI (they're seen from further away than book pages). Export is one verified PDF with bleed.
 
 For books, the **Collage** style builds every multi-photo page as a mosaic, and any page can be switched to **Mosaic** from the layout picker.
 

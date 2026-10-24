@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { duplicateElement, issueCounts, removeElements, updateElement } from '../../core';
+import { duplicateElement, findSurface, innerBox, issueCounts, panCrop, removeElements, updateElement, zoomCropAt } from '../../core';
 import { retrySave, selectedElement, useEditor } from '../store';
 import { Canvas } from './Canvas';
 import { ExportDialog } from './ExportDialog';
@@ -181,6 +181,30 @@ function useKeyboard(enabled: boolean) {
         return st.select(null);
       }
       if (key === 'g' && !mod) return st.toggleGuides();
+      // Crop mode: arrows move the photo inside its frame, +/− zoom, Enter finishes.
+      if (st.cropElementId && st.selection) {
+        const found = findSurface(st.doc, st.selection.spreadId);
+        const el = found?.surface.elements.find((x) => x.id === st.cropElementId);
+        const asset = el?.type === 'image' && el.assetId ? st.assetMap.get(el.assetId) : undefined;
+        if (el?.type === 'image' && asset && found) {
+          const box = innerBox(el);
+          const img = { w: asset.widthPx, h: asset.heightPx };
+          const step = e.shiftKey ? 5 : 1;
+          const moves: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+          const sid = found.surface.id;
+          if (moves[e.key]) {
+            e.preventDefault();
+            const crop = panCrop(box, img, el.crop, el.fit, moves[e.key][0], moves[e.key][1]);
+            return st.run('Adjust crop', (d) => updateElement(d, sid, el.id, { crop }));
+          }
+          if (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_') {
+            e.preventDefault();
+            const crop = zoomCropAt(box, img, el.crop, el.fit, e.key === '-' || e.key === '_' ? 1 / 1.1 : 1.1, { x: box.w / 2, y: box.h / 2 });
+            return st.run('Zoom photo', (d) => updateElement(d, sid, el.id, { crop }));
+          }
+          if (e.key === 'Enter') return st.setCrop(null);
+        }
+      }
       const el = selectedElement(st);
       const sel = st.selection;
       if (!el || !sel) {

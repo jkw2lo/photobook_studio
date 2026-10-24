@@ -7,6 +7,7 @@ import { useEditor } from '../store';
 import { CollageControls, gapOptions, marginOptions } from './CollageControls';
 import { ColorInput } from './ColorInput';
 import { Icon } from './Icon';
+import { AddTextMenu } from './TypePanel';
 
 /** Sensible first settings for a sheet: spacing and border scaled to its size. */
 export function initialCollageSettings(doc: BookDocument, usable: number): CollageSettings {
@@ -47,7 +48,8 @@ export function PosterPanel() {
   const landscape = s.trimWidthMm > s.trimHeightMm;
   const usable = assetList.filter((a) => !a.excluded && !a.missing).length;
   const maxPhotos = Math.max(1, Math.min(300, usable));
-  const hasPhotos = !!sheet?.elements.some((e) => e.type === 'image' && e.assetId);
+  const photosOnSheet = sheet?.elements.filter((e) => e.type === 'image' && e.assetId).length ?? 0;
+  const hasPhotos = photosOnSheet > 0;
   const [count, setCount] = useState(Math.min(settings.photoCount, maxPhotos));
   useEffect(() => setCount(Math.min(settings.photoCount, maxPhotos)), [settings.photoCount, maxPhotos]);
 
@@ -88,7 +90,7 @@ export function PosterPanel() {
       <div ref={sectionRef} className={`auto-collage ${flash ? 'flash' : ''}`}>
         <div className="row between">
           <strong>Auto collage</strong>
-          {hasPhotos && <span className="muted small">{sheet.elements.filter((e) => e.type === 'image').length} photos on the sheet</span>}
+          {hasPhotos && <span className="muted small">{photosOnSheet} photos on the sheet</span>}
         </div>
         {assetList.length === 0 ? (
           <p className="muted small">Import photos in the library first.</p>
@@ -116,6 +118,11 @@ export function PosterPanel() {
                 <Icon name="shuffle" /> Shuffle
               </button>
             </div>
+            {hasPhotos && (
+              <button className="btn btn-small" onClick={() => reflow('Arrange photos on the sheet', settings)} title="Lay out only the photos currently on the sheet — after you delete or add some">
+                <Icon name="grid" /> Arrange the {photosOnSheet} photo{photosOnSheet === 1 ? '' : 's'} on the sheet
+              </button>
+            )}
             {report && (
               <p className="muted small">
                 {report.placed} placed from {report.available} candidates · {report.nearDuplicatesSet} similar shots set aside
@@ -135,6 +142,9 @@ export function PosterPanel() {
           <Icon name="shuffle" /> Re-scatter prints
         </button>
       )}
+
+      <div className="section-title">Text</div>
+      <AddTextMenu surfaceId={sheet.id} at={{ x: s.trimWidthMm / 2, y: s.trimHeightMm * 0.9 }} />
 
       <div className="section-title">Sheet</div>
       <label className="field">

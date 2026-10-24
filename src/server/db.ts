@@ -256,6 +256,10 @@ export class Store {
     if (patch.tags !== undefined) this.db.prepare(`UPDATE assets SET tags = ? WHERE id = ?`).run(JSON.stringify(patch.tags), id);
   }
 
+  updateAnalysis(id: string, analysis: object) {
+    this.db.prepare(`UPDATE assets SET analysis = ? WHERE id = ?`).run(JSON.stringify(analysis), id);
+  }
+
   setExcluded(projectId: string, assetId: string, excluded: boolean) {
     this.db.prepare(`UPDATE project_assets SET excluded = ? WHERE project_id = ? AND asset_id = ?`).run(excluded ? 1 : 0, projectId, assetId);
   }

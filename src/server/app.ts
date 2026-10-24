@@ -5,7 +5,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { API_VERSION, SCHEMA_VERSION, UnknownSizeError, createBook, createPoster, posterSize, migrateDocument, type BookDocument, type PhotoAsset } from '../core';
 import { Store, toPhotoAsset, type AssetRow } from './db';
 import { Importer, scanFolder } from './importer';
-import { hashFile, isSupported, thumbPath, THUMB_SIZES, type ThumbSize } from './media';
+import { colorFeatures, hashFile, isSupported, thumbPath, THUMB_SIZES, type ThumbSize } from './media';
 import { exportCoverPdf, exportPdf, exportPosterPdf, type ExportAsset, type ExportOptions } from './pdf';
 
 // HTTP API. Bound to 127.0.0.1 by main.ts — never reachable from the network.
@@ -90,10 +90,27 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
   }));
 
   // ---- library
-  app.get('/api/projects/:id/assets', wrap((req, res) => {
+  app.get('/api/projects/:id/assets', wrap(async (req, res) => {
     requireProject(P(req).id);
+    await backfillColors(P(req).id);
     res.json(projectAssets(P(req).id));
   }));
+
+  /** Photos imported before colour analysis existed: compute it once from their thumbnails. */
+  const backfillColors = async (projectId: string) => {
+    for (const r of store.projectAssetRows(projectId)) {
+      if (!r.analysis) continue;
+      const analysis = JSON.parse(r.analysis) as { colorGrid?: number[] };
+      if (analysis.colorGrid) continue;
+      const thumb = thumbPath(dataDir, r.id, 's');
+      if (!existsSync(thumb)) continue;
+      try {
+        store.updateAnalysis(r.id, { ...analysis, ...(await colorFeatures(thumb, false)) });
+      } catch {
+        // unreadable thumbnail: leave it; ordering falls back to time for this photo
+      }
+    }
+  };
 
   app.patch('/api/projects/:id/assets/:assetId', wrap((req, res) => {
     const { rating, favorite, tags, excluded } = req.body ?? {};

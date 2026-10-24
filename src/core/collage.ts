@@ -30,6 +30,77 @@ export interface CollageOptions {
   hero?: PhotoAsset;
   /** White print border for the pinboard style, as a fraction of the print's short side. */
   printBorder?: number;
+  /** Keep the given photo order (pinboard otherwise scatters them randomly). */
+  keepOrder?: boolean;
+}
+
+// ---- ordering ---------------------------------------------------------------------------------
+
+export type PhotoOrder = 'time' | 'similar' | 'color';
+
+export const PHOTO_ORDERS: { id: PhotoOrder; label: string; description: string }[] = [
+  { id: 'time', label: 'Time', description: 'In the order they were taken' },
+  { id: 'similar', label: 'Similar look', description: 'Photos with similar colours and composition next to each other' },
+  { id: 'color', label: 'Colour', description: 'A rainbow, with black-and-white and muted photos at the end' },
+];
+
+/** RGB → [hue 0–360, saturation 0–1, lightness 0–1]. */
+export function rgbToHsl([r, g, b]: [number, number, number]): [number, number, number] {
+  const R = r / 255;
+  const G = g / 255;
+  const B = b / 255;
+  const max = Math.max(R, G, B);
+  const min = Math.min(R, G, B);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h = max === R ? ((G - B) / d + (G < B ? 6 : 0)) : max === G ? (B - R) / d + 2 : (R - G) / d + 4;
+  return [h * 60, s, l];
+}
+
+/**
+ * Order photos for a collage. 'similar' chains each photo to its nearest neighbour by colour grid
+ * (palette + rough composition), so look-alikes sit together and the sheet flows from one mood to
+ * the next. Photos without colour data keep time order at the end.
+ */
+export function orderPhotos(photos: PhotoAsset[], order: PhotoOrder): PhotoAsset[] {
+  const timeOrdered = [...photos].sort((a, b) => (a.capturedAt ?? '').localeCompare(b.capturedAt ?? '') || a.fileName.localeCompare(b.fileName));
+  if (order === 'time') return timeOrdered;
+  const withColor = timeOrdered.filter((p) => p.analysis?.avgColor);
+  const without = timeOrdered.filter((p) => !p.analysis?.avgColor);
+  if (order === 'color') {
+    const hsl = new Map(withColor.map((p) => [p, rgbToHsl(p.analysis!.avgColor!)]));
+    const vivid = withColor.filter((p) => hsl.get(p)![1] >= 0.12).sort((a, b) => hsl.get(a)![0] - hsl.get(b)![0]);
+    const muted = withColor.filter((p) => hsl.get(p)![1] < 0.12).sort((a, b) => hsl.get(b)![2] - hsl.get(a)![2]);
+    return [...vivid, ...muted, ...without];
+  }
+  const vec = (p: PhotoAsset) => p.analysis!.colorGrid ?? [...p.analysis!.avgColor!, ...p.analysis!.avgColor!, ...p.analysis!.avgColor!];
+  const dist = (a: number[], b: number[]) => {
+    let d = 0;
+    for (let i = 0; i < Math.min(a.length, b.length); i++) d += (a[i] - b[i]) ** 2;
+    return d;
+  };
+  const remaining = new Set(withColor);
+  // Start from the darkest photo so the chain runs dark → light.
+  let current = withColor.reduce<PhotoAsset | undefined>((best, p) => (!best || rgbToHsl(p.analysis!.avgColor!)[2] < rgbToHsl(best.analysis!.avgColor!)[2] ? p : best), undefined);
+  const chain: PhotoAsset[] = [];
+  while (current) {
+    chain.push(current);
+    remaining.delete(current);
+    let next: PhotoAsset | undefined;
+    let bestD = Infinity;
+    const v = vec(current);
+    for (const p of remaining) {
+      const d = dist(v, vec(p));
+      if (d < bestD) {
+        bestD = d;
+        next = p;
+      }
+    }
+    current = next;
+  }
+  return [...chain, ...without];
 }
 
 export interface CollageResult {
@@ -192,7 +263,7 @@ function hero(doc: Pick<BookDocument, 'style'>, box: Rect, photos: PhotoAsset[],
 function scatter(doc: Pick<BookDocument, 'style'>, box: Rect, photos: PhotoAsset[], opts: CollageOptions): CollageResult {
   const rng = mulberry32(opts.seed);
   const n = photos.length;
-  const order = photos.map((p) => ({ p, k: rng() })).sort((x, y) => x.k - y.k).map((x) => x.p);
+  const order = opts.keepOrder ? photos : photos.map((p) => ({ p, k: rng() })).sort((x, y) => x.k - y.k).map((x) => x.p);
   const cols = Math.max(1, Math.round(Math.sqrt((n * box.w) / box.h)));
   const rows = Math.ceil(n / cols);
   const cellW = box.w / cols;

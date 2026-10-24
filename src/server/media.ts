@@ -173,7 +173,20 @@ export async function analyze(workPath: string): Promise<PhotoAnalysis> {
     dHash,
     saliencyX: et > 0 ? Math.round((ex / et) * 1000) / 1000 : 0.5,
     saliencyY: et > 0 ? Math.round((ey / et) * 1000) / 1000 : 0.5,
+    ...(await colorFeatures(workPath, true)),
   };
+}
+
+/**
+ * Colour features for grouping similar-looking photos: mean colour and a 3 × 3 grid of mean
+ * colours. `orient` applies EXIF rotation (originals); thumbnails are already upright.
+ */
+export async function colorFeatures(path: string, orient: boolean): Promise<{ avgColor: [number, number, number]; colorGrid: number[] }> {
+  const base = sharp(path, { failOn: 'none' });
+  const img = orient ? base.rotate() : base;
+  const grid = await img.clone().removeAlpha().resize(3, 3, { fit: 'fill' }).raw().toBuffer();
+  const avg = await img.clone().removeAlpha().resize(1, 1, { fit: 'fill' }).raw().toBuffer();
+  return { avgColor: [avg[0], avg[1], avg[2]], colorGrid: Array.from(grid.subarray(0, 27)) };
 }
 
 export async function fileStat(path: string) {

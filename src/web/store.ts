@@ -53,6 +53,8 @@ interface EditorState {
   draftFocus: number;
   /** Result of the last book draft, shown in the Draft tab. */
   draftReport: DraftReport | null;
+  /** Photo shown in the library's preview pane. */
+  previewAssetId: string | null;
   toasts: Toast[];
   loadError: string | null;
 
@@ -105,6 +107,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   collageFocus: 0,
   draftFocus: 0,
   draftReport: null,
+  previewAssetId: null,
   toasts: [],
   loadError: null,
 
@@ -189,7 +192,13 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   select(selection) {
-    set({ selection, cropElementId: selection && get().cropElementId === selection.elementId ? selection.elementId : null });
+    // Selecting a photo on the page also shows it in the library preview.
+    let previewAssetId = get().previewAssetId;
+    if (selection && get().doc) {
+      const el = findSurface(get().doc!, selection.spreadId)?.surface.elements.find((e) => e.id === selection.elementId);
+      if (el?.type === 'image' && el.assetId) previewAssetId = el.assetId;
+    }
+    set({ selection, previewAssetId, cropElementId: selection && get().cropElementId === selection.elementId ? selection.elementId : null });
   },
 
   goToSpread(i) {

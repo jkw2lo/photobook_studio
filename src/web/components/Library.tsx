@@ -16,6 +16,7 @@ export function Library() {
   const projectId = useEditor((s) => s.projectId)!;
   const [filter, setFilter] = useState<Filter>('all');
   const [picker, setPicker] = useState<'import' | 'relink' | null>(null);
+  const previewId = useEditor((s) => s.previewAssetId);
 
   const usage = useMemo(() => parseUsage(usageKey), [usageKey]);
 
@@ -87,12 +88,12 @@ export function Library() {
       ) : (
         <div className="grid">
           {visible.map((a) => (
-            <Tile key={a.id} asset={a} used={usage.get(a.id) ?? 0} similar={similarCount.get(a.id) ?? 1} />
+            <Tile key={a.id} asset={a} used={usage.get(a.id) ?? 0} similar={similarCount.get(a.id) ?? 1} previewed={a.id === previewId} />
           ))}
           {visible.length === 0 && <p className="muted pad">Nothing here.</p>}
         </div>
       )}
-      <p className="library-hint muted">Drag photos onto a frame to replace, or onto empty space to add.</p>
+      <PreviewPane usage={usage} />
       {picker && (
         <FolderPicker
           title={picker === 'import' ? 'Import photos from a folder' : 'Find missing originals'}
@@ -128,11 +129,71 @@ function parseUsage(key: string): Map<string, number> {
   return new Map(key ? key.split('|').map((kv) => { const [k, v] = kv.split(':'); return [k, Number(v)] as [string, number]; }) : []);
 }
 
-const Tile = memo(function Tile({ asset, used, similar }: { asset: PhotoAsset; used: number; similar: number }) {
+/** Larger view of the clicked (or selected) photo, with its details and quick actions. */
+function PreviewPane({ usage }: { usage: Map<string, number> }) {
+  const id = useEditor((s) => s.previewAssetId);
+  const asset = useEditor((s) => (id ? s.assetMap.get(id) : undefined));
+  const patch = useEditor((s) => s.patchAsset);
+  const [open, setOpen] = useState(true);
+  const used = asset ? usage.get(asset.id) ?? 0 : 0;
+  const showInBook = () => {
+    const st = useEditor.getState();
+    if (!st.doc || !asset) return;
+    const surfaces = [...(st.doc.cover ? [{ s: st.doc.cover, i: -1 }] : []), ...st.doc.spreads.map((s, i) => ({ s, i }))];
+    const hit = surfaces.find(({ s }) => s.elements.some((e) => e.type === 'image' && e.assetId === asset.id));
+    if (!hit) return;
+    st.goToSpread(hit.i);
+    const el = hit.s.elements.find((e) => e.type === 'image' && e.assetId === asset.id)!;
+    st.select({ spreadId: hit.s.id, elementId: el.id });
+  };
+  return (
+    <div className={`preview-pane ${open ? '' : 'closed'}`}>
+      <button className="preview-head" onClick={() => setOpen(!open)}>
+        <span>Preview</span>
+        <Icon name="down" size={12} />
+      </button>
+      {open && (
+        asset ? (
+          <div className="preview-body">
+            <div className="preview-img" draggable={!asset.missing} onDragStart={(e) => {
+              e.dataTransfer.setData(ASSET_MIME, asset.id);
+              e.dataTransfer.effectAllowed = 'copy';
+            }}>
+              <img src={thumbUrl(asset.id, 'm')} alt={asset.fileName} draggable={false} />
+            </div>
+            <div className="preview-meta">
+              <strong className="ellipsis" title={asset.fileName}>{asset.fileName}</strong>
+              <span className="muted small">{asset.capturedAt ? formatTaken(asset.capturedAt) : 'No capture date'}</span>
+              <span className="muted small">{asset.widthPx} × {asset.heightPx} · {((asset.widthPx * asset.heightPx) / 1e6).toFixed(1)} MP{asset.missing ? ' · original missing' : ''}</span>
+            </div>
+            <div className="row preview-actions">
+              <button className={`icon-btn ${asset.favorite ? 'on' : ''}`} title={asset.favorite ? 'Unfavourite' : 'Favourite: always included in drafts'} onClick={() => patch(asset.id, { favorite: !asset.favorite })}><Icon name="star" /></button>
+              <button className={`icon-btn ${asset.excluded ? 'on' : ''}`} title={asset.excluded ? 'Include in drafts' : 'Hide from drafts'} onClick={() => patch(asset.id, { excluded: !asset.excluded })}><Icon name={asset.excluded ? 'eye-off' : 'eye'} /></button>
+              {used > 0 ? <button className="link small" onClick={showInBook}>In book{used > 1 ? ` ×${used}` : ''} — show</button> : <span className="muted small">Not in book · drag onto a page</span>}
+            </div>
+          </div>
+        ) : (
+          <p className="muted small preview-empty">Click a photo to preview it here. Drag photos onto a frame to replace, or onto empty space to add.</p>
+        )
+      )}
+    </div>
+  );
+}
+
+function formatTaken(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+const Tile = memo(function Tile({ asset, used, similar, previewed }: { asset: PhotoAsset; used: number; similar: number; previewed: boolean }) {
   const patch = useEditor((s) => s.patchAsset);
   return (
     <div
-      className={`tile ${asset.excluded ? 'tile-hidden' : ''} ${used ? 'tile-used' : ''}`}
+      className={`tile ${asset.excluded ? 'tile-hidden' : ''} ${used ? 'tile-used' : ''} ${previewed ? 'tile-previewed' : ''}`}
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest('.tile-actions')) return;
+        useEditor.setState({ previewAssetId: asset.id });
+      }}
       draggable={!asset.missing}
       onDragStart={(e) => {
         e.dataTransfer.setData(ASSET_MIME, asset.id);
