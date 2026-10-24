@@ -8,6 +8,12 @@
 
 export const SCHEMA_VERSION = 2 as const;
 
+/**
+ * Bumped whenever the client/server contract changes. The page compares it with the running
+ * server's and warns when they differ (e.g. the page was rebuilt but the server wasn't restarted).
+ */
+export const API_VERSION = 3;
+
 export type ID = string;
 
 export interface BookSettings {

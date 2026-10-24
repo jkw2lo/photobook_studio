@@ -1,5 +1,5 @@
 import type { BindingId, BookDocument, BookSettings, BookStyle, PrinterId, Rect, Spread } from './model';
-import { presetSettings } from './printers';
+import { PRINTERS, presetSettings, printer } from './printers';
 import { SCHEMA_VERSION } from './model';
 import { newId } from './random';
 import { styleFromPreset } from './styles';
@@ -24,8 +24,17 @@ export const SIZE_PRESETS: SizePreset[] = [
   { id: 'sq21', name: '21 × 21 cm square', widthMm: 210, heightMm: 210 },
 ];
 
-export function defaultSettings(sizeId = 'sq8'): BookSettings {
-  const size = SIZE_PRESETS.find((s) => s.id === sizeId) ?? SIZE_PRESETS[0];
+export class UnknownSizeError extends Error {}
+
+/** Look a size id up among the generic sizes and every printer's sizes. */
+export function findSize(sizeId: string): { widthMm: number; heightMm: number } | undefined {
+  return SIZE_PRESETS.find((s) => s.id === sizeId) ?? PRINTERS.flatMap((p) => p.sizes).find((s) => s.id === sizeId);
+}
+
+/** Defaults for a size. An unknown size id is an error — never a silent fallback to another size. */
+export function defaultSettings(sizeId?: string): BookSettings {
+  const size = sizeId === undefined ? SIZE_PRESETS[0] : findSize(sizeId);
+  if (!size) throw new UnknownSizeError(`Unknown page size “${sizeId}”.`);
   return {
     trimWidthMm: size.widthMm,
     trimHeightMm: size.heightMm,
@@ -134,6 +143,11 @@ export function createBook(opts: {
   const pages = evenPageCount(opts.pages ?? 20);
   const spreads = spreadsForPageCount(pages);
   const base = defaultSettings(opts.sizeId);
+  if (opts.printerId && opts.printerId !== 'custom' && opts.sizeId) {
+    const offered = printer(opts.printerId).sizes;
+    const ok = offered.some((z) => z.id === opts.sizeId || (Math.abs(z.widthMm - base.trimWidthMm) < 0.5 && Math.abs(z.heightMm - base.trimHeightMm) < 0.5));
+    if (!ok) throw new UnknownSizeError(`${printer(opts.printerId).name} doesn’t offer that page size.`);
+  }
   const settings = opts.printerId && opts.printerId !== 'custom'
     ? { ...base, ...presetSettings(base, opts.printerId, opts.bindingId ?? 'hardcover', opts.sizeId, pages) }
     : { ...base, bindingId: opts.bindingId ?? base.bindingId };

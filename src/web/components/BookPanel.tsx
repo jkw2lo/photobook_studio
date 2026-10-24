@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
-  FONT_FAMILIES, PRINTERS, SIZE_PRESETS, STYLE_PRESETS, applyPrinter, applyStylePreset, binding, fontFamily, pageCountOf,
+  PRINTERS, nearestWeight, weightName, SIZE_PRESETS, STYLE_PRESETS, applyPrinter, applyStylePreset, binding, fontFamily, pageCountOf,
   printer, setTitle, updateSettings, updateStyle, type BindingId, type BleedMode, type FontRef,
 } from '../../core';
 import { api } from '../api';
 import { useEditor } from '../store';
 import { ColorInput } from './ColorInput';
+import { FontPicker } from './FontPicker';
 import { Icon } from './Icon';
 import { NumField } from './Inspector';
 
@@ -73,16 +74,14 @@ export function BookPanel() {
 function FontSelect({ label, value, onChange }: { label: string; value: FontRef; onChange: (f: FontRef) => void }) {
   return (
     <div className="field-row">
-      <label className="field">
+      <div className="field field-grow">
         <span>{label}</span>
-        <select value={value.family} onChange={(e) => onChange({ family: e.target.value, weight: fontFamily(e.target.value).weights[0] })}>
-          {FONT_FAMILIES.map((f) => <option key={f.family}>{f.family}</option>)}
-        </select>
-      </label>
-      <label className="field">
+        <FontPicker value={value.family} onChange={(family) => onChange({ family, weight: nearestWeight(family, value.weight) })} />
+      </div>
+      <label className="field field-weight">
         <span>Weight</span>
         <select value={value.weight} onChange={(e) => onChange({ ...value, weight: Number(e.target.value) })}>
-          {fontFamily(value.family).weights.map((w) => <option key={w} value={w}>{w}</option>)}
+          {fontFamily(value.family).weights.map((w) => <option key={w} value={w}>{weightName(w)}</option>)}
         </select>
       </label>
     </div>

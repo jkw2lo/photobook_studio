@@ -2,7 +2,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { existsSync, statSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
-import { createBook, migrateDocument, type BookDocument, type PhotoAsset } from '../core';
+import { API_VERSION, SCHEMA_VERSION, UnknownSizeError, createBook, migrateDocument, type BookDocument, type PhotoAsset } from '../core';
 import { Store, toPhotoAsset, type AssetRow } from './db';
 import { Importer, scanFolder } from './importer';
 import { hashFile, isSupported, thumbPath, THUMB_SIZES, type ThumbSize } from './media';
@@ -42,14 +42,20 @@ export function createApp(dataDir: string, opts: { staticDir?: string } = {}) {
     return p;
   };
 
-  app.get('/api/health', (_req, res) => res.json({ ok: true, dataDir }));
+  app.get('/api/health', (_req, res) => res.json({ ok: true, dataDir, apiVersion: API_VERSION, schemaVersion: SCHEMA_VERSION }));
 
   // ---- projects
   app.get('/api/projects', (_req, res) => res.json(store.listProjects()));
 
   app.post('/api/projects', wrap((req, res) => {
     const { title, sizeId, stylePresetId, pages, printerId, bindingId } = req.body ?? {};
-    const doc = createBook({ title: String(title || 'Untitled book'), sizeId, stylePresetId, pages, printerId, bindingId });
+    let doc;
+    try {
+      doc = createBook({ title: String(title || 'Untitled book'), sizeId, stylePresetId, pages, printerId, bindingId });
+    } catch (e) {
+      if (e instanceof UnknownSizeError) throw new HttpError(400, e.message);
+      throw e;
+    }
     const { revision } = store.createProject(doc);
     res.status(201).json({ doc, revision });
   }));

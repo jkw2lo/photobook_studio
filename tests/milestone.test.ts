@@ -8,7 +8,7 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  addTextAt, coverGeometry, generateDraft, printablePages, setSpreadLocked, shuffleSpreadLayout, swapFramePhotos, updateElement,
+  API_VERSION, PRINTERS, SIZE_PRESETS, addTextAt, coverGeometry, generateDraft, printablePages, setSpreadLocked, shuffleSpreadLayout, swapFramePhotos, updateElement,
   type BookDocument, type ImageElement, type PhotoAsset,
 } from '../src/core';
 import { createApp } from '../src/server/app';
@@ -49,6 +49,31 @@ afterAll(() => {
   close?.();
   rmSync(dataDir, { recursive: true, force: true });
   rmSync(photoDir, { recursive: true, force: true });
+});
+
+describe('creating books', () => {
+  it('keeps the chosen page size for every printer and size (regression: sizes reverted to 8×8)', async () => {
+    for (const pr of PRINTERS) {
+      const sizes = pr.id === 'custom' ? SIZE_PRESETS : pr.sizes;
+      for (const z of sizes) {
+        const res = await api('POST', '/api/projects', { title: `${pr.id} ${z.id}`, printerId: pr.id, bindingId: 'hardcover', sizeId: z.id, pages: 24 });
+        expect(res.status, `${pr.id}/${z.id}`).toBe(201);
+        const reopened = await api('GET', `/api/projects/${res.body.doc.id}`);
+        expect(reopened.body.doc.settings.trimWidthMm, `${pr.id}/${z.id}`).toBeCloseTo(z.widthMm, 3);
+        expect(reopened.body.doc.settings.trimHeightMm, `${pr.id}/${z.id}`).toBeCloseTo(z.heightMm, 3);
+        expect(reopened.body.doc.settings.printerId).toBe(pr.id);
+      }
+    }
+  });
+
+  it('rejects an unknown size or one the printer does not offer, instead of silently using 8×8', async () => {
+    expect((await api('POST', '/api/projects', { title: 'x', sizeId: 'nope' })).status).toBe(400);
+    expect((await api('POST', '/api/projects', { title: 'x', printerId: 'lulu', sizeId: 'blurb-sq7' })).status).toBe(400);
+  });
+
+  it('reports its API version so a stale server can be detected', async () => {
+    expect((await api('GET', '/api/health')).body.apiVersion).toBe(API_VERSION);
+  });
 });
 
 describe('milestone 1: import → draft → edit → reopen → export', () => {

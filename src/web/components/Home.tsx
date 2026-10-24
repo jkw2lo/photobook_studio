@@ -53,10 +53,17 @@ function NewBook({ onClose }: { onClose: () => void }) {
   const bind = pr.bindings.find((b) => b.id === bindingId) ?? pr.bindings[0];
   const [pages, setPages] = useState(24);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const create = async () => {
     setBusy(true);
-    const { doc } = await api.createProject({ title: title.trim() || 'Untitled book', sizeId, stylePresetId, pages, printerId, bindingId });
-    location.hash = `#/book/${doc.id}`;
+    setError(null);
+    try {
+      const { doc } = await api.createProject({ title: title.trim() || 'Untitled book', sizeId, stylePresetId, pages, printerId, bindingId });
+      location.hash = `#/book/${doc.id}`;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setBusy(false);
+    }
   };
   return (
     <Modal title="New book" onClose={onClose}>
@@ -104,6 +111,7 @@ function NewBook({ onClose }: { onClose: () => void }) {
           <input type="number" min={bind.minPages ?? 4} max={bind.maxPages ?? 400} step={2} value={pages} onChange={(e) => setPages(Number(e.target.value))} />
         </label>
         <p className="muted small">{pr.notes}</p>
+        {error && <div className="notice notice-error">{error}</div>}
       </div>
       <div className="modal-foot">
         <span />

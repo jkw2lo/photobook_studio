@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  COVER_INDEX, FONT_FAMILIES, addChapter, addTextAt, applyTemplate, defaultCrop, duplicateElement, duplicateSpread, effectiveDpi,
+  COVER_INDEX, addChapter, nearestWeight, weightName, addTextAt, applyTemplate, defaultCrop, duplicateElement, duplicateSpread, effectiveDpi,
   fitFrameToPhoto, fontFamily, insertSpreadAfter, isPrintable, removeElements, removeSpread, reorderElement, setFramePhoto,
   setSpreadChapter, setSpreadLocked, setSurfaceBackground, shuffleSpreadLayout, spreadPagesLabel, templateName, updateElement,
   type ImageElement, type TextElement,
@@ -10,6 +10,7 @@ import { selectedElement, useEditor } from '../store';
 import { ColorInput } from './ColorInput';
 import { BookPanel } from './BookPanel';
 import { CoverPanel } from './CoverPanel';
+import { FontPicker } from './FontPicker';
 import { Icon } from './Icon';
 import { PreflightPanel } from './PreflightPanel';
 import { TemplatePicker } from './TemplatePicker';
@@ -178,17 +179,15 @@ function ElementPanel() {
             onBlur={() => useEditor.getState().endGesture('Edit text')}
             onKeyDown={(e) => e.stopPropagation()}
           />
-          <label className="field">
+          <div className="field">
             <span>Font</span>
-            <select value={el.fontFamily} onChange={(e) => upd('Font', { fontFamily: e.target.value, fontWeight: fontFamily(e.target.value).weights[0] })}>
-              {FONT_FAMILIES.map((f) => <option key={f.family}>{f.family}</option>)}
-            </select>
-          </label>
+            <FontPicker value={el.fontFamily} onChange={(family) => upd('Font', { fontFamily: family, fontWeight: nearestWeight(family, el.fontWeight) })} />
+          </div>
           <div className="field-row">
             <label className="field">
               <span>Weight</span>
               <select value={el.fontWeight} onChange={(e) => upd('Font weight', { fontWeight: Number(e.target.value) })}>
-                {fontFamily(el.fontFamily).weights.map((w) => <option key={w} value={w}>{w === 400 ? 'Regular' : w >= 700 ? 'Bold' : 'Semibold'}</option>)}
+                {fontFamily(el.fontFamily).weights.map((w) => <option key={w} value={w}>{weightName(w)}</option>)}
               </select>
             </label>
             <NumField label="Size" value={el.fontSizePt} min={4} max={200} suffix="pt" onCommit={(v) => upd('Font size', { fontSizePt: v })} />

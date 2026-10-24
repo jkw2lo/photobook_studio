@@ -25,6 +25,7 @@ const PATHS: Record<string, string> = {
   info: 'M12 8v.5M12 11v5M12 21a9 9 0 100-18 9 9 0 000 18z',
   guides: 'M4 8h16M4 16h16M8 4v16M16 4v16',
   left: 'M15 6l-6 6 6 6',
+  down: 'M6 9l6 6 6-6',
   right: 'M9 6l6 6-6 6',
   back: 'M19 12H5M11 6l-6 6 6 6',
   swap: 'M7 7h13l-4-4M17 17H4l4 4',

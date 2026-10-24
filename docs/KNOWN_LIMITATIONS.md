@@ -11,6 +11,8 @@ Honest list of what this version does not do, or does only partly.
 - **Lulu specs are from Lulu's published guides (October 2026).** Lulu's generated cover template remains authoritative; Lulu paperback page limits are not encoded.
 - **Covers:** no dust jackets or flaps, no barcode/ISBN area, no paper-type choice (spine assumes standard paper).
 - **sRGB only.** No CMYK or ICC conversion. Fine for consumer photobook printers (Blurb, Lulu and similar); not for offset printing.
+- **No italics.** Fonts are bundled in upright weights only.
+- **Some fonts can't be offered.** A few fonts (e.g. IBM Plex Mono) crash PDFKit's font subsetter, so they are excluded; `tests/fonts.test.ts` checks every bundled weight.
 - **Fonts cover Latin scripts only.** The bundled font files are the Latin subsets. Other scripts will show missing glyphs in the PDF.
 - **Line breaks can differ.** Browser and PDF wrap text independently with the same font metrics; an occasional line may break differently. Overflow is detected at export.
 - **Printer presets** cover Lulu and Blurb photo-book sizes only; other printers use Custom.
