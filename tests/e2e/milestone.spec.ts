@@ -69,3 +69,36 @@ test('import, draft, edit, reopen and export a book', async ({ page }) => {
   await expect(page.locator('.export-result').first()).toContainText('24 of 24 pages');
   await expect(page.locator('.export-result').nth(1)).toContainText('Cover · Verified');
 });
+
+test('make a collage poster: import, auto collage, switch style, export', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /New book/ }).first().click();
+  await page.getByRole('button', { name: 'Poster / collage' }).click();
+  await page.getByPlaceholder('e.g. Summer 2026').fill('E2E Poster');
+  await page.getByRole('button', { name: 'Create poster' }).click();
+  await expect(page.locator('.book-title')).toHaveText('E2E Poster');
+
+  await page.getByRole('button', { name: 'Choose a folder…' }).click();
+  const path = page.getByLabel('Folder path');
+  await path.fill(FIXTURES);
+  await path.press('Enter');
+  await page.getByRole('button', { name: 'Import this folder' }).click();
+  await expect(page.getByText(/Imported 21 photos|already in library/)).toBeVisible({ timeout: 60_000 });
+
+  await page.getByRole('button', { name: 'Generate collage' }).click();
+  await page.locator('.modal').getByRole('button', { name: 'Generate', exact: true }).click();
+  await expect(page.locator('.report')).toContainText('photos placed');
+  await page.getByRole('button', { name: 'Done' }).click();
+  const frames = page.locator('.canvas .el-image');
+  expect(await frames.count()).toBeGreaterThan(10);
+
+  // Re-flow as a pinboard from the side panel: same photos, tilted prints.
+  await page.locator('.inspector .collage-style', { hasText: 'Pinboard' }).click();
+  await expect.poll(async () => frames.evaluateAll((els) => els.filter((e) => (e as HTMLElement).style.transform.includes('rotate')).length)).toBeGreaterThan(5);
+  await expect(page.locator('.save')).toHaveText('Saved');
+
+  await page.getByRole('button', { name: 'Export PDF' }).first().click();
+  await page.locator('.modal').getByRole('button', { name: 'Export PDF' }).click();
+  await expect(page.locator('.export-result').first()).toContainText('Poster · Verified', { timeout: 60_000 });
+  await expect(page.locator('.export-result').first()).toContainText('1 of 1 page');
+});

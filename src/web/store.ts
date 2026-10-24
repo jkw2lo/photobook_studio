@@ -105,7 +105,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       const [{ doc, revision }, assets] = await Promise.all([api.getProject(projectId), api.assets(projectId)]);
       set({
         doc, revision, assets, assetMap: new Map(assets.map((a) => [a.id, a])),
-        saveState: 'saved', lastSavedAt: Date.now(), currentSpread: Math.min(1, doc.spreads.length - 1),
+        saveState: 'saved', lastSavedAt: Date.now(), currentSpread: doc.settings.product === 'poster' ? 0 : Math.min(1, doc.spreads.length - 1),
       });
     } catch (e) {
       set({ loadError: e instanceof Error ? e.message : String(e) });
@@ -186,8 +186,9 @@ export const useEditor = create<EditorState>((set, get) => ({
   goToSpread(i) {
     const { doc } = get();
     if (!doc) return;
-    // -1 is the cover.
-    set({ currentSpread: Math.max(-1, Math.min(doc.spreads.length - 1, i)), selection: null, cropElementId: null, view: 'spread' });
+    // -1 is the cover (books only); a poster has just its sheet.
+    const min = doc.settings.product === 'poster' ? 0 : -1;
+    set({ currentSpread: Math.max(min, Math.min(doc.spreads.length - 1, i)), selection: null, cropElementId: null, view: 'spread' });
   },
 
   setView: (view) => set({ view, selection: null, cropElementId: null }),

@@ -29,7 +29,7 @@ export function BookPanel() {
         <input value={doc.subtitle} placeholder="Defaults to the date range" onChange={(e) => useEditor.getState().gesture((d) => setTitle(d, d.title, e.target.value))} onBlur={() => useEditor.getState().endGesture('Edit subtitle')} onKeyDown={(e) => e.stopPropagation()} />
       </label>
 
-      <PrinterSection />
+      {doc.settings.product === 'poster' ? <PosterPrintSection /> : <PrinterSection />}
 
       <div className="section-title">Style</div>
       <label className="field">
@@ -124,6 +124,28 @@ function History({ projectId, revision }: { projectId: string; revision: number 
         </ul>
       )}
     </div>
+  );
+}
+
+function PosterPrintSection() {
+  const doc = useEditor((s) => s.doc)!;
+  const { run } = useEditor.getState();
+  const st = doc.settings;
+  return (
+    <>
+      <div className="section-title">Print</div>
+      <p className="muted small">
+        One sheet, {(st.trimWidthMm / 25.4).toFixed(1)} × {(st.trimHeightMm / 25.4).toFixed(1)} in, with bleed on every edge. Check your print shop’s bleed requirement; 0.125 in (3.2 mm) is the most common.
+      </p>
+      <div className="field-row">
+        <NumField label="Bleed" value={st.bleedMm} min={0} max={10} step={0.125} suffix="mm" onCommit={(v) => run('Bleed', (d) => updateSettings(d, { bleedMm: v }))} />
+        <NumField label="Safe margin" value={st.safeMarginMm} min={0} max={40} suffix="mm" onCommit={(v) => run('Safe margin', (d) => updateSettings(d, { safeMarginMm: v }))} />
+      </div>
+      <div className="field-row">
+        <NumField label="Warn below" value={st.minDpiWarning} min={50} max={600} step={10} suffix="DPI" onCommit={(v) => run('DPI warning', (d) => updateSettings(d, { minDpiWarning: v }))} />
+        <NumField label="Error below" value={st.minDpiError} min={30} max={600} step={10} suffix="DPI" onCommit={(v) => run('DPI error', (d) => updateSettings(d, { minDpiError: v }))} />
+      </div>
+    </>
   );
 }
 

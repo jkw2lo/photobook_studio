@@ -9,7 +9,7 @@ import { binding, spineWidth, type SpineInfo } from './printers';
 export const COVER_INDEX = -1;
 
 export interface Panel {
-  id: 'left' | 'right' | 'back' | 'spine' | 'front';
+  id: 'left' | 'right' | 'back' | 'spine' | 'front' | 'sheet';
   label: string;
   x: number;
   w: number;
@@ -17,7 +17,7 @@ export interface Panel {
 }
 
 export interface SurfaceGeometry {
-  kind: 'spread' | 'cover';
+  kind: 'spread' | 'cover' | 'poster';
   /** Trim extent (mm). */
   width: number;
   height: number;
@@ -47,7 +47,23 @@ export function surfaceGeometry(doc: BookDocument, index: number): SurfaceGeomet
   return index === COVER_INDEX ? coverGeometry(doc) : spreadGeometry(doc, index);
 }
 
+export function posterGeometry(doc: Pick<BookDocument, 'settings'>): SurfaceGeometry {
+  const s = doc.settings;
+  const m = s.safeMarginMm;
+  return {
+    kind: 'poster',
+    width: s.trimWidthMm,
+    height: s.trimHeightMm,
+    bleed: s.bleedMm,
+    panels: [{ id: 'sheet', label: `${(s.trimWidthMm / 25.4).toFixed(1).replace(/\.0$/, '')} × ${(s.trimHeightMm / 25.4).toFixed(1).replace(/\.0$/, '')} in poster`, x: 0, w: s.trimWidthMm, printable: true }],
+    folds: [],
+    foldZone: null,
+    safeRects: [{ x: m, y: m, w: s.trimWidthMm - 2 * m, h: s.trimHeightMm - 2 * m }],
+  };
+}
+
 export function spreadGeometry(doc: BookDocument, index: number): SurfaceGeometry {
+  if (doc.settings.product === 'poster') return posterGeometry(doc);
   const s = doc.settings;
   const W = s.trimWidthMm;
   const n = doc.spreads.length;

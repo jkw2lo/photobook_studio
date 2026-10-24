@@ -18,6 +18,11 @@ Honest list of what this version does not do, or does only partly.
 - **Printer presets** cover Lulu and Blurb photo-book sizes only; other printers use Custom.
 - **Rotated full-bleed photos** can leave white corners after trimming, and preflight does not detect this yet.
 
+## Posters
+- One sheet per poster; no multi-panel or tiled prints.
+- No poster print-shop presets: bleed defaults to 0.125 in and is editable in the Print tab.
+- Re-flowing a collage (style, spacing, border, size) replaces manual moves on the sheet; undo restores them.
+
 ## Curation
 - **Chronological ordering only.** Thematic and mixed editorial sequencing are not implemented (the option isn't shown in the UI).
 - **No face or subject detection.** Crops and panorama gutter-avoidance use an edge-energy "saliency" estimate. It works for clear subjects but can be fooled by busy backgrounds.

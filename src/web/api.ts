@@ -28,6 +28,9 @@ export interface ProjectSummary {
   createdAt: string;
   photoCount: number;
   pageCount: number;
+  product: 'book' | 'poster';
+  trimWidthMm: number;
+  trimHeightMm: number;
 }
 
 export interface ImportJob {
@@ -80,7 +83,7 @@ export interface ExportResponse {
 
 export const api = {
   listProjects: () => call<ProjectSummary[]>('GET', '/api/projects'),
-  createProject: (body: { title: string; sizeId: string; stylePresetId: string; pages: number; printerId?: string; bindingId?: string }) =>
+  createProject: (body: { title: string; sizeId: string; stylePresetId?: string; pages?: number; printerId?: string; bindingId?: string; product?: 'book' | 'poster'; landscape?: boolean }) =>
     call<{ doc: BookDocument; revision: number }>('POST', '/api/projects', body),
   getProject: (id: string) => call<{ doc: BookDocument; revision: number; updatedAt: string }>('GET', `/api/projects/${id}`),
   saveProject: (doc: BookDocument, baseRevision: number, keepalive = false) =>

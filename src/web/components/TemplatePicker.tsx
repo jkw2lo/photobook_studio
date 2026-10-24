@@ -1,12 +1,18 @@
-import { TEMPLATES, type LayoutTemplate } from '../../core';
+import { MOSAIC_LAYOUT, TEMPLATES, type LayoutTemplate } from '../../core';
+import { CollageDiagram } from './CollageControls';
 
 /** Miniature diagrams of layout templates. */
 export function TemplatePicker({
-  scope, current, onPick, imageCount,
-}: { scope: 'page' | 'spread'; current?: string; onPick: (id: string) => void; imageCount?: number }) {
+  scope, current, onPick, imageCount, onMosaic,
+}: { scope: 'page' | 'spread'; current?: string; onPick: (id: string) => void; imageCount?: number; onMosaic?: () => void }) {
   const list = TEMPLATES.filter((t) => t.scope === scope && t.special !== 'divider').sort((a, b) => a.imageCount - b.imageCount);
   return (
     <div className="template-grid">
+      {onMosaic && (
+        <button className={`template mosaic-option ${current === MOSAIC_LAYOUT ? 'on' : ''}`} title="Mosaic — fits however many photos are on the page, edge to edge" onClick={onMosaic}>
+          <CollageDiagram id="mosaic" /> Mosaic
+        </button>
+      )}
       {list.map((t) => (
         <button
           key={t.id}

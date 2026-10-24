@@ -10,6 +10,7 @@ import { Library } from './Library';
 import { Navigator } from './Navigator';
 import { Overview } from './Overview';
 import { usePreflight } from './PreflightPanel';
+import { PosterDialog } from './PosterUI';
 
 export function Editor({ projectId }: { projectId: string }) {
   // Narrow selectors: the editor shell must not re-render (and re-render every panel) on each drag step.
@@ -21,6 +22,7 @@ export function Editor({ projectId }: { projectId: string }) {
   const counts = issueCounts(issues);
   const assetsCount = useEditor((s) => s.assets.length);
   const isEmpty = useEditor((s) => !!s.doc && s.doc.spreads.every((sp) => sp.elements.length === 0));
+  const poster = useEditor((s) => s.doc?.settings.product === 'poster');
 
   useEffect(() => {
     void useEditor.getState().load(projectId);
@@ -29,7 +31,18 @@ export function Editor({ projectId }: { projectId: string }) {
 
   useKeyboard(dialog === null);
 
-  if (loadError) return <div className="center-msg"><p>{loadError}</p><a href="#/">Back to books</a></div>;
+  if (loadError) {
+    return (
+      <div className="center-msg">
+        <p>Couldn’t open this book: {loadError}</p>
+        <p className="muted small">If the server was just restarted, it may still be starting up.</p>
+        <div className="row">
+          <button className="btn btn-primary" onClick={() => void useEditor.getState().load(projectId)}>Try again</button>
+          <a className="btn" href="#/">Back to books</a>
+        </div>
+      </div>
+    );
+  }
   if (!loaded) return <div className="center-msg muted">Opening…</div>;
 
   return (
@@ -42,20 +55,24 @@ export function Editor({ projectId }: { projectId: string }) {
           {isEmpty && view === 'spread' && (
             <div className="stage-empty">
               <h3>{assetsCount ? `${assetsCount} photos ready` : 'Start by importing photos'}</h3>
-              <p className="muted">{assetsCount ? 'Let the app draft a complete book, then refine it — or drag photos onto the pages yourself.' : 'Use Import in the library. Photos never leave this computer.'}</p>
+              <p className="muted">
+                {assetsCount
+                  ? poster ? 'Let the app build a collage from your best photos, then refine it — or drag photos onto the sheet yourself.' : 'Let the app draft a complete book, then refine it — or drag photos onto the pages yourself.'
+                  : 'Use Import in the library. Photos never leave this computer.'}
+              </p>
               {assetsCount > 0 && (
                 <button className="btn btn-primary" onClick={() => setDialog('generate')}>
-                  <Icon name="sparkle" /> Generate first draft
+                  <Icon name="sparkle" /> {poster ? 'Generate collage' : 'Generate first draft'}
                 </button>
               )}
             </div>
           )}
-          <Navigator />
+          {!poster && <Navigator />}
         </main>
-        <Inspector issueCount={counts} />
+        <Inspector issueCount={counts} onAutoCollage={() => setDialog('generate')} />
       </div>
       <Toasts />
-      {dialog === 'generate' && <GenerateDialog onClose={() => setDialog(null)} />}
+      {dialog === 'generate' && (poster ? <PosterDialog onClose={() => setDialog(null)} /> : <GenerateDialog onClose={() => setDialog(null)} />)}
       {dialog === 'export' && <ExportDialog onClose={() => setDialog(null)} />}
     </div>
   );
@@ -63,6 +80,7 @@ export function Editor({ projectId }: { projectId: string }) {
 
 function TopBar({ onGenerate, onExport }: { onGenerate: () => void; onExport: () => void }) {
   const title = useEditor((s) => s.doc?.title ?? '');
+  const poster = useEditor((s) => s.doc?.settings.product === 'poster');
   const past = useEditor((s) => s.past);
   const future = useEditor((s) => s.future);
   const saveState = useEditor((s) => s.saveState);
@@ -87,10 +105,12 @@ function TopBar({ onGenerate, onExport }: { onGenerate: () => void; onExport: ()
         <button className="icon-btn" disabled={!past.length} onClick={st.undo} title={past.length ? `Undo ${past[past.length - 1].label} (⌘Z)` : 'Undo'}><Icon name="undo" /></button>
         <button className="icon-btn" disabled={!future.length} onClick={st.redo} title={future.length ? `Redo ${future[0].label} (⇧⌘Z)` : 'Redo'}><Icon name="redo" /></button>
         <span className="divider" />
-        <div className="seg seg-compact">
-          <button className={view === 'spread' ? 'on' : ''} onClick={() => st.setView('spread')} title="Spread editor"><Icon name="spread" /></button>
-          <button className={view === 'overview' ? 'on' : ''} onClick={() => st.setView('overview')} title="Whole book"><Icon name="grid" /></button>
-        </div>
+        {!poster && (
+          <div className="seg seg-compact">
+            <button className={view === 'spread' ? 'on' : ''} onClick={() => st.setView('spread')} title="Spread editor"><Icon name="spread" /></button>
+            <button className={view === 'overview' ? 'on' : ''} onClick={() => st.setView('overview')} title="Whole book"><Icon name="grid" /></button>
+          </div>
+        )}
         <button className={`icon-btn ${showGuides ? 'on' : ''}`} onClick={st.toggleGuides} title="Trim, bleed, safe-area and binding guides (G)"><Icon name="guides" /></button>
         {view === 'spread' && (
           <div className="zoom">
@@ -101,7 +121,7 @@ function TopBar({ onGenerate, onExport }: { onGenerate: () => void; onExport: ()
         )}
       </div>
       <div className="row">
-        <button className="btn" onClick={onGenerate}><Icon name="sparkle" /> Auto draft</button>
+        <button className="btn" onClick={onGenerate}><Icon name="sparkle" /> {poster ? 'Auto collage' : 'Auto draft'}</button>
         <button className="btn btn-primary" onClick={onExport}><Icon name="download" /> Export PDF</button>
       </div>
     </header>

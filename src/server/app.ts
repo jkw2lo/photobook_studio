@@ -2,11 +2,11 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { existsSync, statSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
-import { API_VERSION, SCHEMA_VERSION, UnknownSizeError, createBook, migrateDocument, type BookDocument, type PhotoAsset } from '../core';
+import { API_VERSION, SCHEMA_VERSION, UnknownSizeError, createBook, createPoster, posterSize, migrateDocument, type BookDocument, type PhotoAsset } from '../core';
 import { Store, toPhotoAsset, type AssetRow } from './db';
 import { Importer, scanFolder } from './importer';
 import { hashFile, isSupported, thumbPath, THUMB_SIZES, type ThumbSize } from './media';
-import { exportCoverPdf, exportPdf, type ExportAsset, type ExportOptions } from './pdf';
+import { exportCoverPdf, exportPdf, exportPosterPdf, type ExportAsset, type ExportOptions } from './pdf';
 
 // HTTP API. Bound to 127.0.0.1 by main.ts — never reachable from the network.
 
@@ -48,13 +48,18 @@ export function createApp(dataDir: string, opts: { staticDir?: string } = {}) {
   app.get('/api/projects', (_req, res) => res.json(store.listProjects()));
 
   app.post('/api/projects', wrap((req, res) => {
-    const { title, sizeId, stylePresetId, pages, printerId, bindingId } = req.body ?? {};
+    const { title, sizeId, stylePresetId, pages, printerId, bindingId, product, landscape } = req.body ?? {};
     let doc;
-    try {
-      doc = createBook({ title: String(title || 'Untitled book'), sizeId, stylePresetId, pages, printerId, bindingId });
-    } catch (e) {
-      if (e instanceof UnknownSizeError) throw new HttpError(400, e.message);
-      throw e;
+    if (product === 'poster') {
+      if (!posterSize(String(sizeId))) throw new HttpError(400, `Unknown poster size “${sizeId}”.`);
+      doc = createPoster({ title: String(title || 'Untitled poster'), sizeId: String(sizeId), landscape: !!landscape });
+    } else {
+      try {
+        doc = createBook({ title: String(title || 'Untitled book'), sizeId, stylePresetId, pages, printerId, bindingId });
+      } catch (e) {
+        if (e instanceof UnknownSizeError) throw new HttpError(400, e.message);
+        throw e;
+      }
     }
     const { revision } = store.createProject(doc);
     res.status(201).json({ doc, revision });
@@ -169,6 +174,11 @@ export function createApp(dataDir: string, opts: { staticDir?: string } = {}) {
     }
     const safeTitle = doc.title.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'photobook';
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    if (doc.settings.product === 'poster') {
+      const file = `${safeTitle}-${stamp}-poster.pdf`;
+      const result = await exportPosterPdf(doc, assets, join(dataDir, 'exports', file));
+      return void res.json({ ...result, file, url: `/api/exports/${encodeURIComponent(file)}`, cover: null });
+    }
     const file = `${safeTitle}-${stamp}-interior.pdf`;
     const result = await exportPdf(doc, assets, join(dataDir, 'exports', file), options);
     let cover = null;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { PRINTERS, SIZE_PRESETS, STYLE_PRESETS, printer, type BindingId, type PrinterId } from '../../core';
+import { POSTER_SIZES, PRINTERS, SIZE_PRESETS, STYLE_PRESETS, printer, type BindingId, type PrinterId } from '../../core';
 import { api, type ProjectSummary } from '../api';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
@@ -18,13 +18,13 @@ export function Home() {
           <h1>Photobook Studio</h1>
           <p className="muted">Everything stays on this computer — photos, thumbnails and books.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setCreating(true)}><Icon name="plus" /> New book</button>
+        <button className="btn btn-primary" onClick={() => setCreating(true)}><Icon name="plus" /> New book or poster</button>
       </header>
       {error && <div className="notice notice-error">Could not reach the local server: {error}</div>}
       {projects && projects.length === 0 && (
         <div className="home-empty">
-          <h2>Make your first book</h2>
-          <p className="muted">Import a folder of photos, let the app draft the whole book, then refine it and export a print-ready PDF.</p>
+          <h2>Make your first book or poster</h2>
+          <p className="muted">Import a folder of photos, let the app draft a whole book or a collage poster, then refine it and export a print-ready PDF.</p>
           <button className="btn btn-primary" onClick={() => setCreating(true)}>New book</button>
         </div>
       )}
@@ -32,7 +32,9 @@ export function Home() {
         {projects?.map((p) => (
           <a key={p.id} className="project-card" href={`#/book/${p.id}`}>
             <strong>{p.title}</strong>
-            <span className="muted small">{p.pageCount} pages · {p.photoCount} photos</span>
+            <span className="muted small">
+              {p.product === 'poster' ? `Poster · ${(p.trimWidthMm / 25.4).toFixed(0)} × ${(p.trimHeightMm / 25.4).toFixed(0)} in` : `${p.pageCount} pages`} · {p.photoCount} photos
+            </span>
             <span className="muted small">Edited {new Date(p.updatedAt).toLocaleString()}</span>
           </a>
         ))}
@@ -43,6 +45,72 @@ export function Home() {
 }
 
 function NewBook({ onClose }: { onClose: () => void }) {
+  const [product, setProduct] = useState<'book' | 'poster'>('book');
+  return (
+    <Modal title={product === 'poster' ? 'New poster' : 'New book'} onClose={onClose}>
+      <div className="seg seg-wide product-toggle">
+        <button className={product === 'book' ? 'on' : ''} onClick={() => setProduct('book')}><Icon name="spread" /> Photobook</button>
+        <button className={product === 'poster' ? 'on' : ''} onClick={() => setProduct('poster')}><Icon name="grid" /> Poster / collage</button>
+      </div>
+      {product === 'poster' ? <NewPosterForm onClose={onClose} /> : <NewBookForm onClose={onClose} />}
+    </Modal>
+  );
+}
+
+function NewPosterForm({ onClose }: { onClose: () => void }) {
+  const [title, setTitle] = useState('');
+  const [sizeId, setSizeId] = useState('p18x24');
+  const [landscape, setLandscape] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const create = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const { doc } = await api.createProject({ title: title.trim() || 'Untitled poster', sizeId, product: 'poster', landscape });
+      location.hash = `#/book/${doc.id}`;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <div className="stack">
+        <label className="field">
+          <span>Title (optional on the poster)</span>
+          <input autoFocus value={title} placeholder="e.g. Summer 2026" onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && create()} />
+        </label>
+        <div className="field-row">
+          <label className="field field-grow">
+            <span>Size</span>
+            <select value={sizeId} onChange={(e) => setSizeId(e.target.value)}>
+              {POSTER_SIZES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </label>
+          <div className="field">
+            <span>Orientation</span>
+            <div className="seg">
+              <button className={!landscape ? 'on' : ''} onClick={() => setLandscape(false)}>Portrait</button>
+              <button className={landscape ? 'on' : ''} onClick={() => setLandscape(true)}>Landscape</button>
+            </div>
+          </div>
+        </div>
+        <p className="muted small">After importing photos, use Auto collage to choose a mosaic, grid, hero or pinboard layout. 0.125 in bleed on every edge; change it in the Print tab if your print shop asks for something else.</p>
+        {error && <div className="notice notice-error">{error}</div>}
+      </div>
+      <div className="modal-foot">
+        <span />
+        <div className="row">
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={busy} onClick={create}>Create poster</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function NewBookForm({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState('');
   const [printerId, setPrinterId] = useState<PrinterId>('lulu');
   const [bindingId, setBindingId] = useState<BindingId>('hardcover');
@@ -66,7 +134,7 @@ function NewBook({ onClose }: { onClose: () => void }) {
     }
   };
   return (
-    <Modal title="New book" onClose={onClose}>
+    <>
       <div className="stack">
         <label className="field">
           <span>Title</span>
@@ -120,6 +188,6 @@ function NewBook({ onClose }: { onClose: () => void }) {
           <button className="btn btn-primary" disabled={busy} onClick={create}>Create</button>
         </div>
       </div>
-    </Modal>
+    </>
   );
 }

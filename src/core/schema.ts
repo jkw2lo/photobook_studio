@@ -44,7 +44,8 @@ export function validateDocument(doc: Record<string, unknown>): BookDocument {
     throw new SchemaError(`Invalid project document: ${msg}`);
   };
   if (typeof doc.id !== 'string') fail('missing id');
-  if (!Array.isArray(doc.spreads) || doc.spreads.length < 2) fail('a book needs at least two spreads');
+  const isPoster = (doc.settings as { product?: string } | undefined)?.product === 'poster';
+  if (!Array.isArray(doc.spreads) || doc.spreads.length < (isPoster ? 1 : 2)) fail(isPoster ? 'a poster needs its sheet' : 'a book needs at least two spreads');
   const settings = { ...defaultSettings(), ...(doc.settings as object) };
   const style = { ...styleFromPreset(((doc.style as { presetId?: string }) ?? {}).presetId ?? 'editorial'), ...(doc.style as object) };
   const ids = new Set<string>();

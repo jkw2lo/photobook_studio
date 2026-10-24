@@ -395,15 +395,18 @@ export function Canvas() {
   const swapTarget = swapDrag?.target ? surface.elements.find((x) => x.id === swapDrag.target) : undefined;
   const totalW = (g.width + 2 * b) * scale;
   const cursor = hovered && !hovered.locked ? 'move' : undefined;
-  const canPrev = index > COVER_INDEX;
+  const isPosterDoc = doc.settings.product === 'poster';
+  const canPrev = !isPosterDoc && index > COVER_INDEX;
   const canNext = index < doc.spreads.length - 1;
 
   return (
     <div className="canvas" ref={wrapRef}>
       <div className="canvas-inner" style={{ minWidth: totalW + 120, minHeight: (g.height + 2 * b) * scale + 72 }}>
-        <button className="nav-arrow" disabled={!canPrev} onClick={() => useEditor.getState().goToSpread(index - 1)} title="Previous (←)">
-          <Icon name="left" size={20} />
-        </button>
+        {!isPosterDoc && (
+          <button className="nav-arrow" disabled={!canPrev} onClick={() => useEditor.getState().goToSpread(index - 1)} title="Previous (←)">
+            <Icon name="left" size={20} />
+          </button>
+        )}
         <div className="canvas-spread">
           <SpreadView settings={doc.settings} style={doc.style} spreadCount={spreadCount} index={index} surface={surface} scale={scale} assets={assets} hiddenElementId={editingText}>
             {showGuides && <Guides g={g} scale={scale} />}
@@ -445,9 +448,11 @@ export function Canvas() {
             ))}
           </div>
         </div>
-        <button className="nav-arrow" disabled={!canNext} onClick={() => useEditor.getState().goToSpread(index + 1)} title="Next (→)">
-          <Icon name="right" size={20} />
-        </button>
+        {!isPosterDoc && (
+          <button className="nav-arrow" disabled={!canNext} onClick={() => useEditor.getState().goToSpread(index + 1)} title="Next (→)">
+            <Icon name="right" size={20} />
+          </button>
+        )}
       </div>
       {swapDrag && (
         <div className="swap-ghost" style={{ left: swapDrag.client.x, top: swapDrag.client.y }}>

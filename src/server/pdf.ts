@@ -6,7 +6,7 @@ import PDFDocument from 'pdfkit';
 import { PDFDocument as PdfLibDocument, PDFName, PDFArray, PDFNumber } from 'pdf-lib';
 import sharp from 'sharp';
 import {
-  COVER_INDEX, coverGeometry, elementBounds, elementPlacement, fontFilePath, intersects, mmToInch, mmToPt, nearestWeight,
+  COVER_INDEX, coverGeometry, posterGeometry, elementBounds, elementPlacement, fontFilePath, intersects, mmToInch, mmToPt, nearestWeight,
   pageNumberRect, preflight, printablePages, type BleedMode, type BookDocument, type Element, type ImageElement,
   type PhotoAsset, type PreflightIssue, type Rect, type TextElement,
 } from '../core';
@@ -217,6 +217,21 @@ export async function exportCoverPdf(doc: BookDocument, assets: Map<string, Expo
   await w.elements(doc.cover.elements, { x: -g.bleed, y: -g.bleed, w: spec.pageW, h: spec.pageH }, COVER_INDEX, 'Cover');
   const bytes = await w.finish();
   return { path: outPath, bytes, verification: await verifyPdf(outPath, [spec]), textOverflow: overflowIssues(w), spineMm: g.spine?.mm ?? 0 };
+}
+
+/** Poster: one page, the sheet plus bleed on every side. */
+export async function exportPosterPdf(doc: BookDocument, assets: Map<string, ExportAsset>, outPath: string): Promise<ExportResult> {
+  const started = Date.now();
+  const sheet = doc.spreads[0];
+  if (!sheet) throw new Error('This poster has no sheet');
+  const g = posterGeometry(doc);
+  const issues = preflight(doc, new Map([...assets].map(([id, a]) => [id, a.asset])));
+  const spec: PageSpec = { pageW: g.width + 2 * g.bleed, pageH: g.height + 2 * g.bleed, trim: { x: g.bleed, y: g.bleed, w: g.width, h: g.height } };
+  const w = new PdfWriter(outPath, doc.title, assets);
+  w.page(spec, sheet.background ?? doc.style.background);
+  await w.elements(sheet.elements, { x: -g.bleed, y: -g.bleed, w: spec.pageW, h: spec.pageH }, 0, 'Poster');
+  const bytes = await w.finish();
+  return { path: outPath, bytes, issues, textOverflow: overflowIssues(w), verification: await verifyPdf(outPath, [spec]), durationMs: Date.now() - started, bleedMode: 'all' };
 }
 
 function overflowIssues(w: PdfWriter): PreflightIssue[] {

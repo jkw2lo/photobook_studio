@@ -48,6 +48,7 @@ export function defaultSettings(sizeId?: string): BookSettings {
     bindingId: 'hardcover',
     bleedMode: 'all',
     coverOverrides: { spineMm: null, wrapMm: null, panelWidthMm: null, panelHeightMm: null },
+    product: 'book',
   };
 }
 

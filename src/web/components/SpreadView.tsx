@@ -29,7 +29,8 @@ export const SpreadView = memo(function SpreadView({ settings, style, spreadCoun
   const b = g.bleed;
   const bg = surface.background ?? style.background;
   const px = (mm: number) => mm * scale;
-  const isCover = index === COVER_INDEX;
+  // Covers and posters are one continuous sheet; spreads are two pages (with inside covers).
+  const isCover = index === COVER_INDEX || g.kind === 'poster';
   return (
     <div className="spread" style={{ width: px(g.width + 2 * b), height: px(g.height + 2 * b), background: isCover ? bg : undefined }}>
       {!isCover &&

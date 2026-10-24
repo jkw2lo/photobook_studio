@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  COVER_INDEX, addChapter, nearestWeight, weightName, addTextAt, applyTemplate, defaultCrop, duplicateElement, duplicateSpread, effectiveDpi,
+  COVER_INDEX, addChapter, applyMosaicLayout, nearestWeight, weightName, addTextAt, applyTemplate, defaultCrop, duplicateElement, duplicateSpread, effectiveDpi,
   fitFrameToPhoto, fontFamily, insertSpreadAfter, isPrintable, removeElements, removeSpread, reorderElement, setFramePhoto,
   setSpreadChapter, setSpreadLocked, setSurfaceBackground, shuffleSpreadLayout, spreadPagesLabel, templateName, updateElement,
   type ImageElement, type TextElement,
@@ -11,31 +11,33 @@ import { ColorInput } from './ColorInput';
 import { BookPanel } from './BookPanel';
 import { CoverPanel } from './CoverPanel';
 import { FontPicker } from './FontPicker';
+import { PosterPanel } from './PosterUI';
 import { Icon } from './Icon';
 import { PreflightPanel } from './PreflightPanel';
 import { TemplatePicker } from './TemplatePicker';
 
 type Tab = 'edit' | 'book' | 'preflight';
 
-export function Inspector({ issueCount }: { issueCount: { error: number; warning: number } }) {
+export function Inspector({ issueCount, onAutoCollage }: { issueCount: { error: number; warning: number }; onAutoCollage: () => void }) {
   const [tab, setTab] = useState<Tab>('edit');
   const selected = useEditor(selectedElement);
   const onCover = useEditor((s) => s.currentSpread === COVER_INDEX);
+  const poster = useEditor((s) => s.doc?.settings.product === 'poster');
   useEffect(() => {
     if (selected) setTab('edit');
   }, [selected?.id]);
   return (
     <aside className="inspector">
       <div className="tabs">
-        <button className={tab === 'edit' ? 'on' : ''} onClick={() => setTab('edit')}>{selected ? ({ image: 'Photo', text: 'Text', shape: 'Shape' } as const)[selected.type] : onCover ? 'Cover' : 'Spread'}</button>
-        <button className={tab === 'book' ? 'on' : ''} onClick={() => setTab('book')}>Book</button>
+        <button className={tab === 'edit' ? 'on' : ''} onClick={() => setTab('edit')}>{selected ? ({ image: 'Photo', text: 'Text', shape: 'Shape' } as const)[selected.type] : poster ? 'Poster' : onCover ? 'Cover' : 'Spread'}</button>
+        <button className={tab === 'book' ? 'on' : ''} onClick={() => setTab('book')}>{poster ? 'Print' : 'Book'}</button>
         <button className={tab === 'preflight' ? 'on' : ''} onClick={() => setTab('preflight')}>
           Preflight
           {issueCount.error > 0 ? <span className="pill pill-error">{issueCount.error}</span> : issueCount.warning > 0 ? <span className="pill pill-warn">{issueCount.warning}</span> : <span className="pill pill-ok"><Icon name="check" size={11} /></span>}
         </button>
       </div>
       <div className="inspector-body">
-        {tab === 'edit' && (selected ? <ElementPanel /> : onCover ? <CoverPanel /> : <SpreadPanel />)}
+        {tab === 'edit' && (selected ? <ElementPanel /> : poster ? <PosterPanel onAutoCollage={onAutoCollage} /> : onCover ? <CoverPanel /> : <SpreadPanel />)}
         {tab === 'book' && <BookPanel />}
         {tab === 'preflight' && <PreflightPanel />}
       </div>
@@ -345,7 +347,11 @@ function SpreadPanel() {
           {(['left', 'right'] as const).filter((side) => isPrintable(i, side, n)).map((side) => (
             <div key={side}>
               <div className="section-title">{side === 'left' ? 'Left' : 'Right'} page layout · <span className="muted">{templateName(spread.layout?.[side])}</span></div>
-              <TemplatePicker scope="page" imageCount={imagesOn(side)} current={spread.layout?.[side]} onPick={(id) => run(`Layout: ${templateName(id)}`, (d) => applyTemplate(d, i, side, id, assets))} />
+              <TemplatePicker
+                scope="page" imageCount={imagesOn(side)} current={spread.layout?.[side]}
+                onPick={(id) => run(`Layout: ${templateName(id)}`, (d) => applyTemplate(d, i, side, id, assets))}
+                onMosaic={imagesOn(side) >= 2 ? () => run('Layout: Mosaic', (d) => applyMosaicLayout(d, i, side, assets, Date.now() % 1000)) : undefined}
+              />
             </div>
           ))}
           <p className="muted small">Highlighted layouts fit the number of photos already on the page. Extra photos go back to the library; extra frames start empty.</p>

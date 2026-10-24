@@ -39,6 +39,9 @@ export interface ProjectSummary {
   createdAt: string;
   photoCount: number;
   pageCount: number;
+  product: 'book' | 'poster';
+  trimWidthMm: number;
+  trimHeightMm: number;
 }
 
 export class Store {
@@ -138,15 +141,21 @@ export class Store {
          FROM projects p ORDER BY p.updated_at DESC`,
       )
       .all() as { id: string; title: string; revision: number; updated_at: string; created_at: string; doc: string; photo_count: number }[];
-    return rows.map((r) => ({
-      id: r.id,
-      title: r.title,
-      revision: r.revision,
-      updatedAt: r.updated_at,
-      createdAt: r.created_at,
-      photoCount: r.photo_count,
-      pageCount: (JSON.parse(r.doc).spreads.length - 1) * 2,
-    }));
+    return rows.map((r) => {
+      const doc = JSON.parse(r.doc);
+      return {
+        id: r.id,
+        title: r.title,
+        revision: r.revision,
+        updatedAt: r.updated_at,
+        createdAt: r.created_at,
+        photoCount: r.photo_count,
+        pageCount: (doc.spreads.length - 1) * 2,
+        product: doc.settings?.product === 'poster' ? 'poster' : 'book',
+        trimWidthMm: doc.settings?.trimWidthMm ?? 0,
+        trimHeightMm: doc.settings?.trimHeightMm ?? 0,
+      };
+    });
   }
 
   createProject(doc: BookDocument): { revision: number } {

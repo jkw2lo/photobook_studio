@@ -43,6 +43,21 @@ This writes 21 synthetic trip photos to `fixtures/generated/trip`: mixed orienta
 
 Autosave runs about 0.6 s after every edit. Version history in the **Book** tab restores any of the last 50 saves.
 
+## Posters and collages
+
+Choose **Poster / collage** in New book: 11 × 14 up to 24 × 36 in, A3–A1 and 50 × 70 cm, portrait or landscape. **Auto collage** curates the photos the same way as book drafts do (best frame of each burst, no duplicates, favourites kept, spread across the whole collection), then lays them out in one of four styles:
+
+| Style | What it does |
+| --- | --- |
+| Mosaic | Rows that fill the sheet edge to edge, each photo kept close to its own shape — works for any number of photos |
+| Grid | Identical cells in even rows and columns |
+| Hero + mosaic | One standout photo — chosen to be sharp enough at that size — with the rest as a mosaic |
+| Pinboard | Tilted, overlapping prints with white borders |
+
+Spacing, border (edge-to-edge into the bleed, or a margin), title position and background are set from the Poster panel, which re-flows the photos already on the sheet. Posters warn below 150 DPI (they're seen from further away than book pages). Export is one verified PDF with bleed.
+
+For books, the **Collage** style builds every multi-photo page as a mosaic, and any page can be switched to **Mosaic** from the layout picker.
+
 ## Printer presets
 
 | | Lulu | Blurb (PDF to Book) | Custom |
@@ -80,8 +95,10 @@ npm run test:e2e
 | `tests/core.test.ts` | Crop geometry, templates stay in bounds, draft page counts for every style and photo count, determinism, favourites kept, duplicates collapsed, locked spreads untouched, generated layouts pass preflight, undo safety, schema round-trip, core has no Node/React imports, no remote URLs anywhere in `src/` |
 | `tests/milestone.test.ts` | Real HTTP API + SQLite + image pipeline: import 21 fixtures (HEIC, EXIF rotation, dates, GPS, blur), re-import is idempotent, draft → edits → stale save refused → server restart → identical document → verified PDF (both bleed modes) → move a file → missing detected → relinked |
 | `tests/covers.test.ts` | Lulu spine table and paperback formula, Blurb estimate → manual override, casewrap cover dimensions, generated covers, spine text only above 80 pages, all three cover layouts pass preflight, front cover stays aligned when the spine grows, page-limit errors, v1 → v2 migration |
+| `tests/collage.test.ts` | Mosaic fills its box exactly with minimal cropping, grid cells identical, hero dominant and sharp enough, pinboard tilted and in bounds; every poster style curates correctly and passes preflight; edge-to-edge posters reach the bleed; style changes keep the same photos; Collage book style |
+| `tests/fonts.test.ts` | Every bundled font weight embeds in a PDF; editor stylesheet matches the exporter |
 | `tests/scale.test.ts` | 500-photo import with API latency sampled throughout; 60-page draft from 500 photos (needs `npm run fixtures -- 500`) |
-| `tests/e2e/milestone.spec.ts` | The milestone in the real UI, in your installed Chrome — including verified interior + cover PDFs |
+| `tests/e2e/milestone.spec.ts` | The milestone in the real UI, in your installed Chrome — including verified interior + cover PDFs — and a full poster flow (create, import, auto collage, switch to pinboard, export) |
 | `tests/e2e/perf.spec.ts` | Drag smoothness under load (needs the 500-photo fixtures) |
 
 To inspect an export visually (no extra installs):

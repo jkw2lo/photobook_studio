@@ -15,3 +15,5 @@ export * from './schema';
 export * from './printers';
 export * from './surface';
 export * from './cover';
+export * from './collage';
+export * from './poster';

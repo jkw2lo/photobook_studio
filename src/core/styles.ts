@@ -15,6 +15,8 @@ export interface StylePreset {
   heroSpreadShare: number;
   /** Relative preference for each template id. Missing = not used unless nothing else fits. */
   templateWeights: Record<string, number>;
+  /** 'mosaic': pages with 2+ photos are laid out by the collage engine instead of fixed templates. */
+  layoutMode?: 'templates' | 'mosaic';
 }
 
 export const STYLE_PRESETS: StylePreset[] = [
@@ -100,6 +102,24 @@ export const STYLE_PRESETS: StylePreset[] = [
       'quad-grid': 3, 'quad-hero': 2, 'five-mosaic': 1.5, 'six-grid': 2, panorama: 1,
       'title-photo': 1, 'chapter-divider': 1,
     },
+  },
+  {
+    id: 'collage',
+    name: 'Collage',
+    description: 'Dense photo mosaics — many photos per page, edge to edge, each kept close to its shape.',
+    density: 5,
+    maxPerPage: 9,
+    heroSpreadShare: 0.1,
+    layoutMode: 'mosaic',
+    style: {
+      marginOuterMm: 8, marginInnerMm: 12, marginTopMm: 8, marginBottomMm: 8, gapMm: 2,
+      background: '#ffffff', textColor: '#1f1f1f',
+      headingFont: { family: 'Montserrat', weight: 600 },
+      bodyFont: { family: 'Inter', weight: 400 },
+      captionFont: { family: 'Inter', weight: 400 },
+      imageBorderMm: 0, imageBorderColor: '#ffffff', captionMode: 'none',
+    },
+    templateWeights: { 'full-bleed': 2, 'single-margin': 1, panorama: 1, 'title-photo': 1, 'chapter-divider': 1 },
   },
 ];
 

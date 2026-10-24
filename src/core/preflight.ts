@@ -3,7 +3,7 @@ import { isPrintable, pageSafeRect, pageTrimRect, sideOfX, type PageSide } from 
 import { containsRect, effectiveDpi, elementBounds, elementPlacement, intersects } from './geometry';
 import { spineTextAllowed } from './cover';
 import { binding, pageCountOf, printer } from './printers';
-import { COVER_INDEX, coverGeometry } from './surface';
+import { COVER_INDEX, coverGeometry, posterGeometry, type SurfaceGeometry } from './surface';
 import { spreadPagesLabel } from './generator';
 
 // Print preflight. Pure and fast enough to run on every edit.
@@ -22,6 +22,7 @@ export interface PreflightIssue {
 const EPS = 0.25; // mm tolerance for "touching" an edge
 
 export function preflight(doc: BookDocument, assets: Map<string, PhotoAsset>): PreflightIssue[] {
+  if (doc.settings.product === 'poster') return posterIssues(doc, assets);
   const issues: PreflightIssue[] = [];
   const s = doc.settings;
   const W = s.trimWidthMm;
@@ -149,30 +150,71 @@ function coverIssues(doc: BookDocument, assets: Map<string, PhotoAsset>): Prefli
   }
 
   const [spineL, spineR] = g.folds;
-  for (const el of cover.elements) {
-    const add = (severity: Severity, code: PreflightIssue['code'], message: string) => push(severity, code, message, el.id);
+  out.push(
+    ...surfaceIssues(doc, g, cover.elements, assets, COVER_INDEX, 'Cover', (el, r, add) => {
+      if (el.type !== 'text') return false;
+      const onSpine = r.x >= spineL - EPS && r.x + r.w <= spineR + EPS;
+      if (onSpine && !spineTextAllowed(doc)) {
+        add('warning', 'spine', `spine text on a ${pageCountOf(doc)}-page book can drift onto the covers; ${pr.name} advises none below ${pr.spineTextMinPages} pages.`);
+        return true;
+      }
+      return false;
+    }),
+  );
+  return out;
+}
+
+type AddIssue = (severity: Severity, code: PreflightIssue['code'], message: string) => void;
+
+/**
+ * Checks for any single surface (cover, poster): elements off the sheet, photo resolution, text
+ * outside the safe area or across a fold, and photos/panels that stop inside the bleed.
+ * `special` may handle an element first and return true to skip the generic text checks.
+ */
+function surfaceIssues(
+  doc: BookDocument,
+  g: SurfaceGeometry,
+  elements: Element[],
+  assets: Map<string, PhotoAsset>,
+  index: number,
+  label: string,
+  special?: (el: Element, bounds: { x: number; y: number; w: number; h: number }, add: AddIssue) => boolean,
+): PreflightIssue[] {
+  const out: PreflightIssue[] = [];
+  const edgeName = g.kind === 'cover' ? 'wrap' : 'bleed';
+  for (const el of elements) {
+    const add: AddIssue = (severity, code, message) =>
+      out.push({ id: `${label}:${code}:${el.id}`, severity, code, message: `${label}: ${message}`, spreadIndex: index, elementId: el.id });
     const r = elementBounds(el);
     if (r.x > g.width + g.bleed || r.x + r.w < -g.bleed || r.y > g.height + g.bleed || r.y + r.h < -g.bleed) {
-      add('warning', 'off-page', `${el.type === 'text' ? 'Text' : 'An element'} is off the cover and will not print.`);
+      add('warning', 'off-page', `${el.type === 'text' ? 'Text' : 'An element'} is off the sheet and will not print.`);
       continue;
     }
     if (el.type === 'image') checkImage(el, add, assets, doc, false);
+    if (special?.(el, r, add)) continue;
     if (el.type === 'text') {
-      const inSafe = g.safeRects.some((sr) => containsRect(sr, r, EPS));
-      const onSpine = r.x >= spineL - EPS && r.x + r.w <= spineR + EPS;
-      if (onSpine && !spineTextAllowed(doc)) add('warning', 'spine', `spine text on a ${pageCountOf(doc)}-page book can drift onto the covers; ${pr.name} advises none below ${pr.spineTextMinPages} pages.`);
-      else if (!inSafe) {
+      if (!g.safeRects.some((sr) => containsRect(sr, r, EPS))) {
         const crosses = g.folds.some((f) => r.x < f - EPS && r.x + r.w > f + EPS);
-        add('warning', crosses ? 'binding' : 'near-trim', crosses ? 'Text crosses a spine fold.' : 'Text is outside the safe area and may be trimmed or wrapped.');
+        add('warning', crosses ? 'binding' : 'near-trim', crosses ? 'Text crosses a spine fold.' : 'Text is outside the safe area and may be trimmed.');
       }
       continue;
     }
-    // Photos and colour panels that stop between the trim and the wrap edge leave a gap.
+    // Photos and colour panels that stop between the trim and the bleed edge leave a white sliver.
+    if (Math.abs(el.rotationDeg) > 0.01) continue; // tilted prints are inset on purpose
     const edges = { left: r.x, top: r.y, right: g.width - (r.x + r.w), bottom: g.height - (r.y + r.h) };
     for (const [edge, d] of Object.entries(edges)) {
-      if (d < -EPS && d > -(g.bleed - EPS)) add('error', 'bleed-gap', `${el.type === 'image' ? 'Photo' : 'Colour panel'} ${edge} edge stops inside the wrap. Extend it to the wrap edge.`);
+      if (d < -EPS && d > -(g.bleed - EPS)) add('error', 'bleed-gap', `${el.type === 'image' ? 'Photo' : 'Colour panel'} ${edge} edge stops inside the ${edgeName}. Extend it to the ${edgeName} edge.`);
     }
   }
+  return out;
+}
+
+function posterIssues(doc: BookDocument, assets: Map<string, PhotoAsset>): PreflightIssue[] {
+  const sheet = doc.spreads[0];
+  if (!sheet) return [];
+  const g = posterGeometry(doc);
+  const out = surfaceIssues(doc, g, sheet.elements, assets, 0, 'Poster');
+  if (!sheet.elements.length) out.push({ id: 'poster:empty', severity: 'info', code: 'empty-frame', message: 'Poster: the sheet is empty — use Auto collage or drag photos onto it.' });
   return out;
 }
 

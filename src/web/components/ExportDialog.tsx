@@ -22,6 +22,9 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   const pageW = s.trimWidthMm + s.bleedMm * (s.bleedMode === 'all' ? 2 : 1);
   const pageH = s.trimHeightMm + s.bleedMm * 2;
   const cg = doc.cover ? coverGeometry(doc) : null;
+  const poster = s.product === 'poster';
+  const posterW = s.trimWidthMm + 2 * s.bleedMm;
+  const posterH = s.trimHeightMm + 2 * s.bleedMm;
 
   const run = async () => {
     setBusy(true);
@@ -36,7 +39,22 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <Modal title="Export print-ready PDFs" onClose={onClose} wide>
+    <Modal title={poster ? 'Export print-ready poster' : 'Export print-ready PDFs'} onClose={onClose} wide>
+      {poster ? (
+        <div className="export-summary">
+          <div>
+            <span className="muted small">Poster · 1 page</span>
+            <strong>{posterW.toFixed(1)} × {posterH.toFixed(1)} mm</strong>
+            <span className="muted small">{inch(posterW)} × {inch(posterH)} in incl. {s.bleedMm.toFixed(2)} mm bleed</span>
+          </div>
+          <div>
+            <span className="muted small">Trim</span>
+            <strong>{inch(s.trimWidthMm)} × {inch(s.trimHeightMm)} in</strong>
+            <span className="muted small">{s.trimWidthMm.toFixed(1)} × {s.trimHeightMm.toFixed(1)} mm</span>
+          </div>
+        </div>
+      ) : (
+      <>
       <p className="muted small">
         For <strong>{pr.name} · {binding(s).name}</strong>. {pr.notes}
       </p>
@@ -58,7 +76,9 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
           )}
         </div>
       </div>
-      {pr.id === 'custom' && (
+      </>
+      )}
+      {!poster && pr.id === 'custom' && (
         <div className="seg seg-wide">
           {(['all', 'outer'] as BleedMode[]).map((m) => (
             <button key={m} className={s.bleedMode === m ? 'on' : ''} onClick={() => useEditor.getState().run('Bleed mode', (d) => updateSettings(d, { bleedMode: m }))}>
@@ -77,7 +97,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
 
       {result && (
         <div className="export-results">
-          <FileCard title="Interior" v={result.verification} url={result.url} bytes={result.bytes} extra={result.textOverflow.map((i) => i.message)} />
+          <FileCard title={poster ? 'Poster' : 'Interior'} v={result.verification} url={result.url} bytes={result.bytes} extra={result.textOverflow.map((i) => i.message)} />
           {result.cover && (
             <FileCard
               title="Cover"
@@ -95,7 +115,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         <div className="row">
           <button className="btn btn-ghost" onClick={onClose}>Close</button>
           <button className="btn btn-primary" onClick={run} disabled={busy}>
-            {busy ? 'Exporting…' : result ? 'Export again' : 'Export PDFs'}
+            {busy ? 'Exporting…' : result ? 'Export again' : poster ? 'Export PDF' : 'Export PDFs'}
           </button>
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { produce, type Draft } from 'immer';
 import type { BindingId, BookDocument, BookSettings, BookStyle, Element, ImageElement, PhotoAsset, PrinterId, Spread } from './model';
-import { blankSpread, pageTrimRect, type PageSide } from './book';
+import { blankSpread, pageContentRect, pageTrimRect, type PageSide } from './book';
 import { aspectOf, dateRangeOf } from './curation';
 import { defaultCrop } from './geometry';
 import { chooseTemplate, keepSubjectOutOfGutter, layoutPage, makeImageElement, makeTextElement, pageOfElement, templateOrThrow } from './layout';
@@ -9,6 +9,8 @@ import { stylePreset, styleFromPreset } from './styles';
 import { template as findTemplate } from './templates';
 import { chooseCoverPhotos, coverPhotos, makeCover, reconcileCover } from './cover';
 import { pageCountOf, presetSettings } from './printers';
+import { layoutCollage } from './collage';
+import { MOSAIC_LAYOUT } from './generator';
 
 // Every edit is a pure function BookDocument → BookDocument. The UI's undo history stores the
 // resulting documents (structural sharing keeps that cheap), so undo restores state exactly.
@@ -324,6 +326,12 @@ export function shuffleSpreadLayout(doc: BookDocument, spreadIndex: number, asse
       cursor += count;
       if (!pagePhotos.length) continue;
       const avoid = [current[side] ?? '', layout.left ?? ''];
+      if (preset.layoutMode === 'mosaic' && pagePhotos.length >= 2) {
+        const shuffled = pagePhotos.map((p) => ({ p, k: rng() })).sort((a, b) => a.k - b.k).map((x) => x.p);
+        elements.push(...layoutCollage(doc, pageContentRect(side, doc.settings, doc.style), shuffled, { style: 'mosaic', gapMm: doc.style.gapMm, seed }).elements);
+        layout[side] = MOSAIC_LAYOUT;
+        continue;
+      }
       const special = spreadIndex === 0 && side === 'right' && pagePhotos.length === 1;
       const t = special ? templateOrThrow('title-photo') : chooseTemplate(preset, pagePhotos, avoid, rng, doc, side);
       const text = special ? { title: doc.title, subtitle: doc.subtitle } : { caption: captions ? dateRangeOf(pagePhotos) || undefined : undefined };
@@ -339,7 +347,31 @@ export function shuffleSpreadLayout(doc: BookDocument, spreadIndex: number, asse
 }
 
 export function templateName(id: string | undefined): string {
+  if (id === MOSAIC_LAYOUT) return 'Mosaic';
   return (id && findTemplate(id)?.name) || 'Custom';
+}
+
+/** Lay out one page (or the whole spread) as an edge-to-edge mosaic of its current photos. */
+export function applyMosaicLayout(doc: BookDocument, spreadIndex: number, side: PageSide | 'spread', assets: Map<string, PhotoAsset>, seed = 1): BookDocument {
+  const spread = doc.spreads[spreadIndex];
+  if (!spread) throw new CommandError('Spread not found');
+  if (spread.locked) throw new CommandError('Spread is locked');
+  const affected = side === 'spread' ? spread.elements : elementsOnSide(spread, side, doc);
+  const photos = readingOrder(affected.filter((e): e is ImageElement => e.type === 'image' && !e.locked && !!e.assetId), doc.settings.trimWidthMm)
+    .map((e) => assets.get(e.assetId!))
+    .filter((a): a is PhotoAsset => !!a);
+  if (photos.length < 2) throw new CommandError('A mosaic needs at least two photos on the page');
+  const box = side === 'spread'
+    ? { x: doc.style.marginOuterMm, y: doc.style.marginTopMm, w: doc.settings.trimWidthMm * 2 - 2 * doc.style.marginOuterMm, h: doc.settings.trimHeightMm - doc.style.marginTopMm - doc.style.marginBottomMm }
+    : pageContentRect(side, doc.settings, doc.style);
+  const { elements } = layoutCollage(doc, box, photos, { style: 'mosaic', gapMm: doc.style.gapMm, seed });
+  const keepIds = new Set(affected.filter((e) => e.type !== 'image' || e.locked).map((e) => e.id));
+  const affectedIds = new Set(affected.map((e) => e.id));
+  return produce(doc, (d) => {
+    const s = d.spreads[spreadIndex];
+    s.elements = [...s.elements.filter((e) => !affectedIds.has(e.id) || keepIds.has(e.id)), ...(elements as Draft<Element>[])];
+    s.layout = side === 'spread' ? { spread: MOSAIC_LAYOUT } : { ...(s.layout?.spread ? {} : s.layout), [side]: MOSAIC_LAYOUT };
+  });
 }
 
 export function pageRect(doc: BookDocument, side: PageSide) {

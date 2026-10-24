@@ -1,5 +1,6 @@
 import type { BookDocument, Chapter, Element, GenerationSettings, PhotoAsset, Spread } from './model';
-import { pageNumberOf, spreadsForPageCount, type PageSide } from './book';
+import { pageContentRect, pageNumberOf, spreadsForPageCount, type PageSide } from './book';
+import { layoutCollage } from './collage';
 import {
   aspectOf, chronological, dateRangeOf, dayKey, formatDay, groupSimilar, scorePhotos, segmentMoments, type PhotoScore,
 } from './curation';
@@ -17,6 +18,9 @@ import { chooseCoverPhotos, makeCover, reconcileCover } from './cover';
 //  5. select photos for coverage across moments, then sequence chronologically
 //  6. distribute photos over pages, choose templates, crop, caption
 // Same photos + settings + seed ⇒ identical book.
+
+/** Layout id recorded for pages built by the mosaic engine. */
+export const MOSAIC_LAYOUT = 'collage-mosaic';
 
 export interface DraftReport {
   candidates: number;
@@ -67,36 +71,8 @@ export function generateDraft(doc: BookDocument, assets: PhotoAsset[], settings:
   const lockedAssetIds = new Set<string>();
   for (const s of locked.values()) for (const el of s.elements) if (el.type === 'image' && el.assetId) lockedAssetIds.add(el.assetId);
 
-  const byId = new Map(assets.map((a) => [a.id, a]));
-  const excluded = assets.filter((a) => a.excluded).length;
-  const missing = assets.filter((a) => a.missing && !a.excluded).length;
-  let exactDuplicates = 0;
-  const pool = assets.filter((a) => {
-    if (a.excluded || a.missing || lockedAssetIds.has(a.id)) return false;
-    const original = a.exactDuplicateOf ? byId.get(a.exactDuplicateOf) : undefined;
-    if (original && !original.excluded) {
-      exactDuplicates++;
-      return false;
-    }
-    return true;
-  });
-  const scores = scorePhotos(pool);
+  const { pool, reps, alternates, scores, excluded, missing, exactDuplicates } = curatePool(assets, lockedAssetIds);
   const score = (a: PhotoAsset) => scores.get(a.id)!.total;
-
-  // ---- 2. near-duplicates: keep the best frame of each burst (plus any favourites)
-  const groups = new Map<string, PhotoAsset[]>();
-  const groupOf = groupSimilar(pool);
-  for (const a of pool) {
-    const g = groupOf.get(a.id)!;
-    groups.set(g, [...(groups.get(g) ?? []), a]);
-  }
-  const reps: PhotoAsset[] = [];
-  const alternates: PhotoAsset[] = [];
-  for (const members of groups.values()) {
-    members.sort((a, b) => score(b) - score(a));
-    members.forEach((m, i) => (i === 0 || m.favorite ? reps : alternates).push(m));
-  }
-  alternates.sort((a, b) => score(b) - score(a));
   const nearDuplicatesSet = alternates.length;
 
   // ---- 3. page units
@@ -226,6 +202,13 @@ export function generateDraft(doc: BookDocument, assets: PhotoAsset[], settings:
           prevTemplate = t.id;
           continue;
         }
+        if (preset.layoutMode === 'mosaic' && photos.length >= 2) {
+          elements.push(...layoutCollage(base, pageContentRect(side, bookSettings, style), photos, { style: 'mosaic', gapMm: style.gapMm, seed: settings.seed }).elements);
+          used.push(...photos);
+          layout[side] = MOSAIC_LAYOUT;
+          prevTemplate = MOSAIC_LAYOUT;
+          continue;
+        }
         const t = chooseTemplate(preset, photos, [prevTemplate, layout.left ?? ''], rng, base, side);
         elements.push(...layoutPage(base, t, side, photos, { caption: caption(photos) }));
         used.push(...photos);
@@ -279,6 +262,53 @@ export function generateDraft(doc: BookDocument, assets: PhotoAsset[], settings:
   };
 }
 
+
+export interface CuratedPool {
+  /** Usable photos: not hidden, not missing, not an exact duplicate, not in `skip`. */
+  pool: PhotoAsset[];
+  /** Best frame of each near-duplicate group, plus any favourites. */
+  reps: PhotoAsset[];
+  /** The other frames of each group, best first. */
+  alternates: PhotoAsset[];
+  scores: Map<string, PhotoScore>;
+  excluded: number;
+  missing: number;
+  exactDuplicates: number;
+}
+
+/** Shared curation for books and posters: filter, score, and collapse bursts to their best frame. */
+export function curatePool(assets: PhotoAsset[], skip: Set<string> = new Set()): CuratedPool {
+  const byId = new Map(assets.map((a) => [a.id, a]));
+  const excluded = assets.filter((a) => a.excluded).length;
+  const missing = assets.filter((a) => a.missing && !a.excluded).length;
+  let exactDuplicates = 0;
+  const pool = assets.filter((a) => {
+    if (a.excluded || a.missing || skip.has(a.id)) return false;
+    const original = a.exactDuplicateOf ? byId.get(a.exactDuplicateOf) : undefined;
+    if (original && !original.excluded) {
+      exactDuplicates++;
+      return false;
+    }
+    return true;
+  });
+  const scores = scorePhotos(pool);
+  const score = (a: PhotoAsset) => scores.get(a.id)!.total;
+  const groups = new Map<string, PhotoAsset[]>();
+  const groupOf = groupSimilar(pool);
+  for (const a of pool) {
+    const g = groupOf.get(a.id)!;
+    groups.set(g, [...(groups.get(g) ?? []), a]);
+  }
+  const reps: PhotoAsset[] = [];
+  const alternates: PhotoAsset[] = [];
+  for (const members of groups.values()) {
+    members.sort((a, b) => score(b) - score(a));
+    members.forEach((m, i) => (i === 0 || m.favorite ? reps : alternates).push(m));
+  }
+  alternates.sort((a, b) => score(b) - score(a));
+  return { pool, reps, alternates, scores, excluded, missing, exactDuplicates };
+}
+
 /** A panorama is only used when it prints sharp enough and its subject can be kept out of the fold. */
 function panoramaWorks(doc: BookDocument, asset: PhotoAsset): boolean {
   const [el] = layoutPage(doc, templateOrThrow('panorama'), 'spread', [asset], {});
@@ -298,7 +328,7 @@ function pickSpread(seq: PhotoAsset[], n: number, score: (a: PhotoAsset) => numb
 }
 
 /** Choose `budget` photos: favourites first, then per-moment quotas (∝ √size) so no single event dominates. */
-function selectWithCoverage(cands: PhotoAsset[], budget: number, scores: Map<string, PhotoScore>): PhotoAsset[] {
+export function selectWithCoverage(cands: PhotoAsset[], budget: number, scores: Map<string, PhotoScore>): PhotoAsset[] {
   const score = (a: PhotoAsset) => scores.get(a.id)?.total ?? 0;
   if (cands.length <= budget) return [...cands];
   const chosen = new Set<PhotoAsset>(cands.filter((a) => a.favorite).sort((a, b) => score(b) - score(a)).slice(0, budget));

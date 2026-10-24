@@ -12,7 +12,7 @@ export const SCHEMA_VERSION = 2 as const;
  * Bumped whenever the client/server contract changes. The page compares it with the running
  * server's and warns when they differ (e.g. the page was rebuilt but the server wasn't restarted).
  */
-export const API_VERSION = 3;
+export const API_VERSION = 4;
 
 export type ID = string;
 
@@ -36,6 +36,20 @@ export interface BookSettings {
   bleedMode: BleedMode;
   /** Manual cover measurements (from the printer's own calculator). null = use the preset. */
   coverOverrides: CoverOverrides;
+  /** A bound photobook, or a single printed sheet (poster / collage print). */
+  product: Product;
+}
+
+export type Product = 'book' | 'poster';
+
+export interface CollageSettings {
+  style: 'mosaic' | 'grid' | 'hero' | 'scatter';
+  photoCount: number;
+  gapMm: number;
+  /** 0 = photos run to the edge (into the bleed). */
+  marginMm: number;
+  titlePosition: 'none' | 'top' | 'bottom';
+  seed: number;
 }
 
 export type PrinterId = 'lulu' | 'blurb' | 'custom';
@@ -176,6 +190,8 @@ export interface BookDocument {
   generation?: GenerationRecord;
   /** The cover spread (back · spine · front). Absent on books created before covers existed. */
   cover?: Cover;
+  /** Last collage settings used (posters, and book pages laid out as collages). */
+  collage?: CollageSettings;
 }
 
 /**
