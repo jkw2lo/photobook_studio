@@ -6,11 +6,12 @@ import PDFDocument from 'pdfkit';
 import { describe, expect, it } from 'vitest';
 import { FONT_FAMILIES, STYLE_PRESETS, TYPE_PACKS, fontFilePath } from '../src/core';
 
-const all = FONT_FAMILIES.flatMap((f) => f.weights.map((w) => [f.family, w] as const));
+const all = FONT_FAMILIES.flatMap((f) => f.weights.flatMap((w) => [[f.family, w, false] as const, ...(f.italic ? [[f.family, w, true] as const] : [])]));
 
 describe('bundled fonts', () => {
-  it.each(all)('%s %i embeds in a PDF (PDFKit subsetting)', async (family, weight) => {
-    const file = fontFilePath(family, weight);
+  it.each(all)('%s %i (italic: %s) embeds in a PDF (PDFKit subsetting)', async (family, weight, italic) => {
+    const file = fontFilePath(family, weight, italic);
+    if (italic) expect(file).toContain('-italic.');
     expect(existsSync(file), file).toBe(true);
     const dir = mkdtempSync(join(tmpdir(), 'font-'));
     const pdf = new PDFDocument({ autoFirstPage: false });
@@ -25,8 +26,8 @@ describe('bundled fonts', () => {
 
   it('the editor stylesheet loads exactly the fonts the exporter embeds', () => {
     const css = readFileSync('src/web/fonts.css', 'utf8');
-    const imported = [...css.matchAll(/@import '@fontsource\/([\w-]+)\/(\d+)\.css'/g)].map((m) => `${m[1]}/${m[2]}`).sort();
-    const expected = FONT_FAMILIES.flatMap((f) => f.weights.map((w) => `${f.pkg}/${w}`)).sort();
+    const imported = [...css.matchAll(/@import '@fontsource\/([\w-]+)\/(\d+(?:-italic)?)\.css'/g)].map((m) => `${m[1]}/${m[2]}`).sort();
+    const expected = FONT_FAMILIES.flatMap((f) => f.weights.flatMap((w) => [`${f.pkg}/${w}`, ...(f.italic ? [`${f.pkg}/${w}-italic`] : [])])).sort();
     expect(imported, 'run: npx tsx scripts/gen-fonts-css.ts').toEqual(expected);
   });
 

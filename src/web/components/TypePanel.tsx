@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
-  TEXT_ROLES, TYPE_PACKS, addTextAt, applyTypePack, fontFamily, pageScale, roleLabel, roleStyle, setRoleStyle, toneColor,
+  TEXT_QUICK_STYLES, TEXT_ROLES, TYPE_PACKS, addTextAt, applyQuickStyle, applyTypePack, fontFamily, pageScale, roleLabel, roleStyle, setRoleStyle, toneColor,
   weightName, type BookStyle, type TextRole, type TextStyle,
 } from '../../core';
 import { useEditor } from '../store';
@@ -118,35 +118,66 @@ function RoleEditor({ role, ts }: { role: TextRole; ts: TextStyle }) {
 export function AddTextMenu({ surfaceId, at, disabled }: { surfaceId: string; at: { x: number; y: number }; disabled?: boolean }) {
   const doc = useEditor((s) => s.doc)!;
   const [open, setOpen] = useState(false);
+  const [place, setPlace] = useState<CSSProperties>({});
   const ref = useRef<HTMLDivElement>(null);
+  /** Open below the button, or above it when there isn't room — and never past the window. */
+  const toggle = () => {
+    const r = ref.current?.getBoundingClientRect();
+    if (r && !open) {
+      // Stay inside the scrolling panel the button sits in (it clips anything outside it).
+      const box = ref.current!.closest('.inspector-body')?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
+      const below = box.bottom - r.bottom - 8;
+      const above = r.top - box.top - 8;
+      setPlace(below >= 360 || below >= above ? { maxHeight: Math.max(200, below) } : { top: 'auto', bottom: 'calc(100% + 4px)', maxHeight: above });
+    }
+    setOpen(!open);
+  };
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, [open]);
-  const add = (role: TextRole) => {
+  const add = (role: TextRole, quick?: (typeof TEXT_QUICK_STYLES)[number]) => {
     setOpen(false);
     let id = '';
-    useEditor.getState().run(`Add ${roleLabel(role).toLowerCase()}`, (d) => {
-      const r = addTextAt(d, surfaceId, at.x, at.y, undefined, role);
+    useEditor.getState().run(quick ? `Add text: ${quick.name}` : `Add ${roleLabel(role).toLowerCase()}`, (d) => {
+      const r = addTextAt(d, surfaceId, at.x, at.y, quick?.sample, role);
       id = r.newId;
-      return r.doc;
+      return quick ? applyQuickStyle(r.doc, surfaceId, r.newId, quick.id) : r.doc;
     });
     if (id) useEditor.getState().select({ spreadId: surfaceId, elementId: id });
   };
   return (
     <div className="add-text" ref={ref}>
-      <button className="btn btn-small" disabled={disabled} onClick={() => setOpen(!open)} aria-haspopup="menu" aria-expanded={open}>
+      <button className="btn btn-small" disabled={disabled} onClick={toggle} aria-haspopup="menu" aria-expanded={open}>
         <Icon name="text" /> Add text <Icon name="down" size={12} />
       </button>
       {open && (
-        <div className="add-text-menu" role="menu">
+        <div className="add-text-menu" role="menu" style={place}>
+          <div className="add-text-head">Text styles</div>
           {TEXT_ROLES.map(({ role, label }) => (
             <button key={role} role="menuitem" className="add-text-option" onClick={() => add(role)}>
               <span style={previewCss(doc.style, roleStyle(doc.style, role), Math.min(17, Math.max(9, roleStyle(doc.style, role).sizePt * 0.7)))}>{label}</span>
             </button>
           ))}
+          <div className="add-text-head">Quick styles</div>
+          <div className="add-text-quick">
+            {TEXT_QUICK_STYLES.map((q) => (
+              <button key={q.id} role="menuitem" className="add-text-option" title={q.name} onClick={() => add(q.sizePt >= 20 ? 'title' : 'body', q)}>
+                <span
+                  style={{
+                    fontFamily: `'${q.family}'`, fontWeight: q.weight, fontStyle: q.italic ? 'italic' : undefined, color: '#1b1b1d',
+                    textTransform: q.uppercase ? 'uppercase' : undefined, letterSpacing: q.letterSpacingEm ? `${Math.min(q.letterSpacingEm, 0.15)}em` : undefined,
+                    fontSize: q.sizePt >= 30 ? 16 : q.sizePt >= 20 ? 14 : 10.5,
+                    ...(q.background ? { background: q.background.tone === 'text' ? '#1b1b1d' : '#e4e0d6', color: q.background.tone === 'text' ? '#f7f5f0' : '#1b1b1d', padding: '1px 5px' } : {}),
+                  }}
+                >
+                  {q.name}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>

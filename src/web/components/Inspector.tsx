@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   COVER_INDEX, TEXT_ROLES, addChapter, applyMosaicLayout, nearestWeight, resetTextToStyle, roleLabel, saveTextAsRoleStyle, setTextRole, weightName, addTextAt, applyTemplate, defaultCrop, duplicateElement, duplicateSpread, effectiveDpi,
   fitFrameToPhoto, fontFamily, insertSpreadAfter, isPrintable, removeElements, removeSpread, reorderElement, setFramePhoto,
   setSpreadChapter, setSpreadLocked, setSurfaceBackground, shuffleSpreadLayout, spreadPagesLabel, templateName, updateElement,
-  type ImageElement, type TextElement, type TextRole,
+  MM_PER_PT, TEXT_QUICK_STYLES, applyQuickStyle, estimateTextHeightMm, boldWeight, isBold, type BookDocument, type ImageElement, type TextElement, type TextRole,
 } from '../../core';
 import { thumbUrl } from '../api';
+import { duplicate, remove, togglePin, toggleKeepCrop, toggleLock } from '../elementActions';
 import { selectedElement, useEditor } from '../store';
 import { ColorInput } from './ColorInput';
 import { BookPanel } from './BookPanel';
@@ -63,14 +64,30 @@ export function Inspector({ issueCount }: { issueCount: { error: number; warning
 
 // ---- number field that commits on blur / Enter --------------------------------------------
 
-export function NumField({ label, value, onCommit, step = 0.5, min, max, suffix }: { label: string; value: number; onCommit: (v: number) => void; step?: number; min?: number; max?: number; suffix?: string }) {
+/**
+ * Number field. With `apply`, changes show on the page as you type or step (arrow keys, spinner)
+ * and become one undo step when you leave the field; otherwise `onCommit` runs on blur / Enter.
+ */
+export function NumField({ label, value, onCommit, apply, undoLabel, step = 0.5, min, max, suffix }: {
+  label: string; value: number; onCommit?: (v: number) => void; apply?: (d: BookDocument, v: number) => BookDocument; undoLabel?: string;
+  step?: number; min?: number; max?: number; suffix?: string;
+}) {
   const [text, setText] = useState(fmt(value));
-  useEffect(() => setText(fmt(value)), [value]);
+  const editing = useRef(false);
+  useEffect(() => {
+    if (!editing.current) setText(fmt(value));
+  }, [value]);
+  const clampV = (v: number) => Math.min(max ?? Infinity, Math.max(min ?? -Infinity, v));
   const commit = () => {
+    editing.current = false;
+    if (apply) {
+      useEditor.getState().endGesture(undoLabel ?? label);
+      return setText(fmt(value));
+    }
     const v = Number(text);
-    if (!Number.isFinite(v)) return setText(fmt(value));
-    const clamped = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, v));
-    if (Math.abs(clamped - value) > 1e-6) onCommit(clamped);
+    if (!Number.isFinite(v) || text.trim() === '') return setText(fmt(value));
+    const clamped = clampV(v);
+    if (Math.abs(clamped - value) > 1e-6) onCommit?.(clamped);
     else setText(fmt(value));
   };
   return (
@@ -79,7 +96,15 @@ export function NumField({ label, value, onCommit, step = 0.5, min, max, suffix 
       <div className="field-input">
         <input
           type="number" value={text} step={step} min={min} max={max}
-          onChange={(e) => setText(e.target.value)} onBlur={commit}
+          onChange={(e) => {
+            setText(e.target.value);
+            const v = Number(e.target.value);
+            if (apply && e.target.value.trim() !== '' && Number.isFinite(v)) {
+              editing.current = true;
+              useEditor.getState().gesture((d) => apply(d, clampV(v)));
+            }
+          }}
+          onBlur={commit}
           onKeyDown={(e) => {
             e.stopPropagation();
             if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
@@ -101,6 +126,7 @@ function ElementPanel() {
   const el = useEditor(selectedElement)!;
   const assets = useEditor((s) => s.assetMap);
   const cropId = useEditor((s) => s.cropElementId);
+  const poster = doc.settings.product === 'poster';
   const { run, select, setCrop, setSwapSource } = useEditor.getState();
   const upd = (label: string, patch: Partial<ImageElement> | Partial<TextElement>) => run(label, (d) => updateElement(d, sel.spreadId, el.id, patch));
   /** Hand edits to a text box's typography make it custom (it stops following its style). */
@@ -111,24 +137,13 @@ function ElementPanel() {
       <div className="row between">
         <strong>{({ image: 'Photo frame', text: 'Text', shape: 'Colour panel' } as const)[el.type]}</strong>
         <div className="row">
-          <button className={`icon-btn ${el.locked ? 'on' : ''}`} title={el.locked ? 'Unlock (L)' : 'Lock (L)'} onClick={() => upd(el.locked ? 'Unlock' : 'Lock', { locked: !el.locked })}>
+          <button className={`icon-btn ${el.locked ? 'on' : ''}`} title={el.locked ? 'Unlock (L)' : 'Lock (L)'} onClick={() => toggleLock(sel, el)}>
             <Icon name={el.locked ? 'lock' : 'unlock'} />
           </button>
-          <button className="icon-btn" title="Duplicate (⌘D)" onClick={() => {
-            let id = '';
-            run('Duplicate', (d) => {
-              const r = duplicateElement(d, sel.spreadId, el.id);
-              id = r.newId;
-              return r.doc;
-            });
-            if (id) select({ spreadId: sel.spreadId, elementId: id });
-          }}>
+          <button className="icon-btn" title="Duplicate (⌘D)" onClick={() => duplicate(sel)}>
             <Icon name="copy" />
           </button>
-          <button className="icon-btn danger" title="Delete (⌫)" disabled={el.locked} onClick={() => {
-            run('Delete', (d) => removeElements(d, sel.spreadId, [el.id]));
-            select(null);
-          }}>
+          <button className="icon-btn danger" title="Delete (⌫)" disabled={el.locked} onClick={() => remove(sel, el)}>
             <Icon name="trash" />
           </button>
         </div>
@@ -151,6 +166,25 @@ function ElementPanel() {
               </div>
             ) : (
               <p className="muted">Empty frame — drag a photo from the library onto it.</p>
+            )}
+            {poster && (
+              <div className="pin-box">
+                <div className="btn-grid">
+                  <button className={`btn btn-small ${el.pinned ? 'btn-on' : ''}`} onClick={() => togglePin(sel, el)} title="Keep this photo exactly where it is — position, size and crop. Arrange and Shuffle fill in around it. (P)">
+                    <Icon name="pin" /> {el.pinned ? 'Pinned' : 'Pin in place'}
+                  </button>
+                  <button className={`btn btn-small ${el.keepCrop && !el.pinned ? 'btn-on' : ''}`} disabled={el.pinned || !asset} onClick={() => toggleKeepCrop(sel, el)} title="Arrange may move this photo, but keeps its crop, zoom, fit and border — and always keeps it on the sheet">
+                    <Icon name="crop" /> {el.keepCrop && !el.pinned ? 'Crop kept' : 'Keep crop'}
+                  </button>
+                </div>
+                <p className="muted small">
+                  {el.pinned || el.locked
+                    ? 'Arrange and Shuffle leave this photo exactly as it is and fill in around it.'
+                    : el.keepCrop
+                      ? 'Arrange can move this photo, but keeps its crop and keeps it on the sheet.'
+                      : 'Arrange and Shuffle lay this photo out again. Pin it to keep your changes.'}
+                </p>
+              </div>
             )}
             <div className="seg">
               <button className={el.fit === 'cover' ? 'on' : ''} onClick={() => upd('Fill frame', { fit: 'cover' })}>Fill</button>
@@ -191,68 +225,7 @@ function ElementPanel() {
         );
       })()}
 
-      {el.type === 'text' && (
-        <>
-          <textarea
-            className="text-input" value={el.text} rows={4}
-            onChange={(e) => useEditor.getState().gesture((d) => updateElement(d, sel.spreadId, el.id, { text: e.target.value }))}
-            onBlur={() => useEditor.getState().endGesture('Edit text')}
-            onKeyDown={(e) => e.stopPropagation()}
-          />
-          <div className="field">
-            <span>Style</span>
-            <select value={el.role} onChange={(e) => run(`Style: ${roleLabel(e.target.value as TextRole)}`, (d) => setTextRole(d, sel.spreadId, el.id, e.target.value as TextRole))}>
-              {TEXT_ROLES.map((r) => <option key={r.role} value={r.role}>{r.label}</option>)}
-            </select>
-          </div>
-          {el.styleLinked !== false ? (
-            <p className="muted small style-status">Follows the {roleLabel(el.role)} style — change it for the whole book in the Book tab.</p>
-          ) : (
-            <div className="style-status custom">
-              <span className="small">Custom look</span>
-              <div className="row">
-                <button className="link small" onClick={() => run('Reset to style', (d) => resetTextToStyle(d, sel.spreadId, el.id))}>Reset to {roleLabel(el.role)}</button>
-                <button className="link small" onClick={() => run(`Update ${roleLabel(el.role)} style`, (d) => saveTextAsRoleStyle(d, sel.spreadId, el.id))}>Use for all {roleLabel(el.role).toLowerCase()}s</button>
-              </div>
-            </div>
-          )}
-          <div className="field">
-            <span>Font</span>
-            <FontPicker value={el.fontFamily} onChange={(family) => custom('Font', { fontFamily: family, fontWeight: nearestWeight(family, el.fontWeight) })} />
-          </div>
-          <div className="field-row">
-            <label className="field">
-              <span>Weight</span>
-              <select value={el.fontWeight} onChange={(e) => custom('Font weight', { fontWeight: Number(e.target.value) })}>
-                {fontFamily(el.fontFamily).weights.map((w) => <option key={w} value={w}>{weightName(w)}</option>)}
-              </select>
-            </label>
-            <NumField label="Size" value={el.fontSizePt} min={4} max={300} suffix="pt" onCommit={(v) => custom('Font size', { fontSizePt: v })} />
-          </div>
-          <div className="field-row">
-            <NumField label="Letter spacing" value={Math.round((el.letterSpacingEm ?? 0) * 100)} min={-10} max={60} step={1} suffix="%" onCommit={(v) => custom('Letter spacing', { letterSpacingEm: v / 100 })} />
-            <NumField label="Line height" value={el.lineHeight} step={0.05} min={0.8} max={3} onCommit={(v) => custom('Line height', { lineHeight: v })} />
-          </div>
-          <div className="field-row">
-            <div className="field">
-              <span>Case</span>
-              <div className="seg">
-                <button className={!el.uppercase ? 'on' : ''} onClick={() => custom('Case', { uppercase: false })}>Aa</button>
-                <button className={el.uppercase ? 'on' : ''} onClick={() => custom('Case', { uppercase: true })}>AA</button>
-              </div>
-            </div>
-            <label className="field">
-              <span>Colour</span>
-              <ColorInput value={el.color} label="Text colour" apply={(d, c) => updateElement(d, sel.spreadId, el.id, { color: c, styleLinked: false })} />
-            </label>
-          </div>
-          <div className="seg">
-            {(['left', 'center', 'right'] as const).map((a) => (
-              <button key={a} className={el.align === a ? 'on' : ''} onClick={() => upd('Align text', { align: a })}>{a[0].toUpperCase() + a.slice(1)}</button>
-            ))}
-          </div>
-        </>
-      )}
+      {el.type === 'text' && <TextControls el={el} spreadId={sel.spreadId} />}
 
       {el.type === 'shape' && (
         <div className="field-row">
@@ -273,15 +246,15 @@ function ElementPanel() {
 
       <div className="section-title">Position</div>
       <div className="field-row">
-        <NumField label="X" value={el.xMm} suffix="mm" onCommit={(v) => upd('Move', { xMm: v })} />
-        <NumField label="Y" value={el.yMm} suffix="mm" onCommit={(v) => upd('Move', { yMm: v })} />
+        <NumField label="X" value={el.xMm} suffix="mm" apply={(d, v) => updateElement(d, sel.spreadId, el.id, { xMm: v })} undoLabel="Move" />
+        <NumField label="Y" value={el.yMm} suffix="mm" apply={(d, v) => updateElement(d, sel.spreadId, el.id, { yMm: v })} undoLabel="Move" />
       </div>
       <div className="field-row">
-        <NumField label="W" value={el.widthMm} min={2} suffix="mm" onCommit={(v) => upd('Resize', { widthMm: v })} />
-        <NumField label="H" value={el.heightMm} min={2} suffix="mm" onCommit={(v) => upd('Resize', { heightMm: v })} />
+        <NumField label="W" value={el.widthMm} min={2} suffix="mm" apply={(d, v) => updateElement(d, sel.spreadId, el.id, { widthMm: v })} undoLabel="Resize" />
+        <NumField label="H" value={el.heightMm} min={2} suffix="mm" apply={(d, v) => updateElement(d, sel.spreadId, el.id, { heightMm: v })} undoLabel="Resize" />
       </div>
       <div className="field-row">
-        <NumField label="Rotate" value={el.rotationDeg} step={1} min={-180} max={180} suffix="°" onCommit={(v) => upd('Rotate', { rotationDeg: v })} />
+        <NumField label="Rotate" value={el.rotationDeg} step={1} min={-180} max={180} suffix="°" apply={(d, v) => updateElement(d, sel.spreadId, el.id, { rotationDeg: v })} undoLabel="Rotate" />
         <div className="field">
           <span>Arrange</span>
           <div className="row">
@@ -292,6 +265,154 @@ function ElementPanel() {
       </div>
       <p className="muted small">Double-click a photo to crop, or text to edit. Arrow keys nudge 0.5 mm (Shift: 5 mm). Hold Alt while dragging to turn off snapping.</p>
     </div>
+  );
+}
+
+// ---- text ------------------------------------------------------------------------------------
+
+const SIZE_STEPS = [6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 42, 48, 56, 64, 72, 84, 96, 120, 144, 180, 220, 300];
+
+function TextControls({ el, spreadId }: { el: TextElement; spreadId: string }) {
+  const doc = useEditor((s) => s.doc)!;
+  const { run } = useEditor.getState();
+  const upd = (label: string, patch: Partial<TextElement>) => run(label, (d) => updateElement(d, spreadId, el.id, patch));
+  /** Hand edits to a text box's typography make it custom (it stops following its style). */
+  const custom = (label: string, patch: Partial<TextElement>) => upd(label, { ...patch, styleLinked: false });
+  const live = (patch: (v: number) => Partial<TextElement>) => (d: BookDocument, v: number) => updateElement(d, spreadId, el.id, { ...patch(v), styleLinked: false });
+  /** A bigger size grows the box so the text still fits (it never shrinks a box you sized). */
+  const sized = (sizePt: number): Partial<TextElement> => ({
+    fontSizePt: sizePt,
+    heightMm: Math.max(el.heightMm, estimateTextHeightMm(el.text, el.widthMm, sizePt, el.lineHeight, el.letterSpacingEm ?? 0, el.paddingMm ?? 0)),
+  });
+  const stepSize = (dir: 1 | -1) => {
+    const cur = el.fontSizePt;
+    const next = dir > 0 ? SIZE_STEPS.find((x) => x > cur + 0.01) ?? cur * 1.2 : [...SIZE_STEPS].reverse().find((x) => x < cur - 0.01) ?? Math.max(4, cur / 1.2);
+    custom('Font size', sized(next));
+  };
+  const def = fontFamily(el.fontFamily);
+  const bold = isBold(el.fontWeight);
+  const hasBg = !!el.backgroundColor;
+
+  return (
+    <>
+      <textarea
+        className="text-input" value={el.text} rows={3}
+        onChange={(e) => useEditor.getState().gesture((d) => updateElement(d, spreadId, el.id, { text: e.target.value }))}
+        onBlur={() => useEditor.getState().endGesture('Edit text')}
+        onKeyDown={(e) => e.stopPropagation()}
+      />
+
+      <div className="field">
+        <span>Quick styles</span>
+        <div className="quick-styles">
+          {TEXT_QUICK_STYLES.map((q) => (
+            <button key={q.id} className="quick-style" title={q.name} onClick={() => run(`Quick style: ${q.name}`, (d) => applyQuickStyle(d, spreadId, el.id, q.id))}>
+              <span
+                style={{
+                  fontFamily: `'${q.family}'`, fontWeight: q.weight, fontStyle: q.italic ? 'italic' : undefined,
+                  textTransform: q.uppercase ? 'uppercase' : undefined, letterSpacing: q.letterSpacingEm ? `${Math.min(q.letterSpacingEm, 0.15)}em` : undefined,
+                  fontSize: q.sizePt >= 30 ? 17 : q.sizePt >= 20 ? 15 : 11,
+                  ...(q.background ? { background: q.background.tone === 'text' ? doc.style.textColor : doc.style.background, color: q.background.tone === 'text' ? doc.style.background : doc.style.textColor, padding: '1px 5px' } : {}),
+                }}
+              >
+                {q.name}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="field">
+        <span>Style</span>
+        <select value={el.role} onChange={(e) => run(`Style: ${roleLabel(e.target.value as TextRole)}`, (d) => setTextRole(d, spreadId, el.id, e.target.value as TextRole))}>
+          {TEXT_ROLES.map((r) => <option key={r.role} value={r.role}>{r.label}</option>)}
+        </select>
+      </div>
+      {el.styleLinked !== false ? (
+        <p className="muted small style-status">Follows the {roleLabel(el.role)} style — change it everywhere in the {doc.settings.product === 'poster' ? 'Print' : 'Book'} tab.</p>
+      ) : (
+        <div className="style-status custom">
+          <span className="small">Custom look</span>
+          <div className="row">
+            <button className="link small" onClick={() => run('Reset to style', (d) => resetTextToStyle(d, spreadId, el.id))}>Reset to {roleLabel(el.role)}</button>
+            <button className="link small" onClick={() => run(`Update ${roleLabel(el.role)} style`, (d) => saveTextAsRoleStyle(d, spreadId, el.id))}>Use for all {roleLabel(el.role).toLowerCase()}s</button>
+          </div>
+        </div>
+      )}
+      <div className="field">
+        <span>Font</span>
+        <FontPicker value={el.fontFamily} onChange={(family) => custom('Font', { fontFamily: family, fontWeight: nearestWeight(family, el.fontWeight) })} />
+      </div>
+      <div className="type-toolbar">
+        <button className={`tt-btn ${bold ? 'on' : ''}`} title="Bold" aria-pressed={bold} onClick={() => custom(bold ? 'Not bold' : 'Bold', { fontWeight: bold ? nearestWeight(el.fontFamily, 400) : boldWeight(el.fontFamily) })} style={{ fontWeight: 800 }}>B</button>
+        <button className={`tt-btn ${el.italic ? 'on' : ''}`} title={def.italic ? 'Italic' : `${def.family} has no italic`} aria-pressed={!!el.italic} disabled={!def.italic && !el.italic} onClick={() => custom(el.italic ? 'Not italic' : 'Italic', { italic: !el.italic })} style={{ fontStyle: 'italic', fontFamily: 'Georgia, serif' }}>I</button>
+        <button className={`tt-btn ${el.uppercase ? 'on' : ''}`} title="All capitals" aria-pressed={el.uppercase} onClick={() => custom('Case', { uppercase: !el.uppercase })}>AA</button>
+        <select className="tt-weight" value={el.fontWeight} onChange={(e) => custom('Font weight', { fontWeight: Number(e.target.value) })} title="Weight">
+          {def.weights.map((w) => <option key={w} value={w}>{weightName(w)}</option>)}
+        </select>
+      </div>
+      <div className="size-row">
+        <button className="icon-btn" title="Smaller" onClick={() => stepSize(-1)} style={{ fontSize: 11 }}>A−</button>
+        <NumField label="Size" value={el.fontSizePt} min={4} max={400} suffix="pt" apply={live(sized)} undoLabel="Font size" />
+        <button className="icon-btn" title="Larger" onClick={() => stepSize(1)} style={{ fontSize: 14 }}>A+</button>
+      </div>
+      <input
+        type="range" aria-label="Font size" min={0} max={SIZE_STEPS.length - 1} step={1}
+        value={SIZE_STEPS.reduce((bi, x, i) => (Math.abs(x - el.fontSizePt) < Math.abs(SIZE_STEPS[bi] - el.fontSizePt) ? i : bi), 0)}
+        onChange={(e) => useEditor.getState().gesture((d) => updateElement(d, spreadId, el.id, { ...sized(SIZE_STEPS[Number(e.target.value)]), styleLinked: false }))}
+        onPointerUp={() => useEditor.getState().endGesture('Font size')}
+        onKeyUp={() => useEditor.getState().endGesture('Font size')}
+      />
+      <div className="field-row">
+        <NumField label="Letter spacing" value={Math.round((el.letterSpacingEm ?? 0) * 100)} min={-10} max={60} step={1} suffix="%" apply={live((v) => ({ letterSpacingEm: v / 100 }))} undoLabel="Letter spacing" />
+        <NumField label="Line height" value={el.lineHeight} step={0.05} min={0.8} max={3} apply={live((v) => ({ lineHeight: v }))} undoLabel="Line height" />
+      </div>
+      <div className="field-row">
+        <label className="field">
+          <span>Colour</span>
+          <ColorInput value={el.color} label="Text colour" apply={(d, c) => updateElement(d, spreadId, el.id, { color: c, styleLinked: false })} />
+        </label>
+        <div className="field">
+          <span>Align</span>
+          <div className="seg">
+            {(['left', 'center', 'right'] as const).map((a) => (
+              <button key={a} className={el.align === a ? 'on' : ''} title={a} onClick={() => upd('Align text', { align: a })}>{{ left: '⇤', center: '↔', right: '⇥' }[a]}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="section-title">Background</div>
+      <div className="field-row">
+        <div className="field">
+          <span>Fill</span>
+          <div className="seg">
+            <button className={!hasBg ? 'on' : ''} onClick={() => upd('No text background', { backgroundColor: undefined, paddingMm: 0 })}>None</button>
+            <button className={hasBg ? 'on' : ''} onClick={() => !hasBg && upd('Text background', { backgroundColor: el.color === doc.style.background ? doc.style.textColor : doc.style.background, backgroundOpacity: 0.8, paddingMm: Math.round(el.fontSizePt * MM_PER_PT * 0.35 * 10) / 10 })}>Colour</button>
+          </div>
+        </div>
+        {hasBg && (
+          <label className="field">
+            <span>Colour</span>
+            <ColorInput value={el.backgroundColor!} label="Text background" apply={(d, c) => updateElement(d, spreadId, el.id, { backgroundColor: c })} />
+          </label>
+        )}
+      </div>
+      {hasBg && (
+        <>
+          <label className="field">
+            <span>Opacity — {Math.round((el.backgroundOpacity ?? 1) * 100)}%</span>
+            <input
+              type="range" min={0.05} max={1} step={0.01} value={el.backgroundOpacity ?? 1}
+              onChange={(e) => useEditor.getState().gesture((d) => updateElement(d, spreadId, el.id, { backgroundOpacity: Number(e.target.value) }))}
+              onPointerUp={() => useEditor.getState().endGesture('Background opacity')}
+              onKeyUp={() => useEditor.getState().endGesture('Background opacity')}
+            />
+          </label>
+          <NumField label="Padding" value={el.paddingMm ?? 0} min={0} max={50} step={0.5} suffix="mm" apply={(d, v) => updateElement(d, spreadId, el.id, { paddingMm: v })} undoLabel="Text padding" />
+        </>
+      )}
+    </>
   );
 }
 

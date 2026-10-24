@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   DEFAULT_COLLAGE, POSTER_SIZES, curatePool, generatePoster, relayoutPoster, setSurfaceBackground, updateSettings,
-  type BookDocument, type CollageSettings, type PhotoAsset, type PosterReport,
+  isPinned, type BookDocument, type CollageSettings, type CollageSource, type PhotoAsset, type PosterReport,
 } from '../../core';
 import { useEditor } from '../store';
 import { CollageControls, gapOptions, marginOptions } from './CollageControls';
@@ -67,6 +67,10 @@ export function PosterPanel() {
     return Math.abs(w - s.trimWidthMm) < 0.5 && Math.abs(h - s.trimHeightMm) < 0.5;
   })?.id ?? 'custom';
 
+  const source: CollageSource = settings.source ?? 'best';
+  const pinnedCount = sheet?.elements.filter(isPinned).length ?? 0;
+  const allCount = Math.min(300, curated.reps.length + curated.alternates.length);
+
   /** Pick photos again (new selection) with these settings. */
   const regenerate = (label: string, next: CollageSettings, live = false) => {
     const apply = (d: BookDocument) => {
@@ -78,12 +82,33 @@ export function PosterPanel() {
     else useEditor.getState().run(label, apply);
   };
   /** Keep the photos on the sheet; only re-flow them. */
-  const reflow = (label: string, next: CollageSettings, base?: (d: BookDocument) => BookDocument) =>
+  const reflow = (label: string, next: CollageSettings, base?: (d: BookDocument) => BookDocument, shuffle = false) =>
     useEditor.getState().run(label, (d) => {
       const prepared = base ? base(d) : d;
-      return hasPhotos ? relayoutPoster(prepared, assets, next) : { ...prepared, collage: next };
+      setReport(null);
+      return hasPhotos ? relayoutPoster(prepared, assets, next, { shuffle }) : { ...prepared, collage: next };
     });
   const resize = (w: number, h: number) => reflow('Change poster size', settings, (d) => updateSettings(d, { trimWidthMm: w, trimHeightMm: h }));
+
+  /** Arrange (seed 1: the best result) or Shuffle (next seed) using the chosen photos. */
+  const act = (shuffle: boolean) => {
+    const next = { ...settings, source, photoCount: count, seed: shuffle ? settings.seed + 1 : 1 };
+    if (source === 'sheet') return reflow(shuffle ? 'Shuffle photos on the sheet' : 'Arrange photos on the sheet', next, undefined, shuffle);
+    const what = source === 'all' ? 'all photos' : 'best photos';
+    regenerate(shuffle ? `Shuffle ${what}` : hasPhotos ? `Arrange ${what}` : 'Generate collage', next);
+  };
+  const setSource = (src: CollageSource) => useEditor.getState().run('Collage photos', (d) => ({ ...d, collage: { ...settings, source: src } }));
+
+  const sources: { id: CollageSource; label: string; title: string; disabled?: boolean }[] = [
+    { id: 'best', label: 'Best', title: 'The strongest photos, as many as you choose' },
+    { id: 'all', label: `All (${allCount})`, title: `Every usable photo — ${allCount} (not hidden, no exact duplicates)` },
+    { id: 'sheet', label: 'On sheet', title: 'Only the photos already on the sheet — after deleting or adding some', disabled: !hasPhotos },
+  ];
+  const hint = {
+    best: `Arrange picks the ${count} strongest photos in time order. Shuffle brings in a different selection and arrangement.`,
+    all: 'Arrange lays out every usable photo in time order. Shuffle rearranges them.',
+    sheet: 'Arrange lays out just the photos on the sheet in time order. Shuffle rearranges them — nothing is added or removed.',
+  }[source];
 
   return (
     <div className="stack">
@@ -96,40 +121,45 @@ export function PosterPanel() {
           <p className="muted small">Import photos in the library first.</p>
         ) : (
           <>
-            <label className="field">
-              <span>Photos — {count} <span className="muted">of {maxPhotos}</span></span>
-              <input
-                type="range" min={1} max={maxPhotos} value={Math.min(count, maxPhotos)}
-                onChange={(e) => {
-                  const n = Number(e.target.value);
-                  setCount(n);
-                  // Live preview while dragging; one undo step when released.
-                  regenerate('Photo count', { ...settings, photoCount: n }, true);
-                }}
-                onPointerUp={() => useEditor.getState().endGesture('Change photo count')}
-                onKeyUp={() => useEditor.getState().endGesture('Change photo count')}
-              />
-            </label>
+            <div className="field">
+              <span>Photos to use</span>
+              <div className="seg seg-wide" role="radiogroup" aria-label="Photos to use">
+                {sources.map((o) => (
+                  <button key={o.id} role="radio" aria-checked={source === o.id} className={source === o.id ? 'on' : ''} disabled={o.disabled} title={o.title} onClick={() => setSource(o.id)}>{o.label}</button>
+                ))}
+              </div>
+            </div>
+            {source === 'best' && (
+              <label className="field">
+                <span>How many — {count} <span className="muted">of {maxPhotos}</span></span>
+                <input
+                  type="range" min={1} max={maxPhotos} value={Math.min(count, maxPhotos)}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    setCount(n);
+                    // Live preview while dragging; one undo step when released.
+                    regenerate('Photo count', { ...settings, source: 'best', photoCount: n }, true);
+                  }}
+                  onPointerUp={() => useEditor.getState().endGesture('Change photo count')}
+                  onKeyUp={() => useEditor.getState().endGesture('Change photo count')}
+                />
+              </label>
+            )}
             <div className="btn-grid">
-              <button className="btn btn-small btn-primary" title="The strongest photos for this count, in time order" onClick={() => regenerate(hasPhotos ? 'Regenerate collage' : 'Generate collage', { ...settings, photoCount: count, seed: 1 })}>
-                <Icon name="sparkle" /> {hasPhotos ? 'Best photos' : 'Generate'}
+              <button className="btn btn-small btn-primary" onClick={() => act(false)} title="The best result for these photos, in time order">
+                <Icon name="sparkle" /> {hasPhotos ? 'Arrange' : 'Generate'}
               </button>
-              <button className="btn btn-small" disabled={!hasPhotos} onClick={() => regenerate('Shuffle photos', { ...settings, photoCount: count, seed: settings.seed + 1 })} title="A different selection of strong photos (when there are more than fit) in a new arrangement">
+              <button className="btn btn-small" disabled={!hasPhotos} onClick={() => act(true)} title="A new variation with the same photo choice">
                 <Icon name="shuffle" /> Shuffle
               </button>
             </div>
-            {hasPhotos && (
-              <button className="btn btn-small" onClick={() => reflow('Arrange photos on the sheet', settings)} title="Lay out only the photos currently on the sheet — after you delete or add some">
-                <Icon name="grid" /> Arrange the {photosOnSheet} photo{photosOnSheet === 1 ? '' : 's'} on the sheet
-              </button>
-            )}
+            <p className="muted small">{hint}{pinnedCount ? ` ${pinnedCount} pinned photo${pinnedCount > 1 ? 's stay' : ' stays'} where ${pinnedCount > 1 ? 'they are' : 'it is'}.` : ''}</p>
             {report && (
               <p className="muted small">
                 {report.placed} placed from {report.available} candidates · {report.nearDuplicatesSet} similar shots set aside
                 {report.notes.length ? ` · ${report.notes.join(' ')}` : ''}
               </p>
             )}
-            <p className="muted small">Best frame of each burst, no duplicates or hidden photos, favourites always kept, spread across the whole collection.</p>
           </>
         )}
       </div>
@@ -137,11 +167,6 @@ export function PosterPanel() {
       <div className="section-title">Layout</div>
       {hasPhotos && <p className="muted small">Style, spacing, border and title re-flow the photos already on the sheet.</p>}
       <CollageControls doc={doc} value={settings} compact onChange={(next) => reflow(next.style !== settings.style ? 'Change collage style' : 'Adjust collage', next)} />
-      {hasPhotos && settings.style === 'scatter' && (
-        <button className="btn btn-small" onClick={() => reflow('Re-scatter prints', { ...settings, seed: settings.seed + 1 })}>
-          <Icon name="shuffle" /> Re-scatter prints
-        </button>
-      )}
 
       <div className="section-title">Text</div>
       <AddTextMenu surfaceId={sheet.id} at={{ x: s.trimWidthMm / 2, y: s.trimHeightMm * 0.9 }} />
@@ -168,7 +193,7 @@ export function PosterPanel() {
         <span>Background</span>
         <ColorInput value={sheet?.background ?? doc.style.background} label="Poster background" apply={(d, c) => setSurfaceBackground(d, d.spreads[0].id, c)} />
       </label>
-      <p className="muted small">Regenerating or re-flowing replaces manual moves on the sheet — undo (⌘Z) brings them back. Posters warn below {s.minDpiWarning} DPI: they're seen from further away than book pages.</p>
+      <p className="muted small">Arranging replaces manual moves on the sheet — pin a photo (right-click it) to keep it where it is, or undo (⌘Z). Posters warn below {s.minDpiWarning} DPI: they're seen from further away than book pages.</p>
     </div>
   );
 }

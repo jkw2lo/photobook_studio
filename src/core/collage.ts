@@ -123,6 +123,95 @@ export function layoutCollage(doc: Pick<BookDocument, 'style'>, box: Rect, photo
   }
 }
 
+// ---- flowing around pinned photos -------------------------------------------------------------
+
+/**
+ * The free space left in `box` once `obstacles` (pinned frames) are taken out, `gap` away from
+ * them. Each obstacle splits the space into two full bands (above/below, or left/right — whichever
+ * keeps the bigger pieces for its shape) plus the pieces either side of it. Pieces thinner than
+ * `minSize` are dropped and simply stay as space around the pinned photo.
+ */
+export function freeRects(box: Rect, obstacles: Rect[], gap: number, minSize: number): Rect[] {
+  let free: Rect[] = [box];
+  for (const o of obstacles) {
+    // A tall pin splits into left/right columns; a wide one into top/bottom rows.
+    const columns = o.h / box.h > o.w / box.w;
+    const next: Rect[] = [];
+    for (const r of free) {
+      const hit = o.x - gap < r.x + r.w && o.x + o.w + gap > r.x && o.y - gap < r.y + r.h && o.y + o.h + gap > r.y;
+      if (!hit) {
+        next.push(r);
+        continue;
+      }
+      const top = o.y - gap - r.y;
+      const bottom = r.y + r.h - (o.y + o.h + gap);
+      const left = o.x - gap - r.x;
+      const right = r.x + r.w - (o.x + o.w + gap);
+      if (columns) {
+        if (left > 0) next.push({ x: r.x, y: r.y, w: left, h: r.h });
+        if (right > 0) next.push({ x: o.x + o.w + gap, y: r.y, w: right, h: r.h });
+        const x0 = Math.max(r.x, o.x);
+        const x1 = Math.min(r.x + r.w, o.x + o.w);
+        if (top > 0 && x1 > x0) next.push({ x: x0, y: r.y, w: x1 - x0, h: top });
+        if (bottom > 0 && x1 > x0) next.push({ x: x0, y: o.y + o.h + gap, w: x1 - x0, h: bottom });
+      } else {
+        if (top > 0) next.push({ x: r.x, y: r.y, w: r.w, h: top });
+        if (bottom > 0) next.push({ x: r.x, y: o.y + o.h + gap, w: r.w, h: bottom });
+        const y0 = Math.max(r.y, o.y);
+        const y1 = Math.min(r.y + r.h, o.y + o.h);
+        if (left > 0 && y1 > y0) next.push({ x: r.x, y: y0, w: left, h: y1 - y0 });
+        if (right > 0 && y1 > y0) next.push({ x: o.x + o.w + gap, y: y0, w: right, h: y1 - y0 });
+      }
+    }
+    free = next;
+  }
+  return free.filter((r) => r.w >= minSize && r.h >= minSize).sort((a, b) => a.y - b.y || a.x - b.x);
+}
+
+/**
+ * Like layoutCollage, but leaves `obstacles` (pinned photos) where they are: the photos are shared
+ * out over the free pieces in proportion to their area, in reading order. The hero style features
+ * its photo in the largest piece; the other pieces become mosaics.
+ */
+export function layoutCollageAround(doc: Pick<BookDocument, 'style'>, box: Rect, photos: PhotoAsset[], opts: CollageOptions, obstacles: Rect[]): CollageResult {
+  if (!obstacles.length) return layoutCollage(doc, box, photos, opts);
+  const minSize = Math.max(12, Math.min(box.w, box.h) * 0.08);
+  const rects = freeRects(box, obstacles, opts.gapMm, minSize);
+  if (!rects.length || !photos.length) return { elements: [], used: [] };
+  const isHero = opts.style === 'hero';
+  const featured = isHero ? (opts.hero && photos.includes(opts.hero) ? opts.hero : photos[0]) : undefined;
+  const rest = featured ? photos.filter((p) => p !== featured) : photos;
+  const areas = rects.map((r) => r.w * r.h);
+  const heroIdx = isHero ? areas.indexOf(Math.max(...areas)) : -1;
+  // Largest-remainder split of the photos by area (the hero piece counts its featured photo).
+  const total = areas.reduce((a, b) => a + b, 0);
+  const n = photos.length;
+  const exact = areas.map((a) => (n * a) / total);
+  const counts = exact.map(Math.floor);
+  const order = exact.map((e, i) => ({ i, f: e - Math.floor(e) })).sort((a, b) => b.f - a.f);
+  for (let k = 0, left = n - counts.reduce((a, b) => a + b, 0); left > 0; k++, left--) counts[order[k % order.length].i]++;
+  if (heroIdx >= 0 && counts[heroIdx] === 0) {
+    const donor = counts.indexOf(Math.max(...counts));
+    counts[donor]--;
+    counts[heroIdx]++;
+  }
+  const elements: Element[] = [];
+  const used: PhotoAsset[] = [];
+  let at = 0;
+  rects.forEach((r, k) => {
+    const take = k === heroIdx ? counts[k] - 1 : counts[k];
+    const chunk = rest.slice(at, at + take);
+    at += take;
+    const group = k === heroIdx && featured ? [featured, ...chunk] : chunk;
+    if (!group.length) return;
+    const style: CollageStyle = k === heroIdx ? 'hero' : isHero ? 'mosaic' : opts.style;
+    const res = layoutCollage(doc, r, group, { ...opts, style, hero: featured, seed: opts.seed + k });
+    elements.push(...res.elements);
+    used.push(...res.used);
+  });
+  return { elements, used };
+}
+
 const frame = (doc: Pick<BookDocument, 'style'>, asset: PhotoAsset, r: Rect, rotationDeg = 0, borderMm = 0): ImageElement => ({
   ...makeImageElement(doc, asset, r, rotationDeg, true),
   borderMm,

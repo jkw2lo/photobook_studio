@@ -1,11 +1,12 @@
-import type { BookDocument, CollageSettings, Element, ImageElement, PhotoAsset, Rect } from './model';
+import type { BookDocument, CollageSettings, CollageSource, Element, ImageElement, PhotoAsset, Rect } from './model';
 import { SCHEMA_VERSION } from './model';
 import { blankSpread, defaultSettings } from './book';
-import { layoutCollage, orderPhotos, titleBand, type CollageStyle } from './collage';
+import { layoutCollageAround, orderPhotos, titleBand, type CollageStyle } from './collage';
 import { aspectOf, chronological, dateRangeOf } from './curation';
 import { curatePool, selectWithCoverage, type CuratedPool } from './generator';
 import { mulberry32 } from './random';
 import { coverDpi } from './layout';
+import { elementBounds } from './geometry';
 import { newId } from './random';
 import { styleFromPreset } from './styles';
 import { inchToMm } from './units';
@@ -85,43 +86,68 @@ export interface PosterReport {
 }
 
 /**
- * Choose the featured photo for the hero style: it is printed far larger than the rest, so it must
- * hold up at that size. Prefers photos that reach the poster's DPI threshold at hero size, then
- * quality (when scores are known), then landscape shapes.
+ * Photos that can be featured in the hero style, best first. The hero is printed far larger than
+ * the rest, so it must reach (close to) the poster's DPI threshold at hero size; among those, the
+ * weakest quarter is left out. Ranked by sharpness at size, then score, then landscape shape.
+ */
+export function heroCandidates(doc: BookDocument, photos: PhotoAsset[], marginMm: number, score?: (a: PhotoAsset) => number): PhotoAsset[] {
+  if (!photos.length) return [];
+  const box = posterPhotoBox(doc, marginMm);
+  const warn = doc.settings.minDpiWarning;
+  const rated = photos.map((p) => {
+    const a = aspectOf(p);
+    const rect = box.h >= box.w ? { w: box.w, h: Math.min(Math.max(box.w / a, box.h * 0.32), box.h * 0.55) } : { w: Math.min(Math.max(box.h * a, box.w * 0.35), box.w * 0.58), h: box.h };
+    const sharp = Math.min(1, coverDpi(rect, p) / warn);
+    const sc = score ? score(p) : 0;
+    return { p, sharp, sc, r: 3 * sharp + sc + (a >= 1.2 ? 0.3 : 0) };
+  }).sort((x, y) => y.r - x.r);
+  const scores = rated.map((x) => x.sc).sort((a, b) => a - b);
+  const floor = score ? scores[Math.floor(scores.length * 0.25)] : -Infinity;
+  const eligible = rated.filter((x) => x.sharp >= 0.85 && x.sc >= floor);
+  return (eligible.length >= Math.min(3, rated.length) ? eligible : rated.slice(0, 8)).map((x) => x.p);
+}
+
+/**
+ * Choose the featured photo for the hero style. Without `vary`, the best candidate. With it
+ * (shuffles), seeds step through every candidate in a fixed scrambled order, so repeated shuffles
+ * show each strong photo once before any repeats — and never the hero currently on the sheet.
  */
 export function pickHero(
   doc: BookDocument,
   photos: PhotoAsset[],
   marginMm: number,
   score?: (a: PhotoAsset) => number,
-  /** With an rng, pick at random among the top tier (for shuffles), avoiding `avoidId` if possible. */
-  vary?: { rng: () => number; avoidId?: string | null },
+  vary?: { seed: number; avoidId?: string | null },
 ): PhotoAsset | undefined {
-  if (!photos.length) return undefined;
-  const box = posterPhotoBox(doc, marginMm);
-  const warn = doc.settings.minDpiWarning;
-  const rank = (p: PhotoAsset) => {
-    const a = aspectOf(p);
-    const rect = box.h >= box.w ? { w: box.w, h: Math.min(Math.max(box.w / a, box.h * 0.32), box.h * 0.55) } : { w: Math.min(Math.max(box.h * a, box.w * 0.35), box.w * 0.58), h: box.h };
-    const dpi = coverDpi(rect, p);
-    return 3 * Math.min(1, dpi / warn) + (score ? score(p) : 0) + (a >= 1.2 ? 0.3 : 0);
-  };
-  const ranked = photos.map((p) => ({ p, r: rank(p) })).sort((x, y) => y.r - x.r);
-  if (!vary) return ranked[0].p;
-  // Top tier: within a margin of the best — sharp enough at hero size and strong overall.
-  let tier = ranked.filter((x) => x.r >= ranked[0].r - 0.75).slice(0, 12);
-  if (tier.length > 1 && vary.avoidId) tier = tier.filter((x) => x.p.id !== vary.avoidId);
-  return tier[Math.floor(vary.rng() * tier.length)].p;
+  const list = heroCandidates(doc, photos, marginMm, score);
+  if (!list.length) return undefined;
+  if (!vary) return list[0];
+  const cycle = [...list].sort((a, b) => hashId(a.id) - hashId(b.id) || a.id.localeCompare(b.id));
+  const n = cycle.length;
+  const at = (((vary.seed - 2) % n) + n) % n;
+  const pick = cycle[at];
+  return pick.id === vary.avoidId && n > 1 ? cycle[(at + 1) % n] : pick;
 }
 
-/** The featured photo currently on a hero-style sheet (its largest frame). */
+function hashId(id: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+
+const sheetImages = (doc: BookDocument) => doc.spreads[0]?.elements.filter((e): e is ImageElement => e.type === 'image') ?? [];
+
+/** Pinned (or locked) frames stay exactly where they are; layouts flow around them. */
+export const isPinned = (e: Element) => e.type === 'image' && (!!e.pinned || e.locked);
+
+/** The featured photo currently on a hero-style sheet (its largest frame that isn't pinned). */
 function currentHeroId(doc: BookDocument): string | null {
-  const imgs = doc.spreads[0]?.elements.filter((e): e is ImageElement => e.type === 'image' && !!e.assetId) ?? [];
+  const imgs = sheetImages(doc).filter((e) => e.assetId && !isPinned(e));
   const biggest = imgs.sort((a, b) => b.widthMm * b.heightMm - a.widthMm * a.heightMm)[0];
   return biggest?.assetId ?? null;
 }
 
-/** Lay out the sheet with the given photos (in the order given). */
+/** Lay out the sheet with the given photos (in the order given), around any pinned photos. */
 export function layoutPoster(
   doc: BookDocument,
   photos: PhotoAsset[],
@@ -134,15 +160,30 @@ export function layoutPoster(
   // Keep wording the user typed into the previous title band.
   const prev = previousTitleText(doc);
   const { elements: titleEls, rest } = titleBand(doc, posterPhotoBox(doc, settings.marginMm), safe, settings.titlePosition, prev.title ?? doc.title, prev.subtitle ?? (doc.subtitle || range), settings.gapMm);
-  const { elements, used } = layoutCollage(doc, rest, photos, { style: settings.style as CollageStyle, gapMm: settings.gapMm, seed: settings.seed, hero: heroPick, keepOrder: (settings.order ?? 'time') !== 'time' });
-  return { elements: [...elements, ...titleEls], used, generatedIds: titleEls.map((e) => e.id) };
+  const pinned = sheetImages(doc).filter(isPinned);
+  const pinnedIds = new Set(pinned.map((e) => e.assetId));
+  const free = photos.filter((p) => !pinnedIds.has(p.id));
+  const { elements, used } = layoutCollageAround(
+    doc, rest, free,
+    { style: settings.style as CollageStyle, gapMm: settings.gapMm, seed: settings.seed, hero: heroPick, keepOrder: (settings.order ?? 'time') !== 'time' },
+    pinned.map(elementBounds),
+  );
+  // Photos marked "keep crop" get their crop, fit and border (and identity) back in the new frame.
+  const kept = new Map(sheetImages(doc).filter((e) => e.keepCrop && !isPinned(e) && e.assetId).map((e) => [e.assetId!, e]));
+  const restored = elements.map((e) => {
+    const k = e.type === 'image' && e.assetId ? kept.get(e.assetId) : undefined;
+    if (!k || e.type !== 'image') return e;
+    kept.delete(e.assetId!);
+    return { ...e, id: k.id, crop: k.crop, fit: k.fit, borderMm: k.borderMm, borderColor: k.borderColor, keepCrop: true };
+  });
+  return { elements: [...restored, ...titleEls], used, generatedIds: titleEls.map((e) => e.id) };
 }
 
-/** Text and shapes the user added to the sheet: kept through every regenerate and re-flow. */
+/** Text and shapes the user added, and pinned photos: kept through every regenerate and re-flow. */
 function userElements(doc: BookDocument): Element[] {
   const sheet = doc.spreads[0];
   const generated = new Set(sheet?.provenance?.generatedIds ?? []);
-  return (sheet?.elements ?? []).filter((e) => e.type !== 'image' && !generated.has(e.id));
+  return (sheet?.elements ?? []).filter((e) => (e.type === 'image' ? isPinned(e) : !generated.has(e.id)));
 }
 
 function previousTitleText(doc: BookDocument): { title?: string; subtitle?: string } {
@@ -166,13 +207,13 @@ function sheetWith(doc: BookDocument, settings: CollageSettings, laid: { element
       ...sheet,
       locked: false,
       layout: { spread: `collage-${settings.style}` },
-      provenance: { generatedAt: new Date().toISOString(), seed: settings.seed, assetIds: laid.used.map((a) => a.id), generatedIds: laid.generatedIds },
+      provenance: { generatedAt: new Date().toISOString(), seed: settings.seed, assetIds: [...laid.used.map((a) => a.id), ...sheetImages(doc).filter(isPinned).flatMap((e) => (e.assetId ? [e.assetId] : []))], generatedIds: laid.generatedIds },
       elements: [...laid.elements, ...userElements(doc)],
     }],
   };
 }
 
-/** Automatic poster: curate, pick `photoCount` photos for coverage and quality, lay out. */
+/** Automatic poster: curate, pick photos for coverage and quality, lay out around pinned photos. */
 export function generatePoster(
   doc: BookDocument,
   assets: PhotoAsset[],
@@ -181,30 +222,41 @@ export function generatePoster(
   curated: CuratedPool = curatePool(assets),
 ): { doc: BookDocument; report: PosterReport } {
   const { reps, alternates, excluded, exactDuplicates } = curated;
+  const source: CollageSource = settings.source ?? 'best';
   // Seed 1 picks the strongest photos; other seeds nudge scores so "Shuffle photos" brings in a
   // different — still good — selection. Favourites are always kept regardless.
   const rng = mulberry32(settings.seed * 7919);
   const scores = new Map([...curated.scores].map(([id, sc]) => [id, settings.seed === 1 ? sc : { ...sc, total: sc.total + (rng() - 0.5) * 0.4 }]));
   const score = (a: PhotoAsset) => scores.get(a.id)?.total ?? 0;
+  const baseScore = (a: PhotoAsset) => curated.scores.get(a.id)?.total ?? 0;
   const notes: string[] = [];
-  let candidates = reps;
-  if (candidates.length < settings.photoCount && alternates.length) {
-    const extra = alternates.slice(0, settings.photoCount - candidates.length);
-    notes.push(`Used ${extra.length} similar shot${extra.length > 1 ? 's' : ''} to reach ${settings.photoCount} photos.`);
+  // Pinned photos stay put and count towards the total; "keep crop" photos always stay in.
+  const sheet = sheetImages(doc);
+  const pinnedIds = new Set(sheet.filter(isPinned).flatMap((e) => (e.assetId ? [e.assetId] : [])));
+  const keepIds = new Set(sheet.filter((e) => e.keepCrop && !isPinned(e)).flatMap((e) => (e.assetId ? [e.assetId] : [])));
+  const usable = (list: PhotoAsset[]) => list.filter((a) => !pinnedIds.has(a.id));
+  const allCount = Math.min(300, reps.length + alternates.length);
+  const want = Math.max(0, (source === 'all' ? allCount : settings.photoCount) - pinnedIds.size);
+  let candidates = usable(reps);
+  if (candidates.length < want && alternates.length) {
+    const extra = usable(alternates).slice(0, want - candidates.length);
+    if (source !== 'all') notes.push(`Used ${extra.length} similar shot${extra.length > 1 ? 's' : ''} to reach ${settings.photoCount} photos.`);
     candidates = [...candidates, ...extra];
   }
-  const count = Math.min(settings.photoCount, candidates.length);
-  if (count < settings.photoCount) notes.push(`Only ${count} usable photos — the collage uses all of them.`);
-  let chosen = chronological(selectWithCoverage(candidates, count, scores));
+  const count = Math.min(want, candidates.length);
+  if (source !== 'all' && count < want) notes.push(`Only ${count + pinnedIds.size} usable photos — the collage uses all of them.`);
+  const keep = candidates.filter((a) => keepIds.has(a.id)).slice(0, count);
+  const pickFrom = candidates.filter((a) => !keepIds.has(a.id));
+  let chosen = chronological([...keep, ...selectWithCoverage(pickFrom, count - keep.length, scores)]);
   // The hero is printed much larger than the rest: choose it from every candidate, not just the
   // selection, and swap it in for the weakest non-favourite if needed.
   let heroPick = pickHero(doc, chosen, settings.marginMm, score);
-  if (settings.style === 'hero') {
-    // Shuffles rotate through the top candidates instead of always featuring the same photo.
-    const vary = settings.seed === 1 ? undefined : { rng, avoidId: doc.collage?.style === 'hero' ? currentHeroId(doc) : null };
-    const best = pickHero(doc, candidates, settings.marginMm, score, vary);
+  if (settings.style === 'hero' && chosen.length) {
+    // Shuffles step through all the strong candidates instead of featuring the same few photos.
+    const vary = settings.seed === 1 ? undefined : { seed: settings.seed, avoidId: doc.collage?.style === 'hero' ? currentHeroId(doc) : null };
+    const best = pickHero(doc, candidates, settings.marginMm, baseScore, vary);
     if (best && !chosen.includes(best)) {
-      const weakest = [...chosen].filter((a) => !a.favorite).sort((a, b) => score(a) - score(b))[0];
+      const weakest = [...chosen].filter((a) => !a.favorite && !keepIds.has(a.id)).sort((a, b) => score(a) - score(b))[0];
       chosen = chronological([...chosen.filter((a) => a !== weakest), best]);
     }
     heroPick = best ?? heroPick;
@@ -216,24 +268,37 @@ export function generatePoster(
   const laid = layoutPoster(doc, chosen, settings, heroPick);
   const { used } = laid;
   if (used.length < chosen.length) notes.push(`The grid uses ${used.length} of ${chosen.length} photos to keep every row complete.`);
+  if (pinnedIds.size) notes.push(`${pinnedIds.size} pinned photo${pinnedIds.size > 1 ? 's' : ''} kept in place.`);
   return {
     doc: sheetWith(doc, settings, laid),
-    report: { available: candidates.length, placed: used.length, nearDuplicatesSet: alternates.length, exactDuplicates, excluded, notes },
+    report: { available: candidates.length + pinnedIds.size, placed: used.length + pinnedIds.size, nearDuplicatesSet: alternates.length, exactDuplicates, excluded, notes },
   };
 }
 
-/** Change style, spacing or margins but keep the photos currently on the sheet. */
-export function relayoutPoster(doc: BookDocument, assets: Map<string, PhotoAsset>, settings: CollageSettings): BookDocument {
-  const sheet = doc.spreads[0];
-  const current = sheet.elements
-    .filter((e): e is ImageElement => e.type === 'image' && !!e.assetId)
+/**
+ * Keep the photos currently on the sheet and lay them out again — after a style or spacing change,
+ * or after deleting some. With `shuffle`, the order (and the hero) change too, still using only
+ * those photos. Pinned photos stay where they are.
+ */
+export function relayoutPoster(doc: BookDocument, assets: Map<string, PhotoAsset>, settings: CollageSettings, opts: { shuffle?: boolean } = {}): BookDocument {
+  const current = sheetImages(doc)
+    .filter((e) => e.assetId && !isPinned(e))
     .map((e) => assets.get(e.assetId!))
     .filter((a): a is PhotoAsset => !!a);
-  // Time order for the default arrangement; after a shuffle, keep the shuffled order.
   const unique = [...new Set(current)];
   const order = settings.order ?? 'time';
-  const photos = order !== 'time' ? orderPhotos(unique, order) : settings.seed === 1 ? chronological(unique) : unique;
-  // Keep the featured photo when re-flowing a hero layout (e.g. changing spacing after a shuffle).
-  const keepHero = doc.collage?.style === 'hero' ? photos.find((p) => p.id === currentHeroId(doc)) : undefined;
-  return sheetWith(doc, settings, layoutPoster(doc, photos, settings, keepHero ?? pickHero(doc, photos, settings.marginMm)));
+  let photos: PhotoAsset[];
+  if (order !== 'time') photos = orderPhotos(unique, order);
+  else if (opts.shuffle) {
+    const rng = mulberry32(settings.seed * 7919);
+    photos = unique.map((a) => ({ a, k: rng() })).sort((x, y) => x.k - y.k).map((x) => x.a);
+  } else photos = settings.seed === 1 ? chronological(unique) : unique; // after a shuffle, keep the shuffled order
+  let heroPick: PhotoAsset | undefined;
+  if (settings.style === 'hero') {
+    const wasHero = doc.collage?.style === 'hero';
+    if (opts.shuffle) heroPick = pickHero(doc, photos, settings.marginMm, undefined, { seed: settings.seed, avoidId: wasHero ? currentHeroId(doc) : null });
+    // Keep the featured photo when re-flowing a hero layout (e.g. changing spacing after a shuffle).
+    else heroPick = (wasHero ? photos.find((p) => p.id === currentHeroId(doc)) : undefined) ?? pickHero(doc, photos, settings.marginMm);
+  }
+  return sheetWith(doc, settings, layoutPoster(doc, photos, settings, heroPick));
 }

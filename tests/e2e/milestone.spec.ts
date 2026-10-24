@@ -115,8 +115,13 @@ test('make a collage poster: import, auto collage, switch style, export', async 
   await page.locator('.inspector').getByRole('button', { name: 'Add text' }).click();
   await page.getByRole('menuitem', { name: 'Quote' }).click();
   await expect(page.locator('.canvas .el-text')).toHaveCount(1);
+  // Quick styles restyle it in one click (here: a band of colour behind the text).
+  await page.locator('.inspector .quick-style', { hasText: 'Label band' }).click();
+  await expect.poll(() => page.locator('.canvas .el-text').evaluate((e) => getComputedStyle(e).backgroundColor)).toMatch(/rgba\(.*0\.85\)/);
   await page.keyboard.press('Escape');
-  await page.locator('.auto-collage').getByRole('button', { name: /Arrange the \d+ photos/ }).click();
+  // "On sheet" arranges only the photos already there.
+  await page.locator('.auto-collage').getByRole('radio', { name: 'On sheet' }).click();
+  await page.locator('.auto-collage').getByRole('button', { name: 'Arrange' }).click();
   await expect(page.locator('.canvas .el-text')).toHaveCount(1);
 
   // Crop mode shows the floating crop toolbar; Enter finishes.
@@ -127,6 +132,19 @@ test('make a collage poster: import, auto collage, switch style, export', async 
   await page.keyboard.press('Enter');
   await expect(page.locator('.crop-toolbar')).toHaveCount(0);
   await page.keyboard.press('Escape'); // deselect: back to the Poster panel
+
+  // Right-click a photo to pin it: shuffling leaves it exactly where it is.
+  const pinTarget = page.locator('.canvas .el-image').nth(2);
+  const pb = (await pinTarget.boundingBox())!;
+  await page.mouse.click(pb.x + pb.width / 2, pb.y + pb.height / 2, { button: 'right' });
+  await page.locator('.ctx-menu').getByRole('menuitemcheckbox', { name: /Pin in place/ }).click();
+  await expect(page.locator('.pin-badge')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  const pinnedAt = await page.locator('.pin-badge-frame').boundingBox();
+  const beforeShuffle = await photoIds();
+  await page.locator('.auto-collage').getByRole('button', { name: 'Shuffle' }).click();
+  await expect.poll(photoIds).not.toBe(beforeShuffle);
+  expect(await page.locator('.pin-badge-frame').boundingBox()).toEqual(pinnedAt);
 
   // Re-flow as a pinboard from the side panel: same photos, tilted prints.
   await page.locator('.inspector .collage-style', { hasText: 'Pinboard' }).click();

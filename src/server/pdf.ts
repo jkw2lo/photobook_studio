@@ -74,11 +74,12 @@ class PdfWriter {
     });
   }
 
-  useFont(family: string, weight: number) {
+  useFont(family: string, weight: number, italic = false) {
     const w = nearestWeight(family, weight);
-    const name = `${family}-${w}`;
+    const file = fontFilePath(family, w, italic);
+    const name = `${family}-${w}${file.includes('-italic.') ? '-italic' : ''}`;
     if (!this.fonts.has(name)) {
-      this.pdf.registerFont(name, join(ROOT, fontFilePath(family, w)));
+      this.pdf.registerFont(name, join(ROOT, file));
       this.fonts.add(name);
     }
     this.pdf.font(name);
@@ -150,7 +151,14 @@ class PdfWriter {
   /** Returns true if the text overflows its box. */
   private text(el: TextElement): boolean {
     const { pdf } = this;
-    this.useFont(el.fontFamily, el.fontWeight);
+    // Fill behind the text: the whole box, like the editor's CSS background.
+    if (el.backgroundColor) {
+      pdf.save();
+      pdf.fillOpacity(el.backgroundOpacity ?? 1).rect(0, 0, mmToPt(el.widthMm), mmToPt(el.heightMm)).fill(el.backgroundColor);
+      pdf.restore();
+    }
+    const pad = mmToPt(el.paddingMm ?? 0);
+    this.useFont(el.fontFamily, el.fontWeight, !!el.italic);
     pdf.fontSize(el.fontSizePt).fillColor(el.color);
     // Same transforms as the editor's CSS (text-transform: uppercase, letter-spacing in em).
     const text = el.uppercase ? el.text.toUpperCase() : el.text;
@@ -159,11 +167,11 @@ class PdfWriter {
     const natural = pdf.currentLineHeight(false);
     const lineBox = el.lineHeight * el.fontSizePt;
     const lineGap = lineBox - natural;
-    const opts = { width: mmToPt(el.widthMm), align: el.align, lineGap, characterSpacing } as const;
-    const boxH = mmToPt(el.heightMm);
+    const opts = { width: Math.max(1, mmToPt(el.widthMm) - 2 * pad), align: el.align, lineGap, characterSpacing } as const;
+    const boxH = mmToPt(el.heightMm) - 2 * pad;
     const overflow = pdf.heightOfString(text, opts) > boxH + 1;
     // A bounded height also stops PDFKit from ever starting a new page for long text.
-    pdf.text(text, 0, lineGap / 2, { ...opts, height: boxH * 1.5 + lineBox });
+    pdf.text(text, pad, pad + lineGap / 2, { ...opts, height: boxH * 1.5 + lineBox });
     return overflow;
   }
 

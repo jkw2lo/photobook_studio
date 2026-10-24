@@ -12,7 +12,7 @@ export const SCHEMA_VERSION = 3 as const;
  * Bumped whenever the client/server contract changes. The page compares it with the running
  * server's and warns when they differ (e.g. the page was rebuilt but the server wasn't restarted).
  */
-export const API_VERSION = 5;
+export const API_VERSION = 6;
 
 export type ID = string;
 
@@ -52,7 +52,12 @@ export interface CollageSettings {
   seed: number;
   /** How photos are ordered on the sheet. Missing = 'time'. */
   order?: 'time' | 'similar' | 'color';
+  /** Which photos Arrange and Shuffle use: the strongest `photoCount`, every usable photo, or only
+   * the photos already on the sheet. Missing = 'best'. */
+  source?: CollageSource;
 }
+
+export type CollageSource = 'best' | 'all' | 'sheet';
 
 export type PrinterId = 'lulu' | 'blurb' | 'custom';
 export type BindingId = 'hardcover' | 'softcover';
@@ -136,6 +141,11 @@ export interface ImageElement extends ElementBase {
   fit: FitMode;
   borderMm: number;
   borderColor: string;
+  /** Collages: stays exactly where it is (position, size, crop) and auto layouts flow around it. */
+  pinned?: boolean;
+  /** Collages: auto layouts may move this frame but keep its crop, fit and border, and keep the
+   * photo on the sheet through shuffles. */
+  keepCrop?: boolean;
 }
 
 export type TextRole = 'title' | 'subtitle' | 'heading' | 'caption' | 'body' | 'quote' | 'label';
@@ -153,6 +163,13 @@ export interface TextElement extends ElementBase {
   uppercase: boolean;
   align: 'left' | 'center' | 'right';
   color: string;
+  italic?: boolean;
+  /** Fill behind the text (the whole box). Missing = none. */
+  backgroundColor?: string;
+  /** 0–1. Missing = 1. */
+  backgroundOpacity?: number;
+  /** Space between the box edge and the text, on every side. Missing = 0. */
+  paddingMm?: number;
   /** Follows its role's style; false once its font or size is edited by hand. */
   styleLinked: boolean;
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { duplicateElement, findSurface, innerBox, issueCounts, panCrop, removeElements, updateElement, zoomCropAt } from '../../core';
+import { togglePin } from '../elementActions';
 import { retrySave, selectedElement, useEditor } from '../store';
 import { Canvas } from './Canvas';
 import { ExportDialog } from './ExportDialog';
@@ -230,6 +231,7 @@ function useKeyboard(enabled: boolean) {
         return;
       }
       if (key === 'l' && !mod) return st.run(el.locked ? 'Unlock' : 'Lock', (d) => updateElement(d, sel.spreadId, el.id, { locked: !el.locked }));
+      if (key === 'p' && !mod && el.type === 'image' && st.doc.settings.product === 'poster') return togglePin(sel, el);
       const step = e.shiftKey ? 5 : 0.5;
       const nudges: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
       const n = nudges[e.key];

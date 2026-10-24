@@ -8,6 +8,8 @@ export interface FontFamilyDef {
   /** @fontsource package directory name. */
   pkg: string;
   weights: number[];
+  /** Italics are bundled for every listed weight. */
+  italic: boolean;
   category: FontCategory;
   /** One line on where it works best — shown in the font picker. */
   note: string;
@@ -17,30 +19,30 @@ export interface FontFamilyDef {
 // render fine in the browser crash PDFKit's subsetter (e.g. IBM Plex Mono), so they are left out.
 export const FONT_FAMILIES: FontFamilyDef[] = [
   // Sans
-  { family: 'Inter', pkg: 'inter', weights: [300, 400, 600], category: 'sans', note: 'Neutral, very legible captions' },
-  { family: 'Montserrat', pkg: 'montserrat', weights: [300, 400, 600], category: 'sans', note: 'Geometric, confident headings' },
-  { family: 'Josefin Sans', pkg: 'josefin-sans', weights: [300, 400, 600], category: 'sans', note: 'Elegant, vintage geometric' },
-  { family: 'Raleway', pkg: 'raleway', weights: [300, 400, 700], category: 'sans', note: 'Light and airy, minimalist' },
-  { family: 'Work Sans', pkg: 'work-sans', weights: [400, 600], category: 'sans', note: 'Friendly, slightly wide' },
+  { family: 'Inter', pkg: 'inter', weights: [300, 400, 500, 600, 700, 800, 900], italic: true, category: 'sans', note: 'Neutral, very legible captions' },
+  { family: 'Montserrat', pkg: 'montserrat', weights: [300, 400, 500, 600, 700, 800, 900], italic: true, category: 'sans', note: 'Geometric, confident headings' },
+  { family: 'Josefin Sans', pkg: 'josefin-sans', weights: [300, 400, 500, 600, 700], italic: true, category: 'sans', note: 'Elegant, vintage geometric' },
+  { family: 'Raleway', pkg: 'raleway', weights: [300, 400, 500, 600, 700, 800, 900], italic: true, category: 'sans', note: 'Light and airy, minimalist' },
+  { family: 'Work Sans', pkg: 'work-sans', weights: [300, 400, 500, 600, 700, 800, 900], italic: true, category: 'sans', note: 'Friendly, slightly wide' },
   // Serif
-  { family: 'Source Serif 4', pkg: 'source-serif-4', weights: [400, 600], category: 'serif', note: 'Calm, readable body text' },
-  { family: 'Lora', pkg: 'lora', weights: [400, 700], category: 'serif', note: 'Warm, storybook feel' },
-  { family: 'EB Garamond', pkg: 'eb-garamond', weights: [400, 600], category: 'serif', note: 'Classic book typography' },
-  { family: 'Cormorant Garamond', pkg: 'cormorant-garamond', weights: [300, 400, 600], category: 'serif', note: 'Refined, high-contrast, wedding albums' },
-  { family: 'Libre Baskerville', pkg: 'libre-baskerville', weights: [400, 700], category: 'serif', note: 'Traditional, sturdy' },
+  { family: 'Source Serif 4', pkg: 'source-serif-4', weights: [300, 400, 500, 600, 700, 800, 900], italic: true, category: 'serif', note: 'Calm, readable body text' },
+  { family: 'Lora', pkg: 'lora', weights: [400, 500, 600, 700], italic: true, category: 'serif', note: 'Warm, storybook feel' },
+  { family: 'EB Garamond', pkg: 'eb-garamond', weights: [400, 500, 600, 700, 800], italic: true, category: 'serif', note: 'Classic book typography' },
+  { family: 'Cormorant Garamond', pkg: 'cormorant-garamond', weights: [300, 400, 500, 600, 700], italic: true, category: 'serif', note: 'Refined, high-contrast, wedding albums' },
+  { family: 'Libre Baskerville', pkg: 'libre-baskerville', weights: [400, 500, 600, 700], italic: true, category: 'serif', note: 'Traditional, sturdy' },
   // Display
-  { family: 'Playfair Display', pkg: 'playfair-display', weights: [400, 700], category: 'display', note: 'Editorial titles' },
-  { family: 'Bodoni Moda', pkg: 'bodoni-moda', weights: [400, 700], category: 'display', note: 'High fashion, magazine covers' },
-  { family: 'DM Serif Display', pkg: 'dm-serif-display', weights: [400], category: 'display', note: 'Soft, bold display serif' },
-  { family: 'Abril Fatface', pkg: 'abril-fatface', weights: [400], category: 'display', note: 'Heavy poster headlines' },
-  { family: 'Fraunces', pkg: 'fraunces', weights: [400, 700], category: 'display', note: 'Quirky, characterful old-style' },
+  { family: 'Playfair Display', pkg: 'playfair-display', weights: [400, 500, 600, 700, 800, 900], italic: true, category: 'display', note: 'Editorial titles' },
+  { family: 'Bodoni Moda', pkg: 'bodoni-moda', weights: [400, 500, 600, 700, 800, 900], italic: true, category: 'display', note: 'High fashion, magazine covers' },
+  { family: 'DM Serif Display', pkg: 'dm-serif-display', weights: [400], italic: true, category: 'display', note: 'Soft, bold display serif' },
+  { family: 'Abril Fatface', pkg: 'abril-fatface', weights: [400], italic: false, category: 'display', note: 'Heavy poster headlines' },
+  { family: 'Fraunces', pkg: 'fraunces', weights: [300, 400, 500, 600, 700, 800, 900], italic: true, category: 'display', note: 'Quirky, characterful old-style' },
   // Handwriting
-  { family: 'Caveat', pkg: 'caveat', weights: [400, 700], category: 'handwriting', note: 'Casual handwritten notes' },
-  { family: 'Dancing Script', pkg: 'dancing-script', weights: [400, 700], category: 'handwriting', note: 'Flowing script, celebrations' },
-  { family: 'Amatic SC', pkg: 'amatic-sc', weights: [400, 700], category: 'handwriting', note: 'Tall hand-drawn capitals' },
-  { family: 'Permanent Marker', pkg: 'permanent-marker', weights: [400], category: 'handwriting', note: 'Bold marker, scrapbook labels' },
+  { family: 'Caveat', pkg: 'caveat', weights: [400, 500, 600, 700], italic: false, category: 'handwriting', note: 'Casual handwritten notes' },
+  { family: 'Dancing Script', pkg: 'dancing-script', weights: [400, 500, 600, 700], italic: false, category: 'handwriting', note: 'Flowing script, celebrations' },
+  { family: 'Amatic SC', pkg: 'amatic-sc', weights: [400, 700], italic: false, category: 'handwriting', note: 'Tall hand-drawn capitals' },
+  { family: 'Permanent Marker', pkg: 'permanent-marker', weights: [400], italic: false, category: 'handwriting', note: 'Bold marker, scrapbook labels' },
   // Mono
-  { family: 'Courier Prime', pkg: 'courier-prime', weights: [400, 700], category: 'mono', note: 'Typewriter, documentary captions' },
+  { family: 'Courier Prime', pkg: 'courier-prime', weights: [400, 700], italic: true, category: 'mono', note: 'Typewriter, documentary captions' },
 ];
 
 export const FONT_CATEGORIES: { id: FontCategory; label: string }[] = [
@@ -52,8 +54,17 @@ export const FONT_CATEGORIES: { id: FontCategory; label: string }[] = [
 ];
 
 export function weightName(w: number): string {
-  return w <= 300 ? 'Light' : w <= 400 ? 'Regular' : w <= 500 ? 'Medium' : w <= 600 ? 'Semibold' : 'Bold';
+  return w <= 200 ? 'Thin' : w <= 300 ? 'Light' : w <= 400 ? 'Regular' : w <= 500 ? 'Medium' : w <= 600 ? 'Semibold' : w <= 700 ? 'Bold' : w <= 800 ? 'Extra bold' : 'Black';
 }
+
+/** The weight a "B" toggle switches to: Bold if the family has it, else its heaviest weight. */
+export function boldWeight(family: string): number {
+  const ws = fontFamily(family).weights;
+  return ws.includes(700) ? 700 : ws[ws.length - 1];
+}
+
+/** Whether a weight reads as bold (the "B" toggle is on). */
+export const isBold = (weight: number) => weight >= 600;
 
 export function fontFamily(family: string): FontFamilyDef {
   return FONT_FAMILIES.find((f) => f.family === family) ?? FONT_FAMILIES[0];
@@ -65,9 +76,10 @@ export function nearestWeight(family: string, weight: number): number {
   return def.weights.reduce((best, w) => (Math.abs(w - weight) < Math.abs(best - weight) ? w : best));
 }
 
-/** Relative path (from the project root) of the .woff file the PDF exporter embeds. */
-export function fontFilePath(family: string, weight: number): string {
+/** Relative path (from the project root) of the .woff file the PDF exporter embeds. Families
+ * without italics fall back to upright (the editor does the same, so preview and print agree). */
+export function fontFilePath(family: string, weight: number, italic = false): string {
   const def = fontFamily(family);
   const w = nearestWeight(def.family, weight);
-  return `node_modules/@fontsource/${def.pkg}/files/${def.pkg}-latin-${w}-normal.woff`;
+  return `node_modules/@fontsource/${def.pkg}/files/${def.pkg}-latin-${w}-${italic && def.italic ? 'italic' : 'normal'}.woff`;
 }

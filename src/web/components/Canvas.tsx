@@ -6,8 +6,9 @@ import {
 } from '../../core';
 import { thumbUrl } from '../api';
 import { useEditor } from '../store';
+import { ContextMenu, type MenuTarget } from './ContextMenu';
 import { Icon } from './Icon';
-import { SpreadView } from './SpreadView';
+import { SpreadView, textCss } from './SpreadView';
 
 // The interactive editor surface (a spread or the cover). All pointer input lands on one overlay;
 // hit-testing uses the same rotated-rectangle geometry as core, so clicks, drags and drops agree
@@ -60,6 +61,7 @@ export function Canvas() {
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [swapDrag, setSwapDrag] = useState<{ client: Pt; target: string | null } | null>(null);
+  const [menu, setMenu] = useState<MenuTarget | null>(null);
   const wheelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useLayoutEffect(() => {
@@ -73,6 +75,7 @@ export function Canvas() {
   useEffect(() => {
     setEditingText(null);
     setHoverId(null);
+    setMenu(null);
   }, [index]);
 
   usePrefetchNeighbours(doc, index);
@@ -365,6 +368,18 @@ export function Canvas() {
     if (hit.type === 'text') setEditingText(hit.id);
   };
 
+  /** Right-click: select what's under the pointer and show its actions. */
+  const onContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const hit = hitTest(toMm(e.clientX, e.clientY));
+    if (!hit) return setMenu(null);
+    if (cropId && cropId !== hit.id) setCrop(null);
+    if (swapSource) setSwapSource(null);
+    const sel = { spreadId: surface.id, elementId: hit.id };
+    select(sel);
+    setMenu({ sel, x: e.clientX, y: e.clientY });
+  };
+
   const onWheel = (e: React.WheelEvent) => {
     if (!cropId) return;
     const el = surface.elements.find((x) => x.id === cropId) as ImageElement | undefined;
@@ -442,6 +457,7 @@ export function Canvas() {
             {hovered && !gestureRef.current && <Outline el={hovered} scale={scale} offset={b} className="hover-outline" />}
             {dropTarget && <Outline el={surface.elements.find((x) => x.id === dropTarget)!} scale={scale} offset={b} className="drop-outline" />}
             {swapTarget && <Outline el={swapTarget} scale={scale} offset={b} className="drop-outline" />}
+            {isPosterDoc && <PinBadges elements={surface.elements} scale={scale} offset={b} />}
             {selected && !editingText && <SelectionBox el={selected} scale={scale} offset={b} cropping={cropId === selected.id} />}
             {surface.locked && <div className="lock-veil" title="Locked: regeneration and layout changes leave it untouched" />}
             {editingText && <TextEditor surface={surface} elementId={editingText} scale={scale} offset={b} onDone={() => setEditingText(null)} />}
@@ -459,6 +475,7 @@ export function Canvas() {
                 useEditor.getState().cancelGesture();
               }}
               onDoubleClick={onDoubleClick}
+              onContextMenu={onContextMenu}
               onWheel={onWheel}
               onDragOver={onDragOver}
               onDragLeave={() => setDropTarget(null)}
@@ -487,6 +504,7 @@ export function Canvas() {
       )}
       {swapSource && <div className="canvas-hint">Click another photo to swap with — on any spread. Esc to cancel.</div>}
       {cropEl && cropAsset && <CropToolbar el={cropEl} asset={cropAsset} surfaceId={surface.id} />}
+      {menu && <ContextMenu target={menu} onClose={() => setMenu(null)} onEditText={(id) => setEditingText(id)} />}
     </div>
   );
 }
@@ -536,6 +554,23 @@ function frameStyle(el: Element, scale: number, offset: number): CSSProperties {
 function Outline({ el, scale, offset, className }: { el: Element; scale: number; offset: number; className: string }) {
   if (!el) return null;
   return <div className={className} style={frameStyle(el, scale, offset)} />;
+}
+
+/** A small pin on every pinned photo, so it's clear which ones Arrange will leave alone. */
+function PinBadges({ elements, scale, offset }: { elements: Element[]; scale: number; offset: number }) {
+  return (
+    <>
+      {elements.map((el) =>
+        el.type === 'image' && (el.pinned || el.keepCrop) ? (
+          <div key={el.id} className="pin-badge-frame" style={frameStyle(el, scale, offset)}>
+            <span className={`pin-badge ${el.pinned ? '' : 'pin-badge-crop'}`} title={el.pinned ? 'Pinned: Arrange leaves it where it is' : 'Crop kept when arranging'}>
+              <Icon name={el.pinned ? 'pin' : 'crop'} size={11} />
+            </span>
+          </div>
+        ) : null,
+      )}
+    </>
+  );
 }
 
 function SelectionBox({ el, scale, offset, cropping }: { el: Element; scale: number; offset: number; cropping: boolean }) {
@@ -601,16 +636,19 @@ function CropToolbar({ el, asset, surfaceId }: { el: ImageElement; asset: PhotoA
 }
 
 function HandleLayer({ el, scale, offset }: { el: Element; scale: number; offset: number }) {
-  const big = el.widthMm * scale > 70 && el.heightMm * scale > 50;
+  // The swap button shrinks with the frame rather than disappearing, so every photo can be swapped
+  // (a photo swapped into a narrow frame keeps its button). Only truly tiny frames go without.
+  const short = Math.min(el.widthMm, el.heightMm) * scale;
+  const swapPx = Math.round(Math.max(18, Math.min(30, short * 0.4)));
   return (
     <div className="handles" style={frameStyle(el, scale, offset)}>
       {HANDLES.map((h) => (
         <div key={h} className={`handle handle-${h}`} data-handle={h} />
       ))}
       <div className="handle handle-rotate" data-handle="rotate" title="Rotate (Shift: 15° steps)" />
-      {el.type === 'image' && el.assetId && big && (
-        <div className="handle-swap" data-handle="swap" title="Drag onto another photo to swap them">
-          <Icon name="swap" size={14} />
+      {el.type === 'image' && el.assetId && short >= 26 && (
+        <div className="handle-swap" data-handle="swap" title="Drag onto another photo to swap them" style={{ width: swapPx, height: swapPx, margin: -swapPx / 2 }}>
+          <Icon name="swap" size={Math.round(swapPx * 0.47)} />
         </div>
       )}
     </div>
@@ -682,14 +720,7 @@ function TextEditor({ surface, elementId, scale, offset, onDone }: { surface: { 
       style={{
         ...frameStyle(el, scale, offset),
         minHeight: el.heightMm * scale,
-        fontFamily: `'${el.fontFamily}'`,
-        fontWeight: el.fontWeight,
-        fontSize: el.fontSizePt * MM_PER_PT * scale,
-        lineHeight: el.lineHeight,
-        letterSpacing: el.letterSpacingEm ? `${el.letterSpacingEm}em` : undefined,
-        textTransform: el.uppercase ? 'uppercase' : undefined,
-        textAlign: el.align,
-        color: el.color,
+        ...textCss(el, scale),
       }}
     />
   );

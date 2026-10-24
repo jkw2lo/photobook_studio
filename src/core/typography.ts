@@ -209,7 +209,7 @@ export function toneColor(style: BookStyle, tone: TextStyle['tone']): string {
 }
 
 /** Fields a text box takes from its role style (size passed in, since layouts may scale it). */
-export function styleFields(style: BookStyle, role: TextRole, sizePt: number): Pick<TextElement, 'fontFamily' | 'fontWeight' | 'fontSizePt' | 'lineHeight' | 'letterSpacingEm' | 'uppercase' | 'color'> {
+export function styleFields(style: BookStyle, role: TextRole, sizePt: number): Pick<TextElement, 'fontFamily' | 'fontWeight' | 'fontSizePt' | 'lineHeight' | 'letterSpacingEm' | 'uppercase' | 'color' | 'italic'> {
   const ts = roleStyle(style, role);
   return {
     fontFamily: ts.family,
@@ -219,6 +219,7 @@ export function styleFields(style: BookStyle, role: TextRole, sizePt: number): P
     letterSpacingEm: ts.letterSpacingEm,
     uppercase: ts.uppercase,
     color: toneColor(style, ts.tone),
+    italic: false,
   };
 }
 
@@ -273,7 +274,7 @@ export function recolorLinkedText(doc: BookDocument): BookDocument {
 /** The style a text box would have if it followed its role exactly (for "is this custom?"). */
 export function matchesRoleStyle(doc: Pick<BookDocument, 'style'>, el: TextElement): boolean {
   const f = styleFields(doc.style, el.role, el.fontSizePt);
-  return f.fontFamily === el.fontFamily && f.fontWeight === el.fontWeight && f.uppercase === !!el.uppercase && Math.abs(f.letterSpacingEm - (el.letterSpacingEm ?? 0)) < 1e-6;
+  return f.fontFamily === el.fontFamily && f.fontWeight === el.fontWeight && f.uppercase === !!el.uppercase && !el.italic && Math.abs(f.letterSpacingEm - (el.letterSpacingEm ?? 0)) < 1e-6;
 }
 
 export function textElementsOf(doc: BookDocument): TextElement[] {

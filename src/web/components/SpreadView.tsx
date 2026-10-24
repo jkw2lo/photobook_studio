@@ -120,22 +120,34 @@ function ShapeView({ el, style }: { el: ShapeElement; style: CSSProperties }) {
   return <div className="el el-shape" style={{ ...style, background: el.fill, opacity: el.opacity }} />;
 }
 
+/** Typography and box styling of a text element, shared by the page view and the inline editor. */
+export function textCss(el: TextElement, scale: number): CSSProperties {
+  return {
+    fontFamily: `'${el.fontFamily}'`,
+    fontWeight: el.fontWeight,
+    fontStyle: el.italic ? 'italic' : undefined,
+    fontSize: el.fontSizePt * MM_PER_PT * scale,
+    lineHeight: el.lineHeight,
+    letterSpacing: el.letterSpacingEm ? `${el.letterSpacingEm}em` : undefined,
+    textTransform: el.uppercase ? 'uppercase' : undefined,
+    textAlign: el.align,
+    color: el.color,
+    background: el.backgroundColor ? hexToRgba(el.backgroundColor, el.backgroundOpacity ?? 1) : undefined,
+    padding: el.paddingMm ? el.paddingMm * scale : undefined,
+    boxSizing: 'border-box',
+  };
+}
+
+export function hexToRgba(hex: string, alpha: number): string {
+  const x = hex.replace('#', '');
+  const full = x.length === 3 ? x.split('').map((c) => c + c).join('') : x.padEnd(6, '0');
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) || 0);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 function TextView({ el, scale, style }: { el: TextElement; scale: number; style: CSSProperties }) {
   return (
-    <div
-      className="el el-text"
-      style={{
-        ...style,
-        fontFamily: `'${el.fontFamily}'`,
-        fontWeight: el.fontWeight,
-        fontSize: el.fontSizePt * MM_PER_PT * scale,
-        lineHeight: el.lineHeight,
-        letterSpacing: el.letterSpacingEm ? `${el.letterSpacingEm}em` : undefined,
-        textTransform: el.uppercase ? 'uppercase' : undefined,
-        textAlign: el.align,
-        color: el.color,
-      }}
-    >
+    <div className="el el-text" style={{ ...style, ...textCss(el, scale) }}>
       {el.text}
     </div>
   );
