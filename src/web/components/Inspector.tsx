@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
-  COVER_INDEX, addChapter, applyMosaicLayout, nearestWeight, weightName, addTextAt, applyTemplate, defaultCrop, duplicateElement, duplicateSpread, effectiveDpi,
+  COVER_INDEX, TEXT_ROLES, addChapter, applyMosaicLayout, nearestWeight, resetTextToStyle, roleLabel, saveTextAsRoleStyle, setTextRole, weightName, addTextAt, applyTemplate, defaultCrop, duplicateElement, duplicateSpread, effectiveDpi,
   fitFrameToPhoto, fontFamily, insertSpreadAfter, isPrintable, removeElements, removeSpread, reorderElement, setFramePhoto,
   setSpreadChapter, setSpreadLocked, setSurfaceBackground, shuffleSpreadLayout, spreadPagesLabel, templateName, updateElement,
-  type ImageElement, type TextElement,
+  type ImageElement, type TextElement, type TextRole,
 } from '../../core';
 import { thumbUrl } from '../api';
 import { selectedElement, useEditor } from '../store';
@@ -12,6 +12,7 @@ import { BookPanel } from './BookPanel';
 import { CoverPanel } from './CoverPanel';
 import { FontPicker } from './FontPicker';
 import { PosterPanel } from './PosterUI';
+import { AddTextMenu } from './TypePanel';
 import { Icon } from './Icon';
 import { PreflightPanel } from './PreflightPanel';
 import { TemplatePicker } from './TemplatePicker';
@@ -87,6 +88,8 @@ function ElementPanel() {
   const cropId = useEditor((s) => s.cropElementId);
   const { run, select, setCrop, setSwapSource } = useEditor.getState();
   const upd = (label: string, patch: Partial<ImageElement> | Partial<TextElement>) => run(label, (d) => updateElement(d, sel.spreadId, el.id, patch));
+  /** Hand edits to a text box's typography make it custom (it stops following its style). */
+  const custom = (label: string, patch: Partial<TextElement>) => upd(label, { ...patch, styleLinked: false });
 
   return (
     <div className="stack">
@@ -182,23 +185,50 @@ function ElementPanel() {
             onKeyDown={(e) => e.stopPropagation()}
           />
           <div className="field">
+            <span>Style</span>
+            <select value={el.role} onChange={(e) => run(`Style: ${roleLabel(e.target.value as TextRole)}`, (d) => setTextRole(d, sel.spreadId, el.id, e.target.value as TextRole))}>
+              {TEXT_ROLES.map((r) => <option key={r.role} value={r.role}>{r.label}</option>)}
+            </select>
+          </div>
+          {el.styleLinked !== false ? (
+            <p className="muted small style-status">Follows the {roleLabel(el.role)} style — change it for the whole book in the Book tab.</p>
+          ) : (
+            <div className="style-status custom">
+              <span className="small">Custom look</span>
+              <div className="row">
+                <button className="link small" onClick={() => run('Reset to style', (d) => resetTextToStyle(d, sel.spreadId, el.id))}>Reset to {roleLabel(el.role)}</button>
+                <button className="link small" onClick={() => run(`Update ${roleLabel(el.role)} style`, (d) => saveTextAsRoleStyle(d, sel.spreadId, el.id))}>Use for all {roleLabel(el.role).toLowerCase()}s</button>
+              </div>
+            </div>
+          )}
+          <div className="field">
             <span>Font</span>
-            <FontPicker value={el.fontFamily} onChange={(family) => upd('Font', { fontFamily: family, fontWeight: nearestWeight(family, el.fontWeight) })} />
+            <FontPicker value={el.fontFamily} onChange={(family) => custom('Font', { fontFamily: family, fontWeight: nearestWeight(family, el.fontWeight) })} />
           </div>
           <div className="field-row">
             <label className="field">
               <span>Weight</span>
-              <select value={el.fontWeight} onChange={(e) => upd('Font weight', { fontWeight: Number(e.target.value) })}>
+              <select value={el.fontWeight} onChange={(e) => custom('Font weight', { fontWeight: Number(e.target.value) })}>
                 {fontFamily(el.fontFamily).weights.map((w) => <option key={w} value={w}>{weightName(w)}</option>)}
               </select>
             </label>
-            <NumField label="Size" value={el.fontSizePt} min={4} max={200} suffix="pt" onCommit={(v) => upd('Font size', { fontSizePt: v })} />
+            <NumField label="Size" value={el.fontSizePt} min={4} max={300} suffix="pt" onCommit={(v) => custom('Font size', { fontSizePt: v })} />
           </div>
           <div className="field-row">
-            <NumField label="Line height" value={el.lineHeight} step={0.05} min={0.8} max={3} onCommit={(v) => upd('Line height', { lineHeight: v })} />
+            <NumField label="Letter spacing" value={Math.round((el.letterSpacingEm ?? 0) * 100)} min={-10} max={60} step={1} suffix="%" onCommit={(v) => custom('Letter spacing', { letterSpacingEm: v / 100 })} />
+            <NumField label="Line height" value={el.lineHeight} step={0.05} min={0.8} max={3} onCommit={(v) => custom('Line height', { lineHeight: v })} />
+          </div>
+          <div className="field-row">
+            <div className="field">
+              <span>Case</span>
+              <div className="seg">
+                <button className={!el.uppercase ? 'on' : ''} onClick={() => custom('Case', { uppercase: false })}>Aa</button>
+                <button className={el.uppercase ? 'on' : ''} onClick={() => custom('Case', { uppercase: true })}>AA</button>
+              </div>
+            </div>
             <label className="field">
               <span>Colour</span>
-              <ColorInput value={el.color} label="Text colour" apply={(d, c) => updateElement(d, sel.spreadId, el.id, { color: c })} />
+              <ColorInput value={el.color} label="Text colour" apply={(d, c) => updateElement(d, sel.spreadId, el.id, { color: c, styleLinked: false })} />
             </label>
           </div>
           <div className="seg">
@@ -282,18 +312,7 @@ function SpreadPanel() {
         }}>
           <Icon name="shuffle" /> Shuffle layout
         </button>
-        <button className="btn btn-small" disabled={spread.locked} onClick={() => {
-          const side = isPrintable(i, 'right', n) ? 1.5 : 0.5;
-          let id = '';
-          run('Add text', (d) => {
-            const r = addTextAt(d, spread.id, doc.settings.trimWidthMm * side, doc.settings.trimHeightMm * 0.85);
-            id = r.newId;
-            return r.doc;
-          });
-          if (id) select({ spreadId: spread.id, elementId: id });
-        }}>
-          <Icon name="text" /> Add text
-        </button>
+        <AddTextMenu surfaceId={spread.id} at={{ x: doc.settings.trimWidthMm * (isPrintable(i, 'right', n) ? 1.5 : 0.5), y: doc.settings.trimHeightMm * 0.85 }} disabled={spread.locked} />
         <button className="btn btn-small" onClick={() => {
           if (run('Insert spread', (d) => insertSpreadAfter(d, i))) goToSpread(Math.min(i + 1, n - 1));
         }}>

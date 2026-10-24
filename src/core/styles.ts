@@ -1,4 +1,5 @@
 import type { BookStyle } from './model';
+import { typePack } from './typography';
 
 // Style presets are pure data: they set book-wide design values and *bias* the generator
 // (template weights, density). They never restrict manual editing.
@@ -7,7 +8,9 @@ export interface StylePreset {
   id: string;
   name: string;
   description: string;
-  style: Omit<BookStyle, 'presetId'>;
+  style: Omit<BookStyle, 'presetId' | 'typePackId' | 'textStyles'>;
+  /** Type pack the preset starts with. */
+  typePack: string;
   /** Average photos per page the generator aims for. */
   density: number;
   maxPerPage: number;
@@ -22,6 +25,7 @@ export interface StylePreset {
 export const STYLE_PRESETS: StylePreset[] = [
   {
     id: 'minimalist',
+    typePack: 'modern',
     name: 'Minimalist',
     description: 'Generous white space, restrained type, one or two photos per page.',
     density: 1.15,
@@ -30,9 +34,6 @@ export const STYLE_PRESETS: StylePreset[] = [
     style: {
       marginOuterMm: 22, marginInnerMm: 18, marginTopMm: 22, marginBottomMm: 26, gapMm: 6,
       background: '#ffffff', textColor: '#2b2b2b',
-      headingFont: { family: 'Inter', weight: 400 },
-      bodyFont: { family: 'Inter', weight: 400 },
-      captionFont: { family: 'Inter', weight: 400 },
       imageBorderMm: 0, imageBorderColor: '#ffffff', captionMode: 'date',
     },
     templateWeights: {
@@ -43,6 +44,7 @@ export const STYLE_PRESETS: StylePreset[] = [
   },
   {
     id: 'editorial',
+    typePack: 'editorial',
     name: 'Editorial',
     description: 'Bold full-bleed heroes, asymmetry, varied scale and dramatic pacing.',
     density: 1.6,
@@ -51,9 +53,6 @@ export const STYLE_PRESETS: StylePreset[] = [
     style: {
       marginOuterMm: 12, marginInnerMm: 14, marginTopMm: 12, marginBottomMm: 16, gapMm: 3,
       background: '#fbfaf7', textColor: '#1d1d1b',
-      headingFont: { family: 'Playfair Display', weight: 700 },
-      bodyFont: { family: 'Source Serif 4', weight: 400 },
-      captionFont: { family: 'Inter', weight: 400 },
       imageBorderMm: 0, imageBorderColor: '#ffffff', captionMode: 'date',
     },
     templateWeights: {
@@ -64,6 +63,7 @@ export const STYLE_PRESETS: StylePreset[] = [
   },
   {
     id: 'scrapbook',
+    typePack: 'scrapbook',
     name: 'Scrapbook',
     description: 'Layered, tilted prints with white borders on warm paper and handwritten notes.',
     density: 2.4,
@@ -72,9 +72,6 @@ export const STYLE_PRESETS: StylePreset[] = [
     style: {
       marginOuterMm: 12, marginInnerMm: 14, marginTopMm: 12, marginBottomMm: 14, gapMm: 4,
       background: '#efe5d3', textColor: '#4a3a28',
-      headingFont: { family: 'Caveat', weight: 700 },
-      bodyFont: { family: 'Caveat', weight: 400 },
-      captionFont: { family: 'Caveat', weight: 400 },
       imageBorderMm: 3, imageBorderColor: '#ffffff', captionMode: 'date',
     },
     templateWeights: {
@@ -84,6 +81,7 @@ export const STYLE_PRESETS: StylePreset[] = [
   },
   {
     id: 'documentary',
+    typePack: 'documentary',
     name: 'Documentary',
     description: 'Chronological grids, dated captions, broad coverage of the whole story.',
     density: 3.2,
@@ -92,9 +90,6 @@ export const STYLE_PRESETS: StylePreset[] = [
     style: {
       marginOuterMm: 14, marginInnerMm: 16, marginTopMm: 14, marginBottomMm: 20, gapMm: 2.5,
       background: '#ffffff', textColor: '#222222',
-      headingFont: { family: 'Source Serif 4', weight: 600 },
-      bodyFont: { family: 'Source Serif 4', weight: 400 },
-      captionFont: { family: 'Inter', weight: 400 },
       imageBorderMm: 0, imageBorderColor: '#ffffff', captionMode: 'date',
     },
     templateWeights: {
@@ -105,6 +100,7 @@ export const STYLE_PRESETS: StylePreset[] = [
   },
   {
     id: 'collage',
+    typePack: 'modern',
     name: 'Collage',
     description: 'Dense photo mosaics — many photos per page, edge to edge, each kept close to its shape.',
     density: 5,
@@ -114,9 +110,6 @@ export const STYLE_PRESETS: StylePreset[] = [
     style: {
       marginOuterMm: 8, marginInnerMm: 12, marginTopMm: 8, marginBottomMm: 8, gapMm: 2,
       background: '#ffffff', textColor: '#1f1f1f',
-      headingFont: { family: 'Montserrat', weight: 600 },
-      bodyFont: { family: 'Inter', weight: 400 },
-      captionFont: { family: 'Inter', weight: 400 },
       imageBorderMm: 0, imageBorderColor: '#ffffff', captionMode: 'none',
     },
     templateWeights: { 'full-bleed': 2, 'single-margin': 1, panorama: 1, 'title-photo': 1, 'chapter-divider': 1 },
@@ -129,5 +122,6 @@ export function stylePreset(id: string): StylePreset {
 
 export function styleFromPreset(id: string): BookStyle {
   const p = stylePreset(id);
-  return { presetId: p.id, ...structuredClone(p.style) };
+  const pack = typePack(p.typePack);
+  return { presetId: p.id, ...structuredClone(p.style), typePackId: pack.id, textStyles: structuredClone(pack.roles) };
 }

@@ -1,4 +1,4 @@
-import type { BookDocument, BookStyle, Element, ImageElement, PhotoAsset, ShapeElement, TextElement, TextRole } from './model';
+import type { BookDocument, Element, ImageElement, PhotoAsset, ShapeElement, TextElement, TextRole } from './model';
 import { pageTrimRect, type PageSide } from './book';
 import { aspectOf } from './curation';
 import { defaultCrop, imagePlacement, innerBox } from './geometry';
@@ -6,22 +6,14 @@ import { newId, type Rng } from './random';
 import type { StylePreset } from './styles';
 import { pageTemplatesFor, resolveTemplate, template, type LayoutTemplate } from './templates';
 import { clamp } from './units';
+import { roleSizePt, styleFields } from './typography';
 
 // Turning (template + photos) into concrete page elements. Shared by the generator and by
 // manual "apply layout" / "shuffle layout" commands so both produce identical results.
 
-const ROLE_SIZE_PT: Record<TextRole, number> = { title: 30, subtitle: 11, heading: 22, caption: 8.5, body: 10 };
-
-export function fontForRole(style: BookStyle, role: TextRole) {
-  if (role === 'title' || role === 'heading') return style.headingFont;
-  if (role === 'caption') return style.captionFont;
-  return style.bodyFont;
-}
-
+/** Point size for a role on this page (from the book's type styles). */
 export function textSizeFor(role: TextRole, doc: Pick<BookDocument, 'settings' | 'style'>): number {
-  const scale = Math.min(doc.settings.trimWidthMm, doc.settings.trimHeightMm) / 203.2;
-  const handwriting = fontForRole(doc.style, role).family === 'Caveat' ? 1.35 : 1;
-  return Math.round(ROLE_SIZE_PT[role] * scale * handwriting * 2) / 2;
+  return roleSizePt(doc, role);
 }
 
 export function makeTextElement(
@@ -31,14 +23,13 @@ export function makeTextElement(
   rect: { x: number; y: number; w: number; h: number },
   opts: { align?: 'left' | 'center' | 'right'; rotationDeg?: number } = {},
 ): TextElement {
-  const font = fontForRole(doc.style, role);
   return {
     id: newId(), type: 'text', text, role,
     xMm: rect.x, yMm: rect.y, widthMm: rect.w, heightMm: rect.h,
     rotationDeg: opts.rotationDeg ?? 0, locked: false,
-    fontFamily: font.family, fontWeight: font.weight, fontSizePt: textSizeFor(role, doc),
-    lineHeight: role === 'title' || role === 'heading' ? 1.1 : 1.3,
-    align: opts.align ?? 'center', color: doc.style.textColor,
+    ...styleFields(doc.style, role, roleSizePt(doc, role)),
+    align: opts.align ?? 'center',
+    styleLinked: true,
   };
 }
 

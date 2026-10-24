@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   applyCoverTemplate, applyPrinter, coverDims, coverGeometry, createBook, generateDraft, insertSpreadAfter, migrateDocument,
-  preflight, printablePages, reconcileCover, spineWidth, type BookDocument, type ImageElement, type PhotoAsset,
+  SCHEMA_VERSION, preflight, printablePages, reconcileCover, spineWidth, type BookDocument, type ImageElement, type PhotoAsset,
 } from '../src/core';
 import { fakeAsset, resetFakeAssets } from './helpers';
 
@@ -115,12 +115,17 @@ describe('covers', () => {
 });
 
 describe('schema migration', () => {
-  it('upgrades a v1 book to v2 as a custom-printer book without a cover', () => {
-    const v2 = createBook({ title: 'Old' });
-    const { printerId, bindingId, bleedMode, coverOverrides, ...oldSettings } = v2.settings;
-    const v1 = { ...v2, schemaVersion: 1, settings: oldSettings };
+  it('upgrades a v1 book through every migration as a custom-printer book without a cover', () => {
+    const current = createBook({ title: 'Old' });
+    const { printerId, bindingId, bleedMode, coverOverrides, product, ...oldSettings } = current.settings;
+    const { typePackId, textStyles, ...oldStyle } = current.style;
+    const v1 = {
+      ...current, schemaVersion: 1, settings: oldSettings,
+      style: { ...oldStyle, headingFont: { family: 'Playfair Display', weight: 700 }, bodyFont: { family: 'Source Serif 4', weight: 400 }, captionFont: { family: 'Inter', weight: 400 } },
+    };
     const migrated = migrateDocument(JSON.parse(JSON.stringify(v1)));
-    expect(migrated.schemaVersion).toBe(2);
+    expect(migrated.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(migrated.style.textStyles.title.family).toBe('Playfair Display');
     expect(migrated.settings.printerId).toBe('custom');
     expect(migrated.settings.bleedMode).toBe('all');
     expect(migrated.cover).toBeUndefined();

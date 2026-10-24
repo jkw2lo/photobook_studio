@@ -41,6 +41,7 @@ test('import, draft, edit, reopen and export a book', async ({ page }) => {
   // Add a text box and edit it inline.
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Add text' }).click();
+  await page.getByRole('menuitem', { name: 'Body' }).click();
   await page.locator('.text-input').fill('Written in the E2E test');
   await page.locator('.text-input').blur();
   await expect(page.locator('.save')).toHaveText('Saved');
@@ -54,6 +55,7 @@ test('import, draft, edit, reopen and export a book', async ({ page }) => {
   // Undo/redo round-trip on a fresh edit
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Add text' }).click();
+  await page.getByRole('menuitem', { name: 'Body' }).click();
   const added = page.locator('.canvas .el-text', { hasText: 'Double-click to edit' });
   await expect(added).toHaveCount(1);
   await page.keyboard.press('Escape');

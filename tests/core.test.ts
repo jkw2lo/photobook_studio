@@ -216,7 +216,7 @@ describe('preflight', () => {
     spread.elements.push(
       { id: 'low', type: 'image', assetId: lowRes.id, xMm: 20, yMm: 20, widthMm: 150, heightMm: 110, rotationDeg: 0, locked: false, crop: { cx: 0.5, cy: 0.5, zoom: 1 }, fit: 'cover', borderMm: 0, borderColor: '#fff' },
       { id: 'gap', type: 'image', assetId: lowRes.id, xMm: -1, yMm: 30, widthMm: 20, heightMm: 20, rotationDeg: 0, locked: false, crop: { cx: 0.5, cy: 0.5, zoom: 1 }, fit: 'cover', borderMm: 0, borderColor: '#fff' },
-      { id: 'txt', type: 'text', text: 'Hi', role: 'body', xMm: 195, yMm: 50, widthMm: 30, heightMm: 10, rotationDeg: 0, locked: false, fontFamily: 'Inter', fontWeight: 400, fontSizePt: 10, lineHeight: 1.2, align: 'left', color: '#000' },
+      { id: 'txt', type: 'text', text: 'Hi', role: 'body', xMm: 195, yMm: 50, widthMm: 30, heightMm: 10, rotationDeg: 0, locked: false, fontFamily: 'Inter', fontWeight: 400, fontSizePt: 10, lineHeight: 1.2, letterSpacingEm: 0, uppercase: false, styleLinked: false, align: 'left', color: '#000' },
     );
     const codes = preflight(book, assetMap([lowRes])).map((i) => `${i.code}:${i.elementId ?? ''}`);
     expect(codes).toContain('low-dpi:low');

@@ -15,7 +15,7 @@ export interface AppContext {
   importer: Importer;
 }
 
-export function createApp(dataDir: string, opts: { staticDir?: string } = {}) {
+export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl?: string } = {}) {
   const store = new Store(dataDir);
   const importer = new Importer(store);
   const app = express();
@@ -201,6 +201,12 @@ export function createApp(dataDir: string, opts: { staticDir?: string } = {}) {
   if (opts.staticDir && existsSync(opts.staticDir)) {
     app.use(express.static(opts.staticDir));
     app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(join(opts.staticDir!, 'index.html')));
+  } else if (opts.devWebUrl) {
+    // Dev mode: this port is only the API; the editor is served by Vite. Send people there.
+    app.get(/^\/(?!api\/).*/, (req, res) => res.redirect(302, opts.devWebUrl + req.originalUrl.slice(1)));
+  } else if (opts.staticDir) {
+    app.get(/^\/(?!api\/).*/, (_req, res) =>
+      res.status(503).type('text').send('The editor has not been built yet. Stop the server, run `npm run build`, then `npm start` again.'));
   }
 
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {

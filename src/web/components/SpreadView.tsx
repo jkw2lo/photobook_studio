@@ -1,6 +1,6 @@
 import { memo, useMemo, type CSSProperties, type ReactNode } from 'react';
 import {
-  COVER_INDEX, elementPlacement, geometryFor, pageNumberRect, type BookSettings, type BookStyle, type Element,
+  COVER_INDEX, elementPlacement, geometryFor, pageNumberRect, roleStyle, type BookSettings, type BookStyle, type Element,
   type ImageElement, type PhotoAsset, type ShapeElement, type Spread, type TextElement, MM_PER_PT,
 } from '../../core';
 import { thumbUrl } from '../api';
@@ -64,7 +64,7 @@ export const SpreadView = memo(function SpreadView({ settings, style, spreadCoun
               style={{
                 left: px(r.x + b), top: px(r.y + b), width: px(r.w), height: px(r.h),
                 fontSize: px(8 * MM_PER_PT), textAlign: p.id === 'left' ? 'left' : 'right',
-                color: style.textColor, fontFamily: style.bodyFont.family,
+                color: style.textColor, fontFamily: `'${roleStyle(style, 'caption').family}'`,
               }}
             >
               {num}
@@ -130,6 +130,8 @@ function TextView({ el, scale, style }: { el: TextElement; scale: number; style:
         fontWeight: el.fontWeight,
         fontSize: el.fontSizePt * MM_PER_PT * scale,
         lineHeight: el.lineHeight,
+        letterSpacing: el.letterSpacingEm ? `${el.letterSpacingEm}em` : undefined,
+        textTransform: el.uppercase ? 'uppercase' : undefined,
         textAlign: el.align,
         color: el.color,
       }}

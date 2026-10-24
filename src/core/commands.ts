@@ -1,5 +1,5 @@
 import { produce, type Draft } from 'immer';
-import type { BindingId, BookDocument, BookSettings, BookStyle, Element, ImageElement, PhotoAsset, PrinterId, Spread } from './model';
+import type { BindingId, BookDocument, BookSettings, BookStyle, Element, ImageElement, PhotoAsset, PrinterId, Spread, TextRole } from './model';
 import { blankSpread, pageContentRect, pageTrimRect, type PageSide } from './book';
 import { aspectOf, dateRangeOf } from './curation';
 import { defaultCrop } from './geometry';
@@ -9,6 +9,9 @@ import { stylePreset, styleFromPreset } from './styles';
 import { template as findTemplate } from './templates';
 import { chooseCoverPhotos, coverPhotos, makeCover, reconcileCover } from './cover';
 import { pageCountOf, presetSettings } from './printers';
+import { findSurface } from './surface';
+import { pageScale, recolorLinkedText, restyleText, roleSizePt, roleStyle, setRoleStyle, styleFields } from './typography';
+import { MM_PER_PT } from './units';
 import { layoutCollage } from './collage';
 import { MOSAIC_LAYOUT } from './generator';
 
@@ -114,10 +117,46 @@ export function addPhotoAt(doc: BookDocument, spreadId: string, asset: PhotoAsse
   return { doc: addElement(doc, spreadId, el), newId: el.id };
 }
 
-export function addTextAt(doc: BookDocument, spreadId: string, xMm: number, yMm: number, text = 'Double-click to edit'): { doc: BookDocument; newId: string } {
-  const w = doc.settings.trimWidthMm * 0.5;
-  const el = makeTextElement(doc, 'body', text, { x: xMm - w / 2, y: yMm - 6, w, h: 12 });
+const DEFAULT_TEXT: Record<TextRole, string> = {
+  title: 'Title', subtitle: 'Subtitle', heading: 'Heading', body: 'Double-click to edit', caption: 'Caption', quote: '“A line worth remembering.”', label: 'Label',
+};
+
+/** Add a text box in a given style, sized so its first line fits. */
+export function addTextAt(doc: BookDocument, spreadId: string, xMm: number, yMm: number, text?: string, role: TextRole = 'body'): { doc: BookDocument; newId: string } {
+  const sizeMm = roleSizePt(doc, role) * MM_PER_PT;
+  const ts = roleStyle(doc.style, role);
+  const w = doc.settings.trimWidthMm * (role === 'body' || role === 'quote' ? 0.5 : 0.6);
+  const lines = role === 'body' || role === 'quote' ? 3 : 1;
+  const h = Math.max(6, sizeMm * ts.lineHeight * lines + 2);
+  const el = makeTextElement(doc, role, text ?? DEFAULT_TEXT[role], { x: xMm - w / 2, y: yMm - h / 2, w, h }, { align: role === 'body' ? 'left' : 'center' });
   return { doc: addElement(doc, spreadId, el), newId: el.id };
+}
+
+/** Give a text box a different style (title, caption, …); it follows that style from now on. */
+export function setTextRole(doc: BookDocument, spreadId: string, elementId: string, role: TextRole): BookDocument {
+  return produce(doc, (d) => {
+    const el = findElement(findSpread(d, spreadId), elementId);
+    if (el.type !== 'text') return;
+    Object.assign(el, { role, ...styleFields(d.style as BookStyle, role, roleSizePt(d as BookDocument, role)), styleLinked: true });
+  });
+}
+
+/** Drop manual font/size edits: back to its style. */
+export function resetTextToStyle(doc: BookDocument, spreadId: string, elementId: string): BookDocument {
+  const el = findSurface(doc, spreadId)?.surface.elements.find((e) => e.id === elementId);
+  if (!el || el.type !== 'text') return doc;
+  return setTextRole(doc, spreadId, elementId, el.role);
+}
+
+/** Make this box's look the style for its role; every box following that role updates. */
+export function saveTextAsRoleStyle(doc: BookDocument, spreadId: string, elementId: string): BookDocument {
+  const el = findSurface(doc, spreadId)?.surface.elements.find((e) => e.id === elementId);
+  if (!el || el.type !== 'text') return doc;
+  const next = setRoleStyle(doc, el.role, {
+    family: el.fontFamily, weight: el.fontWeight, sizePt: el.fontSizePt / pageScale(doc), lineHeight: el.lineHeight,
+    letterSpacingEm: el.letterSpacingEm ?? 0, uppercase: !!el.uppercase,
+  });
+  return updateElement(next, spreadId, elementId, { styleLinked: true });
 }
 
 /** Resize the frame to the photo's aspect ratio, keeping its centre and area. */
@@ -216,14 +255,15 @@ export function updateSettings(doc: BookDocument, patch: Partial<BookSettings>):
 }
 
 export function updateStyle(doc: BookDocument, patch: Partial<BookStyle>): BookDocument {
-  return produce(doc, (d) => void Object.assign(d.style, patch));
+  const next = produce(doc, (d) => void Object.assign(d.style, patch));
+  // Text that follows its style takes the new text/paper colour (muted tones depend on both).
+  return patch.textColor !== undefined || patch.background !== undefined ? recolorLinkedText(next) : next;
 }
 
 /** Switch style preset. Existing layouts keep their geometry; regenerate or re-apply layouts to restyle them. */
 export function applyStylePreset(doc: BookDocument, presetId: string): BookDocument {
-  return produce(doc, (d) => {
-    d.style = styleFromPreset(presetId);
-  });
+  // Linked text follows the preset's type pack immediately; layouts keep their geometry.
+  return recolorLinkedText(restyleText(doc, styleFromPreset(presetId)));
 }
 
 // ---- layouts ------------------------------------------------------------------------------

@@ -6,6 +6,7 @@ import { useEditor } from '../store';
 import { ColorInput } from './ColorInput';
 import { Icon } from './Icon';
 import { NumField } from './Inspector';
+import { AddTextMenu } from './TypePanel';
 
 const SOURCE_LABEL = {
   table: 'from the printer’s page-count table',
@@ -82,17 +83,7 @@ export function CoverPanel() {
       {cover && !cover.locked && (
         <>
           <div className="btn-grid">
-            <button className="btn btn-small" onClick={() => {
-              let id = '';
-              run('Add text', (d) => {
-                const r = addTextAt(d, cover.id, dims.panelW + dims.spine.mm + dims.panelW / 2, dims.panelH * 0.9, 'Text');
-                id = r.newId;
-                return r.doc;
-              });
-              if (id) select({ spreadId: cover.id, elementId: id });
-            }}>
-              <Icon name="text" /> Add text
-            </button>
+            <AddTextMenu surfaceId={cover.id} at={{ x: dims.panelW + dims.spine.mm + dims.panelW / 2, y: dims.panelH * 0.88 }} />
           </div>
           <label className="field">
             <span>Cover colour</span>

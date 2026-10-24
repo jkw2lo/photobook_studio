@@ -6,13 +6,13 @@
 //  - Rotation is degrees clockwise about the element centre.
 //  - Crop centre (cx, cy) is normalized to the auto-oriented source image.
 
-export const SCHEMA_VERSION = 2 as const;
+export const SCHEMA_VERSION = 3 as const;
 
 /**
  * Bumped whenever the client/server contract changes. The page compares it with the running
  * server's and warns when they differ (e.g. the page was rebuilt but the server wasn't restarted).
  */
-export const API_VERSION = 4;
+export const API_VERSION = 5;
 
 export type ID = string;
 
@@ -76,12 +76,26 @@ export interface BookStyle {
   gapMm: number;
   background: string;
   textColor: string;
-  headingFont: FontRef;
-  bodyFont: FontRef;
-  captionFont: FontRef;
+  /** Type pack the role styles came from ('custom' once edited). */
+  typePackId: string;
+  /** One style per text role; text boxes with styleLinked follow these. */
+  textStyles: Record<TextRole, TextStyle>;
   imageBorderMm: number;
   imageBorderColor: string;
   captionMode: CaptionMode;
+}
+
+/** A role's typography: what a pack defines for titles, captions, etc. */
+export interface TextStyle {
+  family: string;
+  weight: number;
+  /** Points on an 8 in page; scaled to the page's short side. */
+  sizePt: number;
+  lineHeight: number;
+  letterSpacingEm: number;
+  uppercase: boolean;
+  /** 'muted' blends the text colour toward the paper colour. */
+  tone: 'text' | 'muted';
 }
 
 export interface FontRef {
@@ -122,7 +136,7 @@ export interface ImageElement extends ElementBase {
   borderColor: string;
 }
 
-export type TextRole = 'title' | 'subtitle' | 'heading' | 'caption' | 'body';
+export type TextRole = 'title' | 'subtitle' | 'heading' | 'caption' | 'body' | 'quote' | 'label';
 
 export interface TextElement extends ElementBase {
   type: 'text';
@@ -132,8 +146,13 @@ export interface TextElement extends ElementBase {
   fontWeight: number;
   fontSizePt: number;
   lineHeight: number;
+  /** Extra space between letters, in em (0.1 = 10% of the font size). */
+  letterSpacingEm: number;
+  uppercase: boolean;
   align: 'left' | 'center' | 'right';
   color: string;
+  /** Follows its role's style; false once its font or size is edited by hand. */
+  styleLinked: boolean;
 }
 
 /** A filled rectangle: colour panels behind titles, blocks of colour on a page. */

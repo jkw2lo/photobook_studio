@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { STYLE_PRESETS, binding, defaultGenerationSettings, evenPageCount, generateDraft, printer, type DraftReport } from '../../core';
+import { STYLE_PRESETS, typePack, binding, defaultGenerationSettings, evenPageCount, generateDraft, printer, type DraftReport } from '../../core';
 import { useEditor } from '../store';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
@@ -66,7 +66,7 @@ export function GenerateDialog({ onClose }: { onClose: () => void }) {
       <div className="style-cards">
         {STYLE_PRESETS.map((p) => (
           <button key={p.id} className={`style-card ${presetId === p.id ? 'on' : ''}`} onClick={() => setPresetId(p.id)}>
-            <div className={`style-swatch style-${p.id}`} style={{ background: p.style.background, color: p.style.textColor, fontFamily: `'${p.style.headingFont.family}'` }}>
+            <div className={`style-swatch style-${p.id}`} style={{ background: p.style.background, color: p.style.textColor, fontFamily: `'${typePack(p.typePack).roles.title.family}'` }}>
               <span>Aa</span>
             </div>
             <strong>{p.name}</strong>

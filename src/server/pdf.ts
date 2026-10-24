@@ -7,7 +7,7 @@ import { PDFDocument as PdfLibDocument, PDFName, PDFArray, PDFNumber } from 'pdf
 import sharp from 'sharp';
 import {
   COVER_INDEX, coverGeometry, posterGeometry, elementBounds, elementPlacement, fontFilePath, intersects, mmToInch, mmToPt, nearestWeight,
-  pageNumberRect, preflight, printablePages, type BleedMode, type BookDocument, type Element, type ImageElement,
+  pageNumberRect, preflight, printablePages, roleStyle, type BleedMode, type BookDocument, type Element, type ImageElement,
   type PhotoAsset, type PreflightIssue, type Rect, type TextElement,
 } from '../core';
 
@@ -152,15 +152,18 @@ class PdfWriter {
     const { pdf } = this;
     this.useFont(el.fontFamily, el.fontWeight);
     pdf.fontSize(el.fontSizePt).fillColor(el.color);
+    // Same transforms as the editor's CSS (text-transform: uppercase, letter-spacing in em).
+    const text = el.uppercase ? el.text.toUpperCase() : el.text;
+    const characterSpacing = (el.letterSpacingEm ?? 0) * el.fontSizePt;
     // Match CSS line-height: line box = lineHeight × size, with half-leading above the first line.
     const natural = pdf.currentLineHeight(false);
     const lineBox = el.lineHeight * el.fontSizePt;
     const lineGap = lineBox - natural;
-    const opts = { width: mmToPt(el.widthMm), align: el.align, lineGap } as const;
+    const opts = { width: mmToPt(el.widthMm), align: el.align, lineGap, characterSpacing } as const;
     const boxH = mmToPt(el.heightMm);
-    const overflow = pdf.heightOfString(el.text, opts) > boxH + 1;
+    const overflow = pdf.heightOfString(text, opts) > boxH + 1;
     // A bounded height also stops PDFKit from ever starting a new page for long text.
-    pdf.text(el.text, 0, lineGap / 2, { ...opts, height: boxH * 1.5 + lineBox });
+    pdf.text(text, 0, lineGap / 2, { ...opts, height: boxH * 1.5 + lineBox });
     return overflow;
   }
 
@@ -196,7 +199,7 @@ export async function exportPdf(doc: BookDocument, assets: Map<string, ExportAss
     await w.elements(spread.elements, { x: originX, y: -b, w: pageW, h: pageH }, page.spreadIndex, `Page ${page.pageNumber}`);
     if (s.pageNumbers && page.pageNumber > 1) {
       const r = pageNumberRect(page.side, s);
-      w.useFont(doc.style.bodyFont.family, 400);
+      w.useFont(roleStyle(doc.style, 'caption').family, 400);
       w.pdf.fontSize(8).fillColor(doc.style.textColor);
       w.pdf.text(String(page.pageNumber), mmToPt(r.x - originX), mmToPt(r.y + b), { width: mmToPt(r.w), align: page.side === 'left' ? 'left' : 'right', lineBreak: false });
     }

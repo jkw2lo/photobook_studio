@@ -602,6 +602,8 @@ function TextEditor({ surface, elementId, scale, offset, onDone }: { surface: { 
         fontWeight: el.fontWeight,
         fontSize: el.fontSizePt * MM_PER_PT * scale,
         lineHeight: el.lineHeight,
+        letterSpacing: el.letterSpacingEm ? `${el.letterSpacingEm}em` : undefined,
+        textTransform: el.uppercase ? 'uppercase' : undefined,
         textAlign: el.align,
         color: el.color,
       }}

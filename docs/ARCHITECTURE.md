@@ -98,6 +98,10 @@ Z-order = array order. Element ids, asset ids, and spread ids are stable UUIDs.
 - Elements gained a third type, `shape` (filled rectangle), used for title panels.
 - Schema v1 → v2 migration: books become `custom`-printer books without a cover.
 
+### Typography (schema v3)
+
+`style.textStyles` holds one `TextStyle` per role (title, subtitle, heading, body, caption, quote, label); `src/core/typography.ts` defines the packs. Text elements carry `styleLinked`; linked boxes are restyled when the pack or a role changes, keeping each box's size ratio to its role. Letter spacing (em) and uppercase are rendered identically by CSS and PDFKit (`characterSpacing`, `toUpperCase`). The v2 → v3 migration rebuilds role styles from the old heading/body/caption fonts at the old sizes, so nothing moves.
+
 ### SQLite (`src/server/db.ts`)
 
 ```sql

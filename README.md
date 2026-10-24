@@ -70,6 +70,15 @@ For books, the **Collage** style builds every multi-photo page as a mosaic, and 
 
 Sources are cited in [src/core/printers.ts](src/core/printers.ts). The printer's own generated cover template is always authoritative; preflight warns whenever a value is an estimate.
 
+## Type packs
+
+Instead of picking fonts one at a time, choose a **type pack** in the Book tab: Classic, Modern minimal, Editorial, Bold magazine, Gallery, Documentary, Romantic, Retro, Journal or Scrapbook. Each pack styles seven text roles — **Title, Subtitle, Heading, Body, Caption, Quote, Label** — with font, weight, size, letter spacing, all-caps and tone (normal or muted).
+
+- Text follows its role's style, so switching packs restyles the whole book (pages, cover and posters) in one step. Sizes keep their proportion, so a big poster title stays big.
+- **Customize text styles…** edits a role for the whole book.
+- In the text panel, **Style** changes a box's role. Editing a box's font or size by hand makes it a custom look; **Reset** returns it to its role, and **Use for all …** makes it the role's new style.
+- **Add text** offers every role, each previewed in its own style.
+
 ## Fonts
 
 20 bundled families: **sans** Inter, Montserrat, Josefin Sans, Raleway, Work Sans; **serif** Source Serif 4, Lora, EB Garamond, Cormorant Garamond, Libre Baskerville; **display** Playfair Display, Bodoni Moda, DM Serif Display, Abril Fatface, Fraunces; **handwriting** Caveat, Dancing Script, Amatic SC, Permanent Marker; **typewriter** Courier Prime. The editor and the PDF use the same font files, and every weight is tested to embed. To add one: install `@fontsource/<name>`, add it to `src/core/fonts.ts`, run `npx tsx scripts/gen-fonts-css.ts`, then `npm test`.
@@ -96,7 +105,8 @@ npm run test:e2e
 | `tests/milestone.test.ts` | Real HTTP API + SQLite + image pipeline: import 21 fixtures (HEIC, EXIF rotation, dates, GPS, blur), re-import is idempotent, draft → edits → stale save refused → server restart → identical document → verified PDF (both bleed modes) → move a file → missing detected → relinked |
 | `tests/covers.test.ts` | Lulu spine table and paperback formula, Blurb estimate → manual override, casewrap cover dimensions, generated covers, spine text only above 80 pages, all three cover layouts pass preflight, front cover stays aligned when the spine grows, page-limit errors, v1 → v2 migration |
 | `tests/collage.test.ts` | Mosaic fills its box exactly with minimal cropping, grid cells identical, hero dominant and sharp enough, pinboard tilted and in bounds; every poster style curates correctly and passes preflight; edge-to-edge posters reach the bleed; style changes keep the same photos; Collage book style |
-| `tests/fonts.test.ts` | Every bundled font weight embeds in a PDF; editor stylesheet matches the exporter |
+| `tests/fonts.test.ts` | Every bundled font weight embeds in a PDF; editor stylesheet matches the exporter; every type pack uses bundled fonts |
+| `tests/typography.test.ts` | Packs restyle linked text (cover included), keep custom text, carry caps/tracking, keep scaled sizes in proportion; role edits, reset, "use for all"; muted colours follow the book; v2 → v3 migration moves nothing |
 | `tests/scale.test.ts` | 500-photo import with API latency sampled throughout; 60-page draft from 500 photos (needs `npm run fixtures -- 500`) |
 | `tests/e2e/milestone.spec.ts` | The milestone in the real UI, in your installed Chrome — including verified interior + cover PDFs — and a full poster flow (create, import, auto collage, switch to pinboard, export) |
 | `tests/e2e/perf.spec.ts` | Drag smoothness under load (needs the 500-photo fixtures) |

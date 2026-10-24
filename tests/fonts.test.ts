@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import PDFDocument from 'pdfkit';
 import { describe, expect, it } from 'vitest';
-import { FONT_FAMILIES, STYLE_PRESETS, fontFilePath } from '../src/core';
+import { FONT_FAMILIES, STYLE_PRESETS, TYPE_PACKS, fontFilePath } from '../src/core';
 
 const all = FONT_FAMILIES.flatMap((f) => f.weights.map((w) => [f.family, w] as const));
 
@@ -30,13 +30,14 @@ describe('bundled fonts', () => {
     expect(imported, 'run: npx tsx scripts/gen-fonts-css.ts').toEqual(expected);
   });
 
-  it('every style preset uses bundled fonts and weights', () => {
-    for (const p of STYLE_PRESETS) {
-      for (const f of [p.style.headingFont, p.style.bodyFont, p.style.captionFont]) {
+  it('every type pack uses bundled fonts and weights, and every style preset names a real pack', () => {
+    for (const pack of TYPE_PACKS) {
+      for (const [role, f] of Object.entries(pack.roles)) {
         const def = FONT_FAMILIES.find((x) => x.family === f.family);
-        expect(def, `${p.id}: ${f.family}`).toBeDefined();
-        expect(def!.weights, `${p.id}: ${f.family} ${f.weight}`).toContain(f.weight);
+        expect(def, `${pack.id}.${role}: ${f.family}`).toBeDefined();
+        expect(def!.weights, `${pack.id}.${role}: ${f.family} ${f.weight}`).toContain(f.weight);
       }
     }
+    for (const p of STYLE_PRESETS) expect(TYPE_PACKS.map((t) => t.id)).toContain(p.typePack);
   });
 });

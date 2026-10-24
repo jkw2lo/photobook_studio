@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
   PRINTERS, nearestWeight, weightName, SIZE_PRESETS, STYLE_PRESETS, applyPrinter, applyStylePreset, binding, fontFamily, pageCountOf,
-  printer, setTitle, updateSettings, updateStyle, type BindingId, type BleedMode, type FontRef,
+  printer, setTitle, updateSettings, updateStyle, type BindingId, type BleedMode,
 } from '../../core';
 import { api } from '../api';
 import { useEditor } from '../store';
 import { ColorInput } from './ColorInput';
-import { FontPicker } from './FontPicker';
+import { TypeSection } from './TypePanel';
 import { Icon } from './Icon';
 import { NumField } from './Inspector';
 
@@ -61,29 +61,10 @@ export function BookPanel() {
           <ColorInput value={style.textColor} label="Text colour" apply={(d, c) => updateStyle(d, { textColor: c })} />
         </label>
       </div>
-      <FontSelect label="Headings" value={style.headingFont} onChange={(f) => run('Heading font', (d) => updateStyle(d, { headingFont: f }))} />
-      <FontSelect label="Body" value={style.bodyFont} onChange={(f) => run('Body font', (d) => updateStyle(d, { bodyFont: f }))} />
-      <FontSelect label="Captions" value={style.captionFont} onChange={(f) => run('Caption font', (d) => updateStyle(d, { captionFont: f }))} />
-      <p className="muted small">Fonts and margins apply to new layouts and regenerated pages.</p>
+      <TypeSection />
+      <p className="muted small">Margins and spacing apply to new layouts and regenerated pages.</p>
 
       <History projectId={projectId} revision={revision} />
-    </div>
-  );
-}
-
-function FontSelect({ label, value, onChange }: { label: string; value: FontRef; onChange: (f: FontRef) => void }) {
-  return (
-    <div className="field-row">
-      <div className="field field-grow">
-        <span>{label}</span>
-        <FontPicker value={value.family} onChange={(family) => onChange({ family, weight: nearestWeight(family, value.weight) })} />
-      </div>
-      <label className="field field-weight">
-        <span>Weight</span>
-        <select value={value.weight} onChange={(e) => onChange({ ...value, weight: Number(e.target.value) })}>
-          {fontFamily(value.family).weights.map((w) => <option key={w} value={w}>{weightName(w)}</option>)}
-        </select>
-      </label>
     </div>
   );
 }
