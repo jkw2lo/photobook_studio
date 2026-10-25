@@ -55,6 +55,25 @@ The **Preview** pane at the bottom of the library shows the photo you click (or 
 
 Autosave runs about 0.6 s after every edit. Version history in the **Book** tab restores any of the last 50 saves.
 
+## Book templates and page designs
+
+**Book templates** (Draft tab): Travel journal, Wedding album, First year, Family yearbook, Year in review, Field notes and Portfolio. Each one sets the whole book's layout style, type pack, paper and ink colours, cover and colour grade, and drafts the book from your photos. It also adds:
+
+- a front spread after the title page (contents plus an introduction or dedication);
+- a chapter opener page at the start of every chapter (day);
+- a closing spread (notes or a quote, then "The end" or a colophon).
+
+Locked spreads are kept. Regenerating the draft keeps the template's pages and whatever you typed on them. Plain drafts can also start each chapter on its own page: tick **Chapter pages** in Auto draft.
+
+**Page designs** (spread panel) add ready-made pages, on a new spread after the current one or on its left or right page:
+
+- **Front:** Contents, Title page, Dedication, Introduction.
+- **Text:** Text section, Two columns, Story + photo (with an empty frame), Quote, Caption band (goes on top of a photo page).
+- **Chapters:** Chapter opener, Opener with icon, Itinerary (chapters with their dates).
+- **Back:** Notes (ruled lines), The end, Colophon.
+
+Pages use the book's text styles, so changing the type pack restyles them too. The **Contents** page fills itself in from the chapters and keeps its page numbers right as spreads are added, moved or removed. Regenerating replaces unlocked pages, so lock a spread to keep a page design you placed by hand.
+
 ## Posters and collages
 
 Choose **Poster / collage** in New book: 11 × 14 up to 24 × 36 in, A3–A1 and 50 × 70 cm, portrait or landscape. **Auto collage** curates the photos the same way as book drafts do (best frame of each burst, no duplicates, favourites kept, spread across the whole collection), then lays them out in one of four styles:
@@ -135,6 +154,7 @@ npm run test:e2e
 | `tests/fonts.test.ts` | Every bundled font weight and italic embeds in a PDF; editor stylesheet matches the exporter; every type pack uses bundled fonts |
 | `tests/arrange.test.ts` | Pinned photos stay exactly put through Arrange, Shuffle and re-flow in every style, with nothing overlapping them; Keep crop survives shuffles; All / On sheet photo sources; hero shuffles cycle through many sharp photos |
 | `tests/cutouts.test.ts` | Transparency detected (not just an alpha channel), WebP previews keep it, older imports re-detected; cutouts laid out whole with no border in every style; colour-aware near-duplicates; background image covers the bleed, survives Arrange/Shuffle and isn't repeated; PDF keeps the cutout's transparency over a faded background |
+| `tests/book-templates.test.ts` | Every page design lands inside the page on either side, replaces only its page and follows the book's styles; contents list chapters with correct page numbers through inserts and removals; every book template makes a complete printable book with front matter, themed openers, closing pages, contents, cover and colours; undated photos get no opener; locked spreads kept |
 | `tests/design.test.ts` | Keep rotation; shape library paths stay in their box and scale; banners come with text; shape and text cut-outs (server text outlines); arched text geometry; grade presets; every template places text, decorations and photos inside its area and survives Arrange; PDF draws gradients, cut-outs, curved and outlined text, and graded photos |
 | `tests/text-style.test.ts` | Quick styles use bundled fonts, scale with the sheet and grow the box; reset clears italics; PDFs embed italic fonts and semi-transparent text backgrounds |
 | `tests/typography.test.ts` | Packs restyle linked text (cover included), keep custom text, carry caps/tracking, keep scaled sizes in proportion; role edits, reset, "use for all"; muted colours follow the book; v2 → v3 migration moves nothing |

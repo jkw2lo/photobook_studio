@@ -208,6 +208,8 @@ export interface TextElement extends ElementBase {
   shadow?: { color: string; dxMm: number; dyMm: number; opacity: number };
   /** Bend the text along an arc: −100 (a frown) … 100 (a smile). Single line only. */
   arch?: number;
+  /** Filled in automatically: the table of contents' chapter titles or their page numbers. */
+  auto?: 'toc' | 'toc-pages';
   /** Follows its role's style; false once its font or size is edited by hand. */
   styleLinked: boolean;
 }
@@ -266,6 +268,8 @@ export interface GenerationSettings {
   ordering: Ordering;
   includeCaptions: boolean;
   seed: number;
+  /** Start every chapter on an opener page (book templates). */
+  chapterOpeners?: boolean;
 }
 
 export interface GenerationRecord {
@@ -289,7 +293,7 @@ export interface BookDocument {
   collage?: CollageSettings;
   /** Colour grade applied to every photo (and the background image) when shown and printed. */
   grade?: ColorGrade;
-  /** Poster template it was last started from (highlighted in the picker). */
+  /** Poster or book template it was last started from (highlighted in the picker). */
   template?: string;
 }
 

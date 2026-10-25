@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { CommandError, findSurface, reconcileCover, type BookDocument, type DraftReport, type PhotoAsset } from '../core';
+import { CommandError, findSurface, reconcileCover, refreshContents, type BookDocument, type DraftReport, type PhotoAsset } from '../core';
 import { api, ApiError, type ImportJob } from './api';
 
 // Editor state. The document is immutable; every committed edit pushes the previous document onto
@@ -133,7 +133,8 @@ export const useEditor = create<EditorState>((set, get) => ({
     if (!doc) return false;
     try {
       // Any edit that changes the page count or binding moves the spine: keep the cover aligned.
-      const next = reconcileCover(fn(doc));
+      // …and contents pages follow page numbers and chapters.
+      const next = refreshContents(reconcileCover(fn(doc)));
       if (next === doc) return true;
       set((s) => ({
         doc: next,

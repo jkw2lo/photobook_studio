@@ -154,9 +154,19 @@ export function generateDraft(doc: BookDocument, assets: PhotoAsset[], settings:
   }
   // Seed 1 is the considered "best" draft; other seeds explore layouts much more widely.
   const explore = settings.seed !== 1;
-  const counts = distributeCounts(flow.length, pageSides.length, preset.maxPerPage, rng, explore);
+  // With chapter openers, every chapter starts on its own opener page and its photos are spread
+  // over pages of their own (shared out by photo count); otherwise photos simply flow.
+  const runs = settings.chapterOpeners && chapters.length >= 2 ? chapterRuns(flow, chapterOf) : null;
+  let counts: number[];
+  let openerPages = 0;
+  if (runs && pageSides.length >= runs.length * 2) {
+    const shares = shareOut(pageSides.length - runs.length, runs);
+    counts = runs.flatMap((n, j) => [0, ...distributeCounts(n, shares[j], preset.maxPerPage, rng, explore)]);
+    openerPages = runs.length;
+  } else counts = distributeCounts(flow.length, pageSides.length, preset.maxPerPage, rng, explore);
   const dividerPages = counts.filter((c) => c === 0).length;
-  if (dividerPages) notes.push(`Not enough photos for every page: added ${dividerPages} chapter/title page${dividerPages > 1 ? 's' : ''}.`);
+  const fillerPages = dividerPages - openerPages;
+  if (fillerPages) notes.push(`Not enough photos for every page: added ${fillerPages} chapter/title page${fillerPages > 1 ? 's' : ''}.`);
 
   const now = new Date().toISOString();
   const caption = (photos: PhotoAsset[]) =>
@@ -404,6 +414,43 @@ export function distributeCounts(total: number, n: number, maxPer: number, rng: 
     }
   }
   return counts;
+}
+
+/** Lengths of consecutive runs of photos in the same chapter (photos in time order). */
+function chapterRuns(flow: PhotoAsset[], chapterOf: Map<string, string>): number[] {
+  // Photos without a chapter (undated) stay with the chapter around them — no opener of their own.
+  const runs: number[] = [];
+  let prev: string | undefined;
+  for (const a of flow) {
+    const c = chapterOf.get(a.id);
+    if (runs.length && (c === prev || c === undefined)) runs[runs.length - 1]++;
+    else if (!runs.length && c === undefined) runs.push(1);
+    else if (runs.length === 1 && prev === undefined) {
+      runs[0]++;
+      prev = c;
+    } else {
+      runs.push(1);
+      prev = c;
+    }
+  }
+  return runs;
+}
+
+/** Split `total` pages over runs in proportion to their size, at least one page each. */
+function shareOut(total: number, runs: number[]): number[] {
+  const sum = runs.reduce((a, b) => a + b, 0) || 1;
+  const exact = runs.map((n) => Math.max(1, (total * n) / sum));
+  const out = exact.map((x) => Math.max(1, Math.floor(x)));
+  let left = total - out.reduce((a, b) => a + b, 0);
+  const order = exact.map((x, i) => ({ i, f: x - Math.floor(x) })).sort((a, b) => b.f - a.f);
+  for (let k = 0; left > 0; k++, left--) out[order[k % order.length].i]++;
+  for (let k = 0; left < 0; k++) {
+    const i = out.indexOf(Math.max(...out));
+    if (out[i] <= 1) break;
+    out[i]--;
+    left++;
+  }
+  return out;
 }
 
 /** Chapters by day (or month). Existing chapter ids are reused by title so locked spreads keep matching. */

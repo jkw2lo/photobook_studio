@@ -1,18 +1,30 @@
 import { useEffect, useState } from 'react';
 import {
-  STYLE_PRESETS, binding, defaultGenerationSettings, evenPageCount, generateDraft, printer, typePack, type GenerationSettings,
+  STYLE_PRESETS, TEMPLATE_EXTRA_PAGES, binding, bookTemplate, defaultGenerationSettings, finishTemplateBook, evenPageCount, generateDraft, printer, typePack, type GenerationSettings,
   type PhotoAsset,
 } from '../../core';
 import { useEditor } from '../store';
 import { Icon } from './Icon';
+import { BookTemplatesSection } from './BookTemplates';
 
-/** Run the generator as one undoable step and remember its report for the panel. */
+/**
+ * Run the generator as one undoable step and remember its report for the panel. A book started
+ * from a template keeps its template pages (front matter, chapter openers, closing pages and the
+ * words typed on them) as long as its style stays the template's.
+ */
 function runDraft(settings: GenerationSettings, assets: PhotoAsset[], label: string) {
   const st = useEditor.getState();
   st.run(label, (d) => {
+    const t = d.template ? bookTemplate(d.template) : undefined;
+    if (t && settings.stylePresetId === t.stylePresetId) {
+      const res = generateDraft(d, assets, { ...settings, targetPages: Math.max(4, settings.targetPages - TEMPLATE_EXTRA_PAGES), chapterOpeners: true });
+      const doc = finishTemplateBook(res.doc, t, assets, d);
+      useEditor.setState({ draftReport: { ...res.report, pages: doc.spreads.length * 2 - 2 } });
+      return doc;
+    }
     const res = generateDraft(d, assets, settings);
     useEditor.setState({ draftReport: res.report });
-    return res.doc;
+    return { ...res.doc, template: undefined };
   });
 }
 
@@ -36,6 +48,7 @@ export function DraftPanel() {
   const [pages, setPages] = useState(saved.targetPages);
   const [presetId, setPresetId] = useState(doc.style.presetId);
   const [captions, setCaptions] = useState(saved.includeCaptions);
+  const [openers, setOpeners] = useState(!!saved.chapterOpeners);
   // Follow the book when it changes underneath (undo, another window).
   useEffect(() => setPages(doc.spreads.length * 2 - 2), [doc.spreads.length]);
   useEffect(() => setPresetId(doc.style.presetId), [doc.style.presetId]);
@@ -49,17 +62,19 @@ export function DraftPanel() {
     : bind.maxPages && target > bind.maxPages ? `${pr.name} ${bind.name} allows at most ${bind.maxPages} pages.` : null;
   const usable = assets.filter((a) => !a.excluded && !a.missing).length;
   const hasContent = doc.spreads.some((s) => !s.locked && s.elements.length);
-  const settingsChanged = target !== doc.spreads.length * 2 - 2 || presetId !== (doc.generation?.settings.stylePresetId ?? doc.style.presetId) || captions !== saved.includeCaptions;
+  const settingsChanged = target !== doc.spreads.length * 2 - 2 || presetId !== (doc.generation?.settings.stylePresetId ?? doc.style.presetId) || captions !== saved.includeCaptions || openers !== !!saved.chapterOpeners;
 
   const generate = (seed: number) => {
     const at = useEditor.getState().currentSpread;
-    runDraft({ targetPages: target, stylePresetId: presetId, ordering: 'chronological', includeCaptions: captions, seed }, assets, hasContent ? 'Regenerate draft' : 'Generate draft');
+    runDraft({ targetPages: target, stylePresetId: presetId, ordering: 'chronological', includeCaptions: captions, chapterOpeners: openers, seed }, assets, hasContent ? 'Regenerate draft' : 'Generate draft');
     // Stay on the same spread (clamped) so you can compare variations in place.
     useEditor.getState().goToSpread(hasContent ? at : 1);
   };
 
   return (
     <div className="stack">
+      <div className="section-title">Book templates</div>
+      <BookTemplatesSection />
       <div className="auto-collage">
         <div className="row between">
           <strong>Auto draft</strong>
@@ -81,6 +96,10 @@ export function DraftPanel() {
               <label className="field check">
                 <input type="checkbox" checked={captions} onChange={(e) => setCaptions(e.target.checked)} />
                 <span>Date captions</span>
+              </label>
+              <label className="field check" title="Start every chapter (day) on its own opener page">
+                <input type="checkbox" checked={openers} onChange={(e) => setOpeners(e.target.checked)} />
+                <span>Chapter pages</span>
               </label>
             </div>
             <div className="btn-grid">

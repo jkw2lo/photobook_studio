@@ -501,3 +501,15 @@ input[type='checkbox'] { accent-color: var(--accent); width: 15px; height: 15px;
 .template-card:hover:not(:disabled) { border-color: #55555c; color: var(--text); }
 .template-card.on { border-color: var(--accent); color: var(--text); }
 .template-preview { width: 100%; aspect-ratio: 3 / 4; display: block; border-radius: 4px; background: #000; }
+
+/* Book templates and page add-ons */
+.book-templates { display: flex; flex-direction: column; gap: 6px; }
+.book-template { display: grid; grid-template-columns: 96px 1fr; grid-template-rows: auto 1fr; column-gap: 9px; row-gap: 2px; text-align: left; padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--text); cursor: pointer; }
+.book-template:hover:not(:disabled) { border-color: #55555c; }
+.book-template.on { border-color: var(--accent); }
+.book-template-preview { grid-row: 1 / 3; width: 96px; height: 48px; border-radius: 3px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
+.book-template .muted { line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.addon-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.addon-card { display: flex; flex-direction: column; gap: 4px; align-items: stretch; padding: 4px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel-2); color: var(--muted); cursor: pointer; text-align: center; }
+.addon-card:hover { border-color: var(--accent); color: var(--text); }
+.addon-preview { width: 100%; aspect-ratio: 1; display: block; border-radius: 3px; }

@@ -25,3 +25,5 @@ export * from './decorations';
 export * from './grade';
 export * from './textEffects';
 export * from './posterTemplates';
+export * from './pageAddons';
+export * from './bookTemplates';

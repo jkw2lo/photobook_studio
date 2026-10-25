@@ -16,6 +16,7 @@ import { PosterPanel } from './PosterUI';
 import { DraftPanel } from './DraftPanel';
 import { AddTextMenu } from './TypePanel';
 import { ElementsPalette, PhotoShapeControls, ShapeControls, TextEffects } from './DesignPanel';
+import { PageAddonsSection } from './BookTemplates';
 import { Icon } from './Icon';
 import { PreflightPanel } from './PreflightPanel';
 import { TemplatePicker } from './TemplatePicker';
@@ -465,6 +466,9 @@ function SpreadPanel() {
           <Icon name="trash" /> Delete spread
         </button>
       </div>
+
+      <div className="section-title">Page designs</div>
+      <PageAddonsSection spreadIndex={i} />
 
       <label className="field">
         <span>Chapter</span>
