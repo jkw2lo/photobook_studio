@@ -192,10 +192,13 @@ export function layoutPoster(
   // Photos marked "keep crop" get their crop, fit, border and cut-out shape back in the new frame;
   // "keep rotation" keeps their tilt. Either way they keep their identity.
   const kept = new Map(sheetImages(doc).filter((e) => isKept(e) && !isPinned(e) && e.assetId).map((e) => [e.assetId!, e]));
+  // A photo's own colour adjustments follow the photo into its new frame.
+  const adjusted = new Map(sheetImages(doc).filter((e) => e.adjust && e.assetId).map((e) => [e.assetId!, e.adjust!]));
   const restored = elements.map((e) => {
     if (e.type !== 'image') return e;
     // Collage-wide photo shape (circles, hearts…) unless the photo keeps its own look.
-    const shaped: ImageElement = settings.frameShape ? { ...e, mask: { kind: 'shape', shape: settings.frameShape }, borderMm: 0 } : e;
+    const base: ImageElement = e.assetId && adjusted.has(e.assetId) ? { ...e, adjust: adjusted.get(e.assetId) } : e;
+    const shaped: ImageElement = settings.frameShape ? { ...base, mask: { kind: 'shape', shape: settings.frameShape }, borderMm: 0 } : base;
     const k = e.assetId ? kept.get(e.assetId) : undefined;
     if (!k) return shaped;
     kept.delete(e.assetId!);

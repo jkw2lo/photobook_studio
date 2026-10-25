@@ -6,6 +6,7 @@ import { API_VERSION, SCHEMA_VERSION, UnknownSizeError, createBook, createPoster
 import { Store, toPhotoAsset, type AssetRow } from './db';
 import { Importer, scanFolder } from './importer';
 import { textOutline } from './textOutline';
+import { exportPosterImage } from './imageExport';
 import { ALPHA_FORMATS, colorFeatures, existingThumb, hashFile, hasTransparency, isSupported, makeThumbnails, THUMB_SIZES, type ThumbSize } from './media';
 import { exportCoverPdf, exportPdf, exportPosterPdf, type ExportAsset, type ExportOptions } from './pdf';
 
@@ -16,7 +17,7 @@ export interface AppContext {
   importer: Importer;
 }
 
-export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl?: string } = {}) {
+export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl?: string; restart?: () => void } = {}) {
   const store = new Store(dataDir);
   const importer = new Importer(store);
   const app = express();
@@ -43,7 +44,16 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
     return p;
   };
 
-  app.get('/api/health', (_req, res) => res.json({ ok: true, dataDir, apiVersion: API_VERSION, schemaVersion: SCHEMA_VERSION }));
+  app.get('/api/health', (_req, res) => res.json({ ok: true, dataDir, apiVersion: API_VERSION, schemaVersion: SCHEMA_VERSION, canRestart: !!opts.restart }));
+
+  // Restart onto the latest code (the editor's "server is out of date" banner). The custom header
+  // can't be sent cross-site without a CORS preflight, which this server never grants.
+  app.post('/api/restart', (req, res) => {
+    if (req.get('x-photobook') !== '1') return void res.status(403).json({ error: 'Not allowed' });
+    if (!opts.restart) return void res.status(409).json({ error: 'This server was started for development: restart it from its terminal.' });
+    res.status(202).json({ ok: true });
+    setTimeout(opts.restart, 150);
+  });
 
   // ---- projects
   app.get('/api/projects', (_req, res) => res.json(store.listProjects()));
@@ -233,6 +243,30 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
       cover = { ...c, file: coverFile, url: `/api/exports/${encodeURIComponent(coverFile)}` };
     }
     res.json({ ...result, file, url: `/api/exports/${encodeURIComponent(file)}`, cover });
+  }));
+
+  // Poster as a PNG or JPEG (sharing, printing at home).
+  app.post('/api/projects/:id/export-image', wrap(async (req, res) => {
+    const p = requireProject(P(req).id);
+    const doc = req.body?.doc ? migrateDocument(req.body.doc) : p.doc;
+    if (doc.settings.product !== 'poster') throw new HttpError(400, 'Image export is for posters');
+    const format = req.body?.format === 'jpeg' ? 'jpeg' : 'png';
+    const dpi = Math.max(36, Math.min(600, Number(req.body?.dpi) || 150));
+    const assets = new Map<string, ExportAsset>();
+    for (const r of store.projectAssetRows(P(req).id)) {
+      const missing = isMissing(r);
+      const workPath = r.derived_path && existsSync(r.derived_path) ? r.derived_path : r.original_path;
+      if (!missing || (r.derived_path && existsSync(r.derived_path))) assets.set(r.id, { asset: toPhotoAsset(r, missing), workPath });
+    }
+    const safeTitle = doc.title.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'poster';
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const file = `${safeTitle}-${stamp}-${dpi}dpi.${format === 'jpeg' ? 'jpg' : 'png'}`;
+    try {
+      const result = await exportPosterImage(doc, assets, join(dataDir, 'exports', file), { format, dpi });
+      res.json({ ...result, file, url: `/api/exports/${encodeURIComponent(file)}` });
+    } catch (e) {
+      throw new HttpError(500, e instanceof Error ? e.message : String(e));
+    }
   }));
 
   app.get('/api/exports/:file', wrap((req, res) => {

@@ -137,6 +137,8 @@ interface ElementBase {
   locked: boolean;
   /** Collages: drawn behind the photos, and kept there through Arrange and Shuffle. */
   behind?: boolean;
+  /** Elements sharing a group id are selected, moved and aligned together. */
+  groupId?: string;
 }
 
 export interface ImageElement extends ElementBase {
@@ -158,6 +160,8 @@ export interface ImageElement extends ElementBase {
   keepRotation?: boolean;
   /** Cut the photo to a shape or to the outline of some text. */
   mask?: PhotoMask;
+  /** This photo's own colour adjustments, applied before the document's grade. */
+  adjust?: ColorGrade;
 }
 
 /**

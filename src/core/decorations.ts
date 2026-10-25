@@ -4,6 +4,7 @@ import { makeShapeElement } from './layout';
 import { quickStyleFields, quickStyle, estimateTextHeightMm } from './quickStyles';
 import { shapeDef } from './shapes';
 import { findSurface } from './surface';
+import { newId } from './random';
 import { MM_PER_PT } from './units';
 
 // Adding design elements (shapes, banners, lines, icons) to a page or poster.
@@ -27,7 +28,9 @@ export function addShapeAt(doc: BookDocument, surfaceId: string, shapeId: string
   const paper = found?.background ?? doc.style.background;
   const ink = luminance(paper) < 0.45 ? '#f5f2ea' : doc.style.textColor;
   const fill = def.category === 'banner' ? ACCENT : def.category === 'shape' ? mix(ink, paper, 0.75) : ink;
-  const el: ShapeElement = { ...makeShapeElement({ x: x - w / 2, y: y - h / 2, w, h }, fill), shape: def.id };
+  // A banner and its text are grouped: they move and align as one (click again to edit the text).
+  const groupId = def.category === 'banner' ? newId() : undefined;
+  const el: ShapeElement = { ...makeShapeElement({ x: x - w / 2, y: y - h / 2, w, h }, fill), shape: def.id, groupId };
   let next = addElement(doc, surfaceId, el);
   if (def.category === 'banner') {
     // Text sits on the banner's middle, in the paper colour, sized to the banner.
@@ -38,7 +41,7 @@ export function addShapeAt(doc: BookDocument, surfaceId: string, shapeId: string
     const tw = w * inner;
     const fontSizePt = Math.round((Math.min(h * 0.38, tw / 6) / MM_PER_PT) * 2) / 2;
     const th = estimateTextHeightMm('Your text', tw, fontSizePt, 1.1, 0.15, 0);
-    next = updateElement(t.doc, surfaceId, t.newId, { ...f, fontSizePt, lineHeight: 1.1, widthMm: tw, heightMm: th, xMm: x - tw / 2, yMm: y - th / 2 - (def.id === 'ribbon' ? h * 0.06 : 0), align: 'center' });
+    next = updateElement(t.doc, surfaceId, t.newId, { ...f, groupId, fontSizePt, lineHeight: 1.1, widthMm: tw, heightMm: th, xMm: x - tw / 2, yMm: y - th / 2 - (def.id === 'ribbon' ? h * 0.06 : 0), align: 'center' });
   }
   return { doc: next, newId: el.id };
 }

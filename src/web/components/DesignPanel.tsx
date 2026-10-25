@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  GRADE_PRESETS, MM_PER_PT, PHOTO_SHAPES, SHAPES, SHAPE_CATEGORIES, addShapeAt, fontFamily, gradeColor, gradeFromPreset, isNeutralGrade, nearestWeight, scalePath,
+  GRADE_PRESETS, MM_PER_PT, PHOTO_SHAPES, autoAdjust, SHAPES, SHAPE_CATEGORIES, addShapeAt, fontFamily, gradeColor, gradeFromPreset, isNeutralGrade, nearestWeight, scalePath,
   updateElement, weightName, NO_GRADE, type BookDocument, type ColorGrade, type Gradient, type ImageElement, type ShapeCategory, type ShapeElement,
   type TextElement,
 } from '../../core';
@@ -314,28 +314,42 @@ export function TextEffects({ el, spreadId }: { el: TextElement; spreadId: strin
 
 const SWATCH: [number, number, number][] = [[214, 98, 82], [236, 196, 112], [96, 160, 120], [84, 132, 196], [230, 216, 200]];
 
-export function GradeControls() {
-  const grade = useEditor((s) => s.doc?.grade) ?? NO_GRADE;
+/** Brightness / contrast / saturation / warmth / fade sliders for a grade, wherever it lives. */
+function GradeSliders({ value, apply, label }: { value: ColorGrade; apply: (d: BookDocument, next: ColorGrade | undefined) => BookDocument; label: string }) {
   const { run, gesture, endGesture } = useEditor.getState();
-  const set = (label: string, next: ColorGrade | undefined) => run(label, (d) => ({ ...d, grade: next && !isNeutralGrade(next) ? next : undefined }));
-  const slider = (key: 'brightness' | 'contrast' | 'saturation' | 'warmth' | 'fade', label: string, min = -100) => (
+  const slider = (key: 'brightness' | 'contrast' | 'saturation' | 'warmth' | 'fade', name: string, min = -100) => (
     <label className="field" key={key}>
-      <span>{label} — {grade[key] > 0 ? '+' : ''}{grade[key]}</span>
+      <span>{name} — {value[key] > 0 ? '+' : ''}{value[key]}</span>
       <input
-        type="range" min={min} max={100} step={1} value={grade[key]} aria-label={label}
-        onChange={(e) => gesture((d) => ({ ...d, grade: { ...(d.grade ?? NO_GRADE), [key]: Number(e.target.value), preset: 'custom' } }))}
-        onPointerUp={() => endGesture(`Grade: ${label.toLowerCase()}`)} onKeyUp={() => endGesture(`Grade: ${label.toLowerCase()}`)}
-        onDoubleClick={() => set(`Reset ${label.toLowerCase()}`, { ...grade, [key]: 0, preset: 'custom' })}
+        type="range" min={min} max={100} step={1} value={value[key]} aria-label={`${label} ${name.toLowerCase()}`}
+        onChange={(e) => gesture((d) => apply(d, { ...value, [key]: Number(e.target.value), preset: 'custom' }))}
+        onPointerUp={() => endGesture(`${label}: ${name.toLowerCase()}`)} onKeyUp={() => endGesture(`${label}: ${name.toLowerCase()}`)}
+        onDoubleClick={() => run(`Reset ${name.toLowerCase()}`, (d) => apply(d, { ...value, [key]: 0, preset: 'custom' }))}
       />
     </label>
   );
+  return (
+    <>
+      {slider('brightness', 'Brightness')}
+      {slider('contrast', 'Contrast')}
+      {slider('saturation', 'Saturation')}
+      {slider('warmth', 'Warmth')}
+      {slider('fade', 'Fade', 0)}
+    </>
+  );
+}
+
+export function GradeControls() {
+  const grade = useEditor((s) => s.doc?.grade) ?? NO_GRADE;
+  const { run } = useEditor.getState();
+  const apply = (d: BookDocument, next: ColorGrade | undefined) => ({ ...d, grade: next && !isNeutralGrade(next) ? next : undefined });
   return (
     <div className="stack">
       <div className="grade-presets">
         {GRADE_PRESETS.map((p) => {
           const g = gradeFromPreset(p.id);
           return (
-            <button key={p.id} className={`grade-preset ${grade.preset === p.id || (p.id === 'none' && isNeutralGrade(grade)) ? 'on' : ''}`} onClick={() => set(`Grade: ${p.name}`, p.id === 'none' ? undefined : g)} title={p.name}>
+            <button key={p.id} className={`grade-preset ${grade.preset === p.id || (p.id === 'none' && isNeutralGrade(grade)) ? 'on' : ''}`} onClick={() => run(`Grade: ${p.name}`, (d) => apply(d, p.id === 'none' ? undefined : g))} title={p.name}>
               <span className="grade-swatch">
                 {SWATCH.map((c, i) => <i key={i} style={{ background: `rgb(${gradeColor(g, c).join(',')})` }} />)}
               </span>
@@ -344,12 +358,30 @@ export function GradeControls() {
           );
         })}
       </div>
-      {slider('brightness', 'Brightness')}
-      {slider('contrast', 'Contrast')}
-      {slider('saturation', 'Saturation')}
-      {slider('warmth', 'Warmth')}
-      {slider('fade', 'Fade', 0)}
+      <GradeSliders value={grade} apply={apply} label="Grade" />
       <p className="muted small">Applies to every photo on the poster (and the background image), on screen and in the PDF. Text and shapes keep their colours. Double-click a slider to reset it.</p>
+    </div>
+  );
+}
+
+/** One photo's own adjustments (on top of which the poster's grade still applies). */
+export function PhotoAdjustControls({ el, spreadId, analysis }: { el: ImageElement; spreadId: string; analysis: Parameters<typeof autoAdjust>[0] }) {
+  const { run } = useEditor.getState();
+  const value = el.adjust ?? NO_GRADE;
+  const apply = (d: BookDocument, next: ColorGrade | undefined) => updateElement(d, spreadId, el.id, { adjust: next && !isNeutralGrade(next) ? next : undefined });
+  const adjusted = !isNeutralGrade(el.adjust);
+  return (
+    <div className="stack">
+      <div className="btn-grid">
+        <button className={`btn btn-small ${el.adjust?.preset === 'auto' ? 'btn-on' : ''}`} onClick={() => run('Auto-enhance photo', (d) => apply(d, autoAdjust(analysis)))} title="Fix exposure, add a little contrast and colour, and neutralise a colour cast">
+          <Icon name="sparkle" /> Auto-enhance
+        </button>
+        <button className={`btn btn-small ${el.adjust?.mono === 'bw' ? 'btn-on' : ''}`} onClick={() => run(el.adjust?.mono === 'bw' ? 'Colour photo' : 'Black & white photo', (d) => apply(d, { ...value, mono: el.adjust?.mono === 'bw' ? undefined : 'bw', preset: 'custom' }))}>
+          Black & white
+        </button>
+      </div>
+      <GradeSliders value={value} apply={apply} label="Photo" />
+      {adjusted && <button className="link small" onClick={() => run('Reset photo adjustments', (d) => apply(d, undefined))}>Reset adjustments</button>}
     </div>
   );
 }

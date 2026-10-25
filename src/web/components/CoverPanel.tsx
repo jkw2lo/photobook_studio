@@ -1,7 +1,8 @@
 import {
-  COVER_TEMPLATES, addTextAt, applyCoverTemplate, binding, coverDims, currentPrinterSize, pageCountOf, printer,
+  COVER_TEMPLATES, addBackBlurb, addTextAt, applyCoverTemplate, backBlurbElement, removeSpineText, setSpineText, spineTextElement, binding, coverDims, currentPrinterSize, pageCountOf, printer,
   setCoverLocked, setSurfaceBackground, spineTextAllowed, updateSettings, type CoverOverrides,
 } from '../../core';
+import { useEffect, useState } from 'react';
 import { useEditor } from '../store';
 import { ColorInput } from './ColorInput';
 import { Icon } from './Icon';
@@ -85,6 +86,7 @@ export function CoverPanel() {
           <div className="btn-grid">
             <AddTextMenu surfaceId={cover.id} at={{ x: dims.panelW + dims.spine.mm + dims.panelW / 2, y: dims.panelH * 0.88 }} />
           </div>
+          <BackAndSpine />
           <label className="field">
             <span>Cover colour</span>
             <ColorInput value={cover.background ?? doc.style.background} label="Cover colour" apply={(d, c) => setSurfaceBackground(d, cover.id, c)} />
@@ -92,6 +94,60 @@ export function CoverPanel() {
         </>
       )}
     </div>
+  );
+}
+
+/** Back-cover blurb and spine title. */
+function BackAndSpine() {
+  const doc = useEditor((s) => s.doc)!;
+  const { run, select } = useEditor.getState();
+  const cover = doc.cover!;
+  const spineEl = spineTextElement(doc);
+  const blurb = backBlurbElement(doc);
+  const [spineText, setText] = useState(spineEl?.type === 'text' ? spineEl.text : doc.title);
+  useEffect(() => {
+    if (spineEl?.type === 'text') setText(spineEl.text);
+  }, [spineEl?.type === 'text' ? spineEl.text : null]); // eslint-disable-line react-hooks/exhaustive-deps
+  const allowed = spineTextAllowed(doc);
+  const pr = printer(doc.settings.printerId);
+  return (
+    <>
+      <div className="section-title">Back cover</div>
+      {blurb ? (
+        <button className="btn btn-small" onClick={() => select({ spreadId: cover.id, elementId: blurb.id })}><Icon name="text" /> Edit the back-cover text</button>
+      ) : (
+        <button className="btn btn-small" onClick={() => {
+          let id = '';
+          run('Add back-cover text', (d) => {
+            const r = addBackBlurb(d);
+            id = r.newId;
+            return r.doc;
+          });
+          if (id) select({ spreadId: cover.id, elementId: id });
+        }}>
+          <Icon name="text" /> Add back-cover text
+        </button>
+      )}
+
+      <div className="section-title">Spine</div>
+      {allowed ? (
+        <>
+          <div className="row">
+            <input className="text-mask-input" value={spineText} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.stopPropagation()} aria-label="Spine text" placeholder="Title on the spine" />
+            <button className="btn btn-small btn-primary" disabled={!spineText.trim()} onClick={() => run(spineEl ? 'Update spine text' : 'Add spine text', (d) => setSpineText(d, spineText.trim()))}>{spineEl ? 'Update' : 'Add'}</button>
+          </div>
+          {spineEl && (
+            <div className="row">
+              <button className="link small" onClick={() => select({ spreadId: cover.id, elementId: spineEl.id })}>Style it…</button>
+              <button className="link small danger" onClick={() => run('Remove spine text', (d) => removeSpineText(d))}>Remove</button>
+            </div>
+          )}
+          <p className="muted small">Reads top to bottom, sized to the spine. Keep it short — the title, maybe the year.</p>
+        </>
+      ) : (
+        <p className="muted small">The spine is too thin for text: {pr.name} prints spine text from {pr.spineTextMinPages} pages and a 6 mm spine (this book: {pageCountOf(doc)} pages, {coverDims(doc).spine.mm.toFixed(1)} mm).</p>
+      )}
+    </>
   );
 }
 

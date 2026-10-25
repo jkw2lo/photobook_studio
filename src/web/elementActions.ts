@@ -1,9 +1,12 @@
-import { duplicateElement, removeElements, reorderElement, updateElement, type Element } from '../core';
-import { useEditor, type Selection } from './store';
+import { duplicateElement, duplicateElements, groupElements, removeElements, reorderElement, reorderElements, setLockedMany, ungroupElements, updateElement, type Element } from '../core';
+import { selectedIds, useEditor, type Selection } from './store';
 
 // Element actions shared by the inspector, the right-click menu and keyboard shortcuts.
 
 const st = () => useEditor.getState();
+/** Everything selected (one or many). */
+const ids = () => selectedIds(st());
+const many = () => ids().length > 1;
 
 export function togglePin(sel: Selection, el: Element) {
   if (el.type !== 'image') return;
@@ -21,10 +24,26 @@ export function toggleKeepRotation(sel: Selection, el: Element) {
 }
 
 export function toggleLock(sel: Selection, el: Element) {
+  if (many()) {
+    const doc = st().doc;
+    const els = doc ? (doc.cover?.id === sel.spreadId ? doc.cover : doc.spreads.find((s) => s.id === sel.spreadId))?.elements ?? [] : [];
+    const lock = els.some((e) => ids().includes(e.id) && !e.locked);
+    return void st().run(lock ? 'Lock items' : 'Unlock items', (d) => setLockedMany(d, sel.spreadId, ids(), lock));
+  }
   st().run(el.locked ? 'Unlock' : 'Lock', (d) => updateElement(d, sel.spreadId, el.id, { locked: !el.locked }));
 }
 
 export function duplicate(sel: Selection) {
+  if (many()) {
+    let newIds: string[] = [];
+    st().run(`Duplicate ${ids().length} items`, (d) => {
+      const r = duplicateElements(d, sel.spreadId, ids());
+      newIds = r.newIds;
+      return r.doc;
+    });
+    if (newIds.length) st().selectMany(sel.spreadId, newIds);
+    return;
+  }
   let id = '';
   st().run('Duplicate', (d) => {
     const r = duplicateElement(d, sel.spreadId, sel.elementId);
@@ -35,6 +54,14 @@ export function duplicate(sel: Selection) {
 }
 
 export function remove(sel: Selection, el: Element) {
+  if (many()) {
+    const doc = st().doc;
+    const els = doc ? (doc.cover?.id === sel.spreadId ? doc.cover : doc.spreads.find((s) => s.id === sel.spreadId))?.elements ?? [] : [];
+    const unlocked = els.filter((e) => ids().includes(e.id) && !e.locked).map((e) => e.id);
+    if (!unlocked.length) return st().toast('info', 'Unlock the items to delete them.');
+    st().run(`Delete ${unlocked.length} items`, (d) => removeElements(d, sel.spreadId, unlocked));
+    return st().select(null);
+  }
   if (el.locked) return st().toast('info', 'Unlock the element to delete it.');
   st().run('Delete', (d) => removeElements(d, sel.spreadId, [el.id]));
   st().select(null);
@@ -42,5 +69,17 @@ export function remove(sel: Selection, el: Element) {
 
 export function reorder(sel: Selection, where: 'front' | 'back' | 'forward' | 'backward') {
   const label = { front: 'Bring to front', back: 'Send to back', forward: 'Bring forward', backward: 'Send backward' }[where];
+  if (many() && (where === 'front' || where === 'back')) return void st().run(label, (d) => reorderElements(d, sel.spreadId, ids(), where));
   st().run(label, (d) => reorderElement(d, sel.spreadId, sel.elementId, where));
+}
+
+export function group(sel: Selection) {
+  if (!many()) return st().toast('info', 'Select two or more items (Shift-click or drag a box) to group them.');
+  const chosen = ids();
+  if (st().run('Group', (d) => groupElements(d, sel.spreadId, chosen))) st().selectMany(sel.spreadId, chosen, sel.elementId);
+}
+
+export function ungroup(sel: Selection) {
+  const chosen = ids();
+  if (st().run('Ungroup', (d) => ungroupElements(d, sel.spreadId, chosen))) st().selectMany(sel.spreadId, chosen, sel.elementId);
 }

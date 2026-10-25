@@ -33,19 +33,52 @@ function App() {
  * was rebuilt but the server process kept running old code. Saving across that gap can fail.
  */
 function VersionCheck() {
-  const [stale, setStale] = useState<null | { server: number | undefined }>(null);
+  const [stale, setStale] = useState<null | { server: number | undefined; canRestart: boolean }>(null);
+  const [state, setState] = useState<'idle' | 'restarting' | 'failed'>('idle');
+  const [error, setError] = useState('');
   useEffect(() => {
     fetch('/api/health')
       .then((r) => r.json())
-      .then((h: { apiVersion?: number }) => {
-        if (h.apiVersion !== API_VERSION) setStale({ server: h.apiVersion });
+      .then((h: { apiVersion?: number; canRestart?: boolean }) => {
+        if (h.apiVersion !== API_VERSION) setStale({ server: h.apiVersion, canRestart: !!h.canRestart });
       })
       .catch(() => undefined);
   }, []);
   if (!stale) return null;
+
+  const restart = async () => {
+    setState('restarting');
+    try {
+      const r = await fetch('/api/restart', { method: 'POST', headers: { 'x-photobook': '1' } });
+      if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${r.status}`);
+      // Wait for the new server (it may rebuild the editor first), then reload onto it.
+      const until = Date.now() + 90_000;
+      while (Date.now() < until) {
+        await new Promise((res) => setTimeout(res, 700));
+        const h = await fetch('/api/health', { cache: 'no-store' }).then((x) => x.json()).catch(() => null);
+        if (h?.apiVersion === API_VERSION) return location.reload();
+      }
+      throw new Error('The server did not come back with the new version. Quit and reopen the Photobook Studio app.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setState('failed');
+    }
+  };
+
   return (
     <div className="version-banner" role="alert">
-      <strong>The app was updated, but the server is still running the old version.</strong> Stop the server (Ctrl+C in its Terminal window) and start it again, then reload this page. Until then, new books and saves may not work correctly.
+      <strong>The app was updated, but the server is still running the old version.</strong>{' '}
+      {stale.canRestart ? (
+        <>
+          Restart it to finish updating — your work is saved.{' '}
+          <button className="btn btn-small btn-primary" disabled={state === 'restarting'} onClick={() => void restart()}>
+            {state === 'restarting' ? 'Restarting…' : 'Restart server now'}
+          </button>
+          {state === 'failed' && <span> {error}</span>}
+        </>
+      ) : (
+        <>Stop the server (Ctrl+C in its Terminal window) and start it again, then reload this page. Until then, new books and saves may not work correctly.</>
+      )}
     </div>
   );
 }

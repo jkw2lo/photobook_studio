@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { duplicateElement, findSurface, innerBox, issueCounts, panCrop, removeElements, updateElement, zoomCropAt } from '../../core';
-import { togglePin } from '../elementActions';
-import { retrySave, selectedElement, useEditor } from '../store';
+import { findSurface, innerBox, issueCounts, moveElements, panCrop, updateElement, zoomCropAt } from '../../core';
+import { duplicate, group, remove, toggleLock, togglePin, ungroup } from '../elementActions';
+import { retrySave, selectedElement, selectedIds, useEditor } from '../store';
 import { Canvas } from './Canvas';
 import { ExportDialog } from './ExportDialog';
 import { Icon } from './Icon';
@@ -206,6 +206,15 @@ function useKeyboard(enabled: boolean) {
           if (e.key === 'Enter') return st.setCrop(null);
         }
       }
+      // Select everything on this page.
+      if (mod && key === 'a') {
+        const surface = st.currentSpread === -1 ? st.doc.cover : st.doc.spreads[st.currentSpread];
+        if (surface?.elements.length) {
+          e.preventDefault();
+          st.selectMany(surface.id, surface.elements.map((x) => x.id));
+        }
+        return;
+      }
       const el = selectedElement(st);
       const sel = st.selection;
       if (!el || !sel) {
@@ -213,31 +222,27 @@ function useKeyboard(enabled: boolean) {
         if (e.key === 'ArrowLeft' || e.key === 'PageUp') return st.goToSpread(st.currentSpread - 1);
         return;
       }
+      const ids = selectedIds(st);
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        if (el.locked) return st.toast('info', 'Unlock the element to delete it.');
-        st.run('Delete', (d) => removeElements(d, sel.spreadId, [el.id]));
-        return st.select(null);
+        return remove(sel, el);
       }
       if (mod && key === 'd') {
         e.preventDefault();
-        let id = '';
-        st.run('Duplicate', (d) => {
-          const r = duplicateElement(d, sel.spreadId, el.id);
-          id = r.newId;
-          return r.doc;
-        });
-        if (id) st.select({ spreadId: sel.spreadId, elementId: id });
-        return;
+        return duplicate(sel);
       }
-      if (key === 'l' && !mod) return st.run(el.locked ? 'Unlock' : 'Lock', (d) => updateElement(d, sel.spreadId, el.id, { locked: !el.locked }));
+      if (mod && key === 'g') {
+        e.preventDefault();
+        return e.shiftKey ? ungroup(sel) : group(sel);
+      }
+      if (key === 'l' && !mod) return toggleLock(sel, el);
       if (key === 'p' && !mod && el.type === 'image' && st.doc.settings.product === 'poster') return togglePin(sel, el);
       const step = e.shiftKey ? 5 : 0.5;
       const nudges: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
       const n = nudges[e.key];
-      if (n && !el.locked) {
+      if (n) {
         e.preventDefault();
-        st.run('Nudge', (d) => updateElement(d, sel.spreadId, el.id, { xMm: el.xMm + n[0], yMm: el.yMm + n[1] }));
+        st.run('Nudge', (d) => moveElements(d, sel.spreadId, ids, n[0], n[1]));
       }
     };
     window.addEventListener('keydown', onKey);

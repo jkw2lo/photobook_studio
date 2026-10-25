@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { findSurface, useAsBackground } from '../../core';
-import { duplicate, remove, reorder, togglePin, toggleKeepCrop, toggleKeepRotation, toggleLock } from '../elementActions';
-import { useEditor, type Selection } from '../store';
+import { duplicate, group, remove, reorder, togglePin, toggleKeepCrop, toggleKeepRotation, toggleLock, ungroup } from '../elementActions';
+import { selectedIds, useEditor, type Selection } from '../store';
 import { Icon } from './Icon';
 
 // Right-click menu for an element on the canvas: a row of quick action icons, then the same
@@ -39,8 +39,27 @@ export function ContextMenu({ target, onClose, onEditText }: { target: MenuTarge
     };
   }, [onClose]);
 
+  const count = useEditor((s) => selectedIds(s).length);
   if (!el) return null;
   const { sel } = target;
+  if (count > 1) {
+    const goMulti = (fn: () => void) => () => {
+      fn();
+      onClose();
+    };
+    return (
+      <div className="ctx-menu" ref={ref} style={pos} role="menu" onContextMenu={(e) => e.preventDefault()}>
+        <div className="ctx-title muted small">{count} items</div>
+        {el.groupId ? <MenuItem icon="grid" label="Ungroup" hint="⇧⌘G" onClick={goMulti(() => ungroup(sel))} /> : <MenuItem icon="grid" label="Group" hint="⌘G" onClick={goMulti(() => group(sel))} />}
+        <MenuItem icon="front" label="Bring to front" onClick={goMulti(() => reorder(sel, 'front'))} />
+        <MenuItem icon="down" label="Send to back" onClick={goMulti(() => reorder(sel, 'back'))} />
+        <div className="ctx-sep" />
+        <MenuItem icon="copy" label="Duplicate" hint="⌘D" onClick={goMulti(() => duplicate(sel))} />
+        <MenuItem icon="lock" label="Lock / unlock" hint="L" onClick={goMulti(() => toggleLock(sel, el))} />
+        <MenuItem icon="trash" label="Delete" hint="⌫" danger onClick={goMulti(() => remove(sel, el))} />
+      </div>
+    );
+  }
   const poster = doc.settings.product === 'poster';
   const photo = el.type === 'image' && !!el.assetId;
   const { setCrop, setSwapSource } = useEditor.getState();

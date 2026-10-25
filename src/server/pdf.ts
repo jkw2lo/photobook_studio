@@ -6,7 +6,7 @@ import PDFDocument from 'pdfkit';
 import { PDFDocument as PdfLibDocument, PDFName, PDFArray, PDFNumber } from 'pdf-lib';
 import sharp from 'sharp';
 import {
-  COVER_INDEX, archGeometry, backgroundFrame, coverGeometry, geometryFor, gradeKey, gradeMatrix, gradientLine, isNeutralGrade, maskPath, pointOnArch, scalePath, shapeDef, posterGeometry, elementBounds, elementPlacement, fontFilePath, intersects, mmToInch, mmToPt, nearestWeight,
+  COVER_INDEX, archGeometry, backgroundFrame, coverGeometry, geometryFor, gradeChainKey, gradeChainMatrix, gradientLine, isNeutralChain, maskPath, pointOnArch, scalePath, shapeDef, posterGeometry, elementBounds, elementPlacement, fontFilePath, intersects, mmToInch, mmToPt, nearestWeight,
   pageNumberRect, preflight, printablePages, roleStyle, type BleedMode, type BookDocument, type Element, type ImageElement,
   type ColorGrade, type Gradient, type PhotoAsset, type PreflightIssue, type Rect, type ShapeElement, type Spread, type TextElement,
 } from '../core';
@@ -156,8 +156,10 @@ class PdfWriter {
     // Never upsample; downsample to 300 DPI at the printed size.
     const tw = Math.max(1, Math.min(width, Math.round(mmToInch(visible.dest.w) * TARGET_DPI)));
     const th = Math.max(1, Math.min(height, Math.round(mmToInch(visible.dest.h) * TARGET_DPI)));
-    const grade = isNeutralGrade(this.grade) ? null : gradeMatrix(this.grade!);
-    const key = `${asset.id}|${left},${top},${width},${height}|${tw}x${th}|${gradeKey(this.grade)}`;
+    // The photo's own adjustment, then the document's grade — as in the editor.
+    const chain = [el.adjust, this.grade];
+    const grade = isNeutralChain(chain) ? null : gradeChainMatrix(chain);
+    const key = `${asset.id}|${left},${top},${width},${height}|${tw}x${th}|${gradeChainKey(chain)}`;
     let buf = this.imageCache.get(key);
     if (!buf) {
       let img = sharp(entry.workPath, { failOn: 'none' })

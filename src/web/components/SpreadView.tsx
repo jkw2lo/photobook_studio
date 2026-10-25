@@ -1,6 +1,6 @@
 import { memo, useId, useMemo, type CSSProperties, type ReactNode } from 'react';
 import {
-  COVER_INDEX, archGeometry, backgroundFrame, elementPlacement, geometryFor, gradeSvgMatrix, gradientLine, isNeutralGrade, maskPath, pageNumberRect,
+  COVER_INDEX, archGeometry, backgroundFrame, elementPlacement, geometryFor, gradeChainSvg, gradeSvgMatrix, gradientLine, isNeutralGrade, maskPath, pageNumberRect,
   roleStyle, scalePath, shapeDef, type BookSettings, type BookStyle, type ColorGrade, type Element, type Gradient, type ImageElement, type PhotoAsset,
   type ShapeElement, type Spread, type TextElement, MM_PER_PT,
 } from '../../core';
@@ -60,10 +60,10 @@ export const SpreadView = memo(function SpreadView({ settings, style, spreadCoun
             }}
           />
         ))}
-      {bgFrame && <ElementView el={bgFrame} scale={scale} offset={b} asset={assets.get(bgFrame.assetId!)} thumbSize={thumbSize} filter={graded ? `url(#${filterId})` : undefined} />}
+      {bgFrame && <ElementView el={bgFrame} scale={scale} offset={b} asset={assets.get(bgFrame.assetId!)} thumbSize={thumbSize} filter={graded ? `url(#${filterId})` : undefined} grade={grade} />}
       {surface.elements.map((el) =>
         el.id === hiddenElementId ? null : (
-          <ElementView key={el.id} el={el} scale={scale} offset={b} asset={el.type === 'image' && el.assetId ? assets.get(el.assetId) : undefined} thumbSize={thumbSize} filter={graded ? `url(#${filterId})` : undefined} />
+          <ElementView key={el.id} el={el} scale={scale} offset={b} asset={el.type === 'image' && el.assetId ? assets.get(el.assetId) : undefined} thumbSize={thumbSize} filter={graded ? `url(#${filterId})` : undefined} grade={grade} />
         ),
       )}
       {!isCover && settings.pageNumbers &&
@@ -90,7 +90,7 @@ export const SpreadView = memo(function SpreadView({ settings, style, spreadCoun
   );
 });
 
-export const ElementView = memo(function ElementView({ el, scale, offset, asset, thumbSize, filter }: { el: Element; scale: number; offset: number; asset?: PhotoAsset; thumbSize: 's' | 'm'; filter?: string }) {
+export const ElementView = memo(function ElementView({ el, scale, offset, asset, thumbSize, filter, grade }: { el: Element; scale: number; offset: number; asset?: PhotoAsset; thumbSize: 's' | 'm'; filter?: string; grade?: ColorGrade }) {
   const style: CSSProperties = {
     left: (el.xMm + offset) * scale,
     top: (el.yMm + offset) * scale,
@@ -98,12 +98,16 @@ export const ElementView = memo(function ElementView({ el, scale, offset, asset,
     height: el.heightMm * scale,
     transform: el.rotationDeg ? `rotate(${el.rotationDeg}deg)` : undefined,
   };
-  if (el.type === 'image') return <ImageView el={el} scale={scale} style={style} asset={asset} thumbSize={thumbSize} filter={filter} />;
+  if (el.type === 'image') return <ImageView el={el} scale={scale} style={style} asset={asset} thumbSize={thumbSize} filter={filter} grade={grade} />;
   if (el.type === 'shape') return <ShapeView el={el} scale={scale} style={style} />;
   return <TextView el={el} scale={scale} style={style} />;
 });
 
-function ImageView({ el, scale, style, asset, thumbSize, filter }: { el: ImageElement; scale: number; style: CSSProperties; asset?: PhotoAsset; thumbSize: 's' | 'm'; filter?: string }) {
+function ImageView({ el, scale, style, asset, thumbSize, filter, grade }: { el: ImageElement; scale: number; style: CSSProperties; asset?: PhotoAsset; thumbSize: 's' | 'm'; filter?: string; grade?: ColorGrade }) {
+  // A photo with its own adjustments gets its own filter: its adjustment, then the document's grade.
+  const ownId = `adj${useId().replace(/:/g, '')}`;
+  const own = !isNeutralGrade(el.adjust);
+  if (own) filter = `url(#${ownId})`;
   // A photo cut to a shape or to text: clip the frame to that outline (borders don't apply).
   const clip = el.mask ? maskPath(el.mask, el.widthMm * scale, el.heightMm * scale) : null;
   const border = clip ? 0 : el.borderMm;
@@ -123,6 +127,13 @@ function ImageView({ el, scale, style, asset, thumbSize, filter }: { el: ImageEl
   const { box, placement } = elementPlacement(clip ? { ...el, borderMm: 0 } : el, asset);
   return (
     <div className={`el el-image ${border > 0 ? 'el-print' : ''}`} style={frameStyle}>
+      {own && (
+        <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden>
+          <filter id={ownId} colorInterpolationFilters="sRGB">
+            <feColorMatrix type="matrix" values={gradeChainSvg([el.adjust, grade])} />
+          </filter>
+        </svg>
+      )}
       <div className="el-image-inner" style={{ left: box.x * scale, top: box.y * scale, width: box.w * scale, height: box.h * scale }}>
         <img
           src={thumbUrl(asset.id, thumbSize)}

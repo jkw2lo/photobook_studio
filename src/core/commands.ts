@@ -84,6 +84,7 @@ export function setFramePhoto(doc: BookDocument, spreadId: string, elementId: st
     if (el.locked) throw new CommandError('Frame is locked');
     el.assetId = asset?.id ?? null;
     el.crop = defaultCrop(asset);
+    delete el.adjust; // adjustments were for the previous photo
     cutoutLook(el, asset);
   });
 }
@@ -116,6 +117,8 @@ export function swapFramePhotos(
     eb.crop = defaultCrop(ida ? assets.get(ida) : null);
     cutoutLook(ea, idb ? assets.get(idb) : null, ida ? assets.get(ida) : null);
     cutoutLook(eb, ida ? assets.get(ida) : null, idb ? assets.get(idb) : null);
+    // Colour adjustments belong to the photo: they move with it.
+    [ea.adjust, eb.adjust] = [eb.adjust, ea.adjust];
   });
 }
 

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { binding, coverGeometry, issueCounts, printablePages, printer, updateSettings, type BleedMode } from '../../core';
-import { api, type ExportResponse, type FileVerification } from '../api';
+import { api, type ExportResponse, type FileVerification, type ImageExportResponse } from '../api';
 import { useEditor } from '../store';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
@@ -95,6 +95,8 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
       )}
       {error && <div className="notice notice-error">{error}</div>}
 
+      {poster && <ImageExport />}
+
       {result && (
         <div className="export-results">
           <FileCard title={poster ? 'Poster' : 'Interior'} v={result.verification} url={result.url} bytes={result.bytes} extra={result.textOverflow.map((i) => i.message)} />
@@ -120,6 +122,64 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     </Modal>
+  );
+}
+
+/** Poster as a PNG or JPEG: for sharing, or printing at home. */
+function ImageExport() {
+  const doc = useEditor((s) => s.doc)!;
+  const projectId = useEditor((s) => s.projectId)!;
+  const [format, setFormat] = useState<'png' | 'jpeg'>('jpeg');
+  const [dpi, setDpi] = useState(150);
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState<ImageExportResponse | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const s = doc.settings;
+  const px = (mm: number, d: number) => Math.round((mm / 25.4) * d);
+  // "Screen" = about 2400 px on the long edge, whatever the poster size.
+  const screenDpi = Math.round(2400 / (Math.max(s.trimWidthMm, s.trimHeightMm) / 25.4));
+  const sizes = [
+    { label: 'Screen', dpi: screenDpi, hint: 'for sharing' },
+    { label: '150 DPI', dpi: 150, hint: 'home printing' },
+    { label: '300 DPI', dpi: 300, hint: 'best quality' },
+  ];
+  const go = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      setRes(await api.exportImage(projectId, doc, format, dpi));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="image-export">
+      <div className="row between">
+        <strong>Image</strong>
+        <span className="muted small">{px(s.trimWidthMm, dpi)} × {px(s.trimHeightMm, dpi)} px · trimmed, no bleed</span>
+      </div>
+      <div className="field-row">
+        <div className="seg">
+          {(['jpeg', 'png'] as const).map((f) => <button key={f} className={format === f ? 'on' : ''} onClick={() => setFormat(f)}>{f === 'jpeg' ? 'JPEG' : 'PNG'}</button>)}
+        </div>
+        <div className="seg seg-wide">
+          {sizes.map((z) => <button key={z.label} className={dpi === z.dpi ? 'on' : ''} title={z.hint} onClick={() => setDpi(z.dpi)}>{z.label}</button>)}
+        </div>
+        <button className="btn btn-small" onClick={() => void go()} disabled={busy}>{busy ? 'Rendering…' : 'Export image'}</button>
+      </div>
+      {err && <div className="notice notice-error small">{err}</div>}
+      {res && (
+        <div className="row">
+          <Icon name="check" size={16} />
+          <span className="small">{res.format.toUpperCase()} · {res.widthPx} × {res.heightPx} px · {res.dpi} DPI · {(res.bytes / 1e6).toFixed(1)} MB</span>
+          <a className="btn btn-small" href={res.url} target="_blank" rel="noreferrer">Open</a>
+          <a className="btn btn-small btn-primary" href={`${res.url}?download=1`}><Icon name="download" /> Download</a>
+        </div>
+      )}
+      <p className="muted small">JPEG is smaller and fine for sharing; PNG is lossless. For a print shop, use the PDF.</p>
+    </div>
   );
 }
 

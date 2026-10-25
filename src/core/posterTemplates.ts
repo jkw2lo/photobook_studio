@@ -8,6 +8,7 @@ import { estimateTextHeightMm, quickStyle, quickStyleFields } from './quickStyle
 import { shapeDef } from './shapes';
 import { pageScale } from './typography';
 import { MM_PER_PT } from './units';
+import { newId } from './random';
 
 // Poster templates: a finished design — background, type, banners and icons — with an area for the
 // photos, which Auto collage then fills. Text and decorations are ordinary elements afterwards: edit,
@@ -28,6 +29,8 @@ interface TextItem {
   background?: { color: string; opacity: number; radius?: number };
   shadow?: boolean;
   letterSpacingEm?: number;
+  /** Items sharing a key become one group (a banner and its words). */
+  group?: string;
 }
 
 interface ShapeItem {
@@ -38,6 +41,7 @@ interface ShapeItem {
   opacity?: number;
   behind?: boolean;
   gradient?: Gradient;
+  group?: string;
 }
 
 export interface PosterTemplate {
@@ -65,8 +69,8 @@ export const POSTER_TEMPLATES: PosterTemplate[] = [
     items: [
       { kind: 'text', text: 'Greetings from', quick: 'script', rect: R(0.1, 0.035, 0.8, 0.07), sizePt: 30, color: '#c0392b' },
       { kind: 'text', text: '{TITLE}', quick: 'headline', rect: R(0.04, 0.09, 0.92, 0.15), sizePt: 64, color: '#1d3557', arch: 22, shadow: true },
-      { kind: 'shape', shape: 'ribbon', rect: R(0.22, 0.875, 0.56, 0.085), fill: '#c0392b' },
-      { kind: 'text', text: '{year}', quick: 'caps', rect: R(0.33, 0.888, 0.34, 0.045), sizePt: 16, color: '#f4ecdf', letterSpacingEm: 0.35 },
+      { kind: 'shape', shape: 'ribbon', rect: R(0.22, 0.875, 0.56, 0.085), fill: '#c0392b', group: 'ribbon' },
+      { kind: 'text', text: '{year}', quick: 'caps', rect: R(0.33, 0.888, 0.34, 0.045), sizePt: 16, color: '#f4ecdf', letterSpacingEm: 0.35, group: 'ribbon' },
     ],
   },
   {
@@ -92,8 +96,8 @@ export const POSTER_TEMPLATES: PosterTemplate[] = [
     grade: 'vivid',
     items: [
       { kind: 'text', text: '{TITLE}', quick: 'magazine', rect: R(0.04, 0.025, 0.92, 0.13), sizePt: 70, color: '#ffffff', shadow: true },
-      { kind: 'shape', shape: 'burst', rect: R(0.72, 0.17, 0.22, 0.165), fill: '#e63946' },
-      { kind: 'text', text: 'BEST OF\n{year}', quick: 'modern', rect: R(0.745, 0.21, 0.17, 0.09), sizePt: 15, color: '#ffffff' },
+      { kind: 'shape', shape: 'burst', rect: R(0.72, 0.17, 0.22, 0.165), fill: '#e63946', group: 'burst' },
+      { kind: 'text', text: 'BEST OF\n{year}', quick: 'modern', rect: R(0.745, 0.21, 0.17, 0.09), sizePt: 15, color: '#ffffff', group: 'burst' },
       { kind: 'text', text: '{subtitle}', quick: 'band', rect: R(0.05, 0.9, 0.5, 0.045), sizePt: 13, color: '#111111', align: 'left', background: { color: '#ffffff', opacity: 0.9 } },
     ],
   },
@@ -191,6 +195,12 @@ export function templateElements(doc: BookDocument, t: PosterTemplate, assets: P
   const H = doc.settings.trimHeightMm;
   const scale = pageScale(doc);
   const box = (r: Rect) => ({ x: r.x * W, y: r.y * H, w: r.w * W, h: r.h * H });
+  const groups = new Map<string, string>();
+  const groupOf = (key?: string) => {
+    if (!key) return undefined;
+    if (!groups.has(key)) groups.set(key, newId());
+    return groups.get(key);
+  };
   return t.items.map((item): Element => {
     if (item.kind === 'shape') {
       const b = box(item.rect);
@@ -202,7 +212,7 @@ export function templateElements(doc: BookDocument, t: PosterTemplate, assets: P
         const h = w / def.aspect;
         r = { x: b.x + (b.w - w) / 2, y: b.y + (b.h - h) / 2, w, h };
       }
-      const el: ShapeElement = { ...makeShapeElement(r, item.fill, item.opacity ?? 1), shape: item.shape, gradient: item.gradient, behind: item.behind };
+      const el: ShapeElement = { ...makeShapeElement(r, item.fill, item.opacity ?? 1), shape: item.shape, gradient: item.gradient, behind: item.behind, groupId: groupOf(item.group) };
       return el;
     }
     const b = box(item.rect);
@@ -225,6 +235,7 @@ export function templateElements(doc: BookDocument, t: PosterTemplate, assets: P
       arch: item.arch,
       shadow: item.shadow ? { color: '#000000', dxMm: sizePt * 0.012, dyMm: sizePt * 0.012, opacity: 0.3 } : undefined,
       styleLinked: false,
+      groupId: groupOf(item.group),
     };
     // Grow the box if the text needs more room than the template allowed for (long titles).
     const need = estimateTextHeightMm(text, out.widthMm, sizePt, out.lineHeight, out.letterSpacingEm, out.paddingMm ?? 0);

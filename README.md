@@ -103,6 +103,17 @@ Auto collage lives in the Poster side panel, next to the sheet, so every change 
 
 For books, the **Collage** style builds every multi-photo page as a mosaic, and any page can be switched to **Mosaic** from the layout picker.
 
+## Editing tools
+
+- **Several items at once.** Shift-click to add or remove items, drag a box from empty space to select everything it touches, or press ⌘A. Drag any selected item to move them all; arrow keys nudge them; ⌫ and ⌘D delete or duplicate them all. The **Selection** panel and the right-click menu offer Group, Ungroup, To front and To back.
+- **Groups.** **Group** (⌘G) makes items select, move and align as one. Banners from the palette and templates come grouped with their text. **Ungroup** is ⇧⌘G. Clicking a grouped item again selects just that item, to edit it.
+- **Align and distribute.** Line items up by left, centre, right, top, middle or bottom edge, either to each other or to the page (a single item aligns to its page). With three or more items, space them evenly across or down.
+- **Layers.** At the foot of the side panel: everything on the page, top first. Click to select (Shift adds), move items up or down a layer, and lock or unlock them.
+- **Per-photo adjustments.** In the photo panel, **Adjust** has Auto-enhance (fixes exposure, adds a little contrast and colour, neutralises a colour cast), Black & white, and brightness, contrast, saturation, warmth and fade sliders. These apply before the poster's colour grade, the same way in the editor and the PDF. On posters they follow the photo through Arrange, and through swaps everywhere.
+- **Back cover and spine.** In the cover panel, **Add back-cover text** puts a blurb on the back, on a paper panel over a wraparound photo. **Spine** adds or updates a title reading top to bottom, sized to the spine. It is only offered when the printer allows spine text for this page count.
+- **Image export for posters.** The export dialog adds **Image**: JPEG or PNG at screen size (about 2400 px), 150 DPI or 300 DPI. The image is cropped to the trim and rendered from the verified print PDF by macOS.
+- **Out-of-date server.** When the app was updated but the server is still running old code, the banner now offers **Restart server now** (for servers started by the launcher or `npm start`). The server rebuilds if needed, restarts itself and the page reloads.
+
 ## Printer presets
 
 | | Lulu | Blurb (PDF to Book) | Custom |
@@ -154,6 +165,7 @@ npm run test:e2e
 | `tests/fonts.test.ts` | Every bundled font weight and italic embeds in a PDF; editor stylesheet matches the exporter; every type pack uses bundled fonts |
 | `tests/arrange.test.ts` | Pinned photos stay exactly put through Arrange, Shuffle and re-flow in every style, with nothing overlapping them; Keep crop survives shuffles; All / On sheet photo sources; hero shuffles cycle through many sharp photos |
 | `tests/cutouts.test.ts` | Transparency detected (not just an alpha channel), WebP previews keep it, older imports re-detected; cutouts laid out whole with no border in every style; colour-aware near-duplicates; background image covers the bleed, survives Arrange/Shuffle and isn't repeated; PDF keeps the cutout's transparency over a faded background |
+| `tests/editing.test.ts` | Grouping, aligning (to each other, to the page, groups as one unit), distributing, moving, duplicating and reordering several items; box selection; banners grouped with text; per-photo adjustments chained with the grade, auto-enhance, adjustments following photos through Arrange and swaps; back-cover blurb and spine text; restart endpoint guards; poster JPEG/PNG export size, format and DPI |
 | `tests/book-templates.test.ts` | Every page design lands inside the page on either side, replaces only its page and follows the book's styles; contents list chapters with correct page numbers through inserts and removals; every book template makes a complete printable book with front matter, themed openers, closing pages, contents, cover and colours; undated photos get no opener; locked spreads kept |
 | `tests/design.test.ts` | Keep rotation; shape library paths stay in their box and scale; banners come with text; shape and text cut-outs (server text outlines); arched text geometry; grade presets; every template places text, decorations and photos inside its area and survives Arrange; PDF draws gradients, cut-outs, curved and outlined text, and graded photos |
 | `tests/text-style.test.ts` | Quick styles use bundled fonts, scale with the sheet and grow the box; reset clears italics; PDFs embed italic fonts and semi-transparent text backgrounds |

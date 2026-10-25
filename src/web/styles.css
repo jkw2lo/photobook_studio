@@ -513,3 +513,22 @@ input[type='checkbox'] { accent-color: var(--accent); width: 15px; height: 15px;
 .addon-card { display: flex; flex-direction: column; gap: 4px; align-items: stretch; padding: 4px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel-2); color: var(--muted); cursor: pointer; text-align: center; }
 .addon-card:hover { border-color: var(--accent); color: var(--text); }
 .addon-preview { width: 100%; aspect-ratio: 1; display: block; border-radius: 3px; }
+.image-export { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); margin: 10px 0; }
+.image-export p { margin: 0; }
+
+/* Multiple selection, align tools, layers */
+.multi-outline { position: absolute; outline: 1.5px solid var(--select); pointer-events: none; transform-origin: center center; }
+.multi-box { position: absolute; border: 1px dashed var(--select); pointer-events: none; }
+.marquee { position: absolute; border: 1px solid var(--select); background: rgba(90, 160, 255, 0.12); pointer-events: none; z-index: 8; }
+.align-row { display: flex; flex-wrap: wrap; gap: 2px; }
+.align-row .icon-btn { width: 30px; height: 28px; }
+.layers { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 8px; }
+.layers-head { width: 100%; display: flex; justify-content: space-between; align-items: center; background: none; border: 0; color: var(--text); font: inherit; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; cursor: pointer; padding: 4px 0; }
+.layers-list { display: flex; flex-direction: column; gap: 1px; margin-top: 6px; max-height: 320px; overflow-y: auto; }
+.layer { display: flex; align-items: center; gap: 6px; padding: 3px 4px 3px 7px; border-radius: 5px; cursor: pointer; font-size: 12px; color: var(--muted); }
+.layer:hover { background: var(--panel-2); color: var(--text); }
+.layer.on { background: var(--panel-3); color: var(--text); }
+.layer-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layer-tag { font-size: 9px; padding: 0 4px; border-radius: 3px; background: var(--panel-3); color: var(--muted); }
+.layer .icon-btn { width: 22px; height: 22px; font-size: 11px; }
+.ctx-title { padding: 4px 8px 6px; border-bottom: 1px solid var(--line); margin-bottom: 3px; }

@@ -93,6 +93,37 @@ export function gradeMatrix(gr: ColorGrade): Affine {
   return t;
 }
 
+/** Several grades applied one after another (a photo's own adjustment, then the document's). */
+export function gradeChainMatrix(grades: (ColorGrade | undefined)[]): Affine {
+  return grades.filter((gr): gr is ColorGrade => !isNeutralGrade(gr)).reduce<Affine>((acc, gr) => then(acc, gradeMatrix(gr)), { m: [...I] as M3, o: [0, 0, 0] });
+}
+
+export const isNeutralChain = (grades: (ColorGrade | undefined)[]) => grades.every(isNeutralGrade);
+
+/** SVG feColorMatrix values for a chain of grades. */
+export function gradeChainSvg(grades: (ColorGrade | undefined)[]): string {
+  return affineSvg(gradeChainMatrix(grades));
+}
+
+/** Cache key for a chain of grades ('' when nothing changes). */
+export const gradeChainKey = (grades: (ColorGrade | undefined)[]) => (isNeutralChain(grades) ? '' : gradeChainSvg(grades));
+
+/**
+ * One-click enhancement from the photo's analysis: lift dark photos and calm bright ones toward
+ * mid-grey, add a little contrast where nothing is clipped, neutralise a strong colour cast and
+ * add a touch of colour.
+ */
+export function autoAdjust(analysis: { meanLuma: number; clippedShadows: number; clippedHighlights: number; avgColor?: [number, number, number] } | null): ColorGrade {
+  const clamp = (v: number, lo: number, hi: number) => Math.round(Math.min(hi, Math.max(lo, v)));
+  if (!analysis) return { preset: 'auto', brightness: 0, contrast: 10, saturation: 8, warmth: 0, fade: 0 };
+  const brightness = clamp((0.5 - analysis.meanLuma) * 110, -35, 45);
+  const clipped = analysis.clippedShadows + analysis.clippedHighlights;
+  const contrast = clipped < 0.01 ? 14 : clipped < 0.04 ? 6 : -6;
+  const [r, , b] = analysis.avgColor ?? [128, 128, 128];
+  const warmth = clamp(((b - r) / 255) * 70, -25, 25);
+  return { preset: 'auto', brightness, contrast, saturation: 10, warmth, fade: 0 };
+}
+
 /** Apply a grade to one colour (0–255), clamped — for tests and colour swatches. */
 export function gradeColor(gr: ColorGrade, rgb: [number, number, number]): [number, number, number] {
   const { m, o } = gradeMatrix(gr);
@@ -102,7 +133,10 @@ export function gradeColor(gr: ColorGrade, rgb: [number, number, number]): [numb
 
 /** Values for an SVG <feColorMatrix type="matrix"> (alpha untouched). */
 export function gradeSvgMatrix(gr: ColorGrade): string {
-  const { m, o } = gradeMatrix(gr);
+  return affineSvg(gradeMatrix(gr));
+}
+
+function affineSvg({ m, o }: Affine): string {
   const f = (n: number) => String(Math.round(n * 10000) / 10000);
   return [0, 1, 2].map((i) => [m[i * 3], m[i * 3 + 1], m[i * 3 + 2], 0, o[i]].map(f).join(' ')).concat('0 0 0 1 0').join(' ');
 }

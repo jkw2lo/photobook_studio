@@ -97,6 +97,73 @@ export function layoutCover(doc: BookDocument, templateId: string, photos: Cover
   return els;
 }
 
+// ---- back cover and spine text ------------------------------------------------------------------
+
+/** The spine title on the cover, if any (rotated text centred on the spine). */
+export function spineTextElement(doc: BookDocument): Element | undefined {
+  if (!doc.cover) return undefined;
+  const { panelW, spine } = coverDims(doc);
+  return doc.cover.elements.find((e) => e.type === 'text' && Math.abs(Math.abs(e.rotationDeg) - 90) < 1 && Math.abs(e.xMm + e.widthMm / 2 - (panelW + spine.mm / 2)) < Math.max(1, spine.mm / 2));
+}
+
+/** Put a title on the spine, reading top to bottom, sized to the spine — or update its words. */
+export function setSpineText(doc: BookDocument, text: string): BookDocument {
+  if (!doc.cover) return doc;
+  const { panelW: W, panelH: H, safe, spine } = coverDims(doc);
+  const S = spine.mm;
+  const existing = spineTextElement(doc);
+  return produce(doc, (d) => {
+    const c = d.cover!;
+    if (existing) {
+      const el = c.elements.find((e) => e.id === existing.id)!;
+      if (el.type === 'text') el.text = text;
+      return;
+    }
+    const len = H - 2 * safe;
+    const thick = Math.max(2, S * 0.7);
+    const t = makeTextElement(doc, 'heading', text, { x: W + S / 2 - len / 2, y: H / 2 - thick / 2, w: len, h: thick }, { rotationDeg: 90 });
+    t.fontSizePt = Math.max(5, Math.min(t.fontSizePt, Math.floor(((S * 0.42) / MM_PER_PT) * 2) / 2));
+    t.lineHeight = 1.1;
+    c.elements.push(t as Draft<Element>);
+  });
+}
+
+export function removeSpineText(doc: BookDocument): BookDocument {
+  const el = spineTextElement(doc);
+  if (!el || !doc.cover) return doc;
+  return produce(doc, (d) => {
+    d.cover!.elements = d.cover!.elements.filter((e) => e.id !== el.id);
+  });
+}
+
+/** The back-cover blurb (body text on the back panel), if any. */
+export function backBlurbElement(doc: BookDocument): Element | undefined {
+  if (!doc.cover) return undefined;
+  const { panelW } = coverDims(doc);
+  return doc.cover.elements.find((e) => e.type === 'text' && e.role === 'body' && e.xMm + e.widthMm / 2 < panelW);
+}
+
+/**
+ * Add a few lines of text to the back cover, below the back photo; over a wraparound photo it
+ * sits on a paper-colour panel so it stays readable.
+ */
+export function addBackBlurb(doc: BookDocument, text = 'A few words about this book — where it all happened, and who was there.'): { doc: BookDocument; newId: string } {
+  if (!doc.cover) return { doc, newId: '' };
+  const { panelW: W, panelH: H, safe } = coverDims(doc);
+  const wrap = doc.cover.layout?.spread === 'cover-wrap';
+  const box = { x: safe * 1.6, y: H * (wrap ? 0.66 : 0.77), w: W - safe * 3.2, h: H * 0.14 };
+  const t = makeTextElement(doc, 'body', text, box, { align: 'center' });
+  const els: Element[] = [];
+  if (wrap) els.push(makeShapeElement({ x: box.x - safe * 0.6, y: box.y - safe * 0.6, w: box.w + safe * 1.2, h: box.h + safe * 1.2 }, doc.style.background, 0.92));
+  els.push(t);
+  return {
+    doc: produce(doc, (d) => {
+      d.cover!.elements.push(...(els as Draft<Element>[]));
+    }),
+    newId: t.id,
+  };
+}
+
 /** Photos currently on the cover: the frame mostly on the front, and one mostly on the back. */
 export function coverPhotos(doc: BookDocument, assets: Map<string, PhotoAsset>): CoverPhotos {
   const cover = doc.cover;

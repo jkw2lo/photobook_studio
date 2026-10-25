@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { CommandError, findSurface, reconcileCover, refreshContents, type BookDocument, type DraftReport, type PhotoAsset } from '../core';
+import { CommandError, expandGroups, findSurface, reconcileCover, refreshContents, type BookDocument, type DraftReport, type PhotoAsset } from '../core';
 import { api, ApiError, type ImportJob } from './api';
 
 // Editor state. The document is immutable; every committed edit pushes the previous document onto
@@ -37,6 +37,9 @@ interface EditorState {
   /** Document before the current transient gesture began. */
   gestureBase: BookDocument | null;
   selection: Selection | null;
+  /** Every selected element on the selection's surface (the primary one included). Groups are
+   * selected whole. Empty or one id = a single selection. */
+  multi: string[];
   currentSpread: number;
   cropElementId: string | null;
   swapSource: Selection | null;
@@ -68,7 +71,12 @@ interface EditorState {
   cancelGesture(): void;
   undo(): void;
   redo(): void;
-  select(sel: Selection | null): void;
+  /** Select an element (and the rest of its group, unless `only`). */
+  select(sel: Selection | null, opts?: { only?: boolean }): void;
+  /** Select several elements on one surface; `primary` drives the inspector. */
+  selectMany(spreadId: string, ids: string[], primary?: string): void;
+  /** Shift-click: add or remove an element (and its group) from the selection. */
+  toggleInSelection(spreadId: string, id: string): void;
   goToSpread(i: number): void;
   setView(v: 'spread' | 'overview'): void;
   setZoom(z: number): void;
@@ -94,6 +102,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   future: [],
   gestureBase: null,
   selection: null,
+  multi: [],
   currentSpread: 1,
   cropElementId: null,
   swapSource: null,
@@ -112,7 +121,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   loadError: null,
 
   async load(projectId) {
-    set({ projectId, doc: null, loadError: null, past: [], future: [], selection: null, cropElementId: null });
+    set({ projectId, doc: null, loadError: null, past: [], future: [], selection: null, multi: [], cropElementId: null });
     try {
       const [{ doc, revision }, assets] = await Promise.all([api.getProject(projectId), api.assets(projectId)]);
       set({
@@ -192,14 +201,38 @@ export const useEditor = create<EditorState>((set, get) => ({
     fixSelection();
   },
 
-  select(selection) {
+  select(selection, opts) {
     // Selecting a photo on the page also shows it in the library preview.
     let previewAssetId = get().previewAssetId;
-    if (selection && get().doc) {
-      const el = findSurface(get().doc!, selection.spreadId)?.surface.elements.find((e) => e.id === selection.elementId);
+    let multi: string[] = [];
+    const doc = get().doc;
+    if (selection && doc) {
+      const els = findSurface(doc, selection.spreadId)?.surface.elements ?? [];
+      const el = els.find((e) => e.id === selection.elementId);
       if (el?.type === 'image' && el.assetId) previewAssetId = el.assetId;
+      multi = opts?.only ? [selection.elementId] : expandGroups(els, [selection.elementId]);
     }
-    set({ selection, previewAssetId, cropElementId: selection && get().cropElementId === selection.elementId ? selection.elementId : null });
+    set({ selection, multi, previewAssetId, cropElementId: selection && get().cropElementId === selection.elementId ? selection.elementId : null });
+  },
+
+  selectMany(spreadId, ids, primary) {
+    if (!ids.length) return get().select(null);
+    const doc = get().doc;
+    const els = doc ? findSurface(doc, spreadId)?.surface.elements ?? [] : [];
+    const all = expandGroups(els, ids);
+    const main = primary && all.includes(primary) ? primary : all[all.length - 1];
+    set({ selection: { spreadId, elementId: main }, multi: all, cropElementId: null });
+  },
+
+  toggleInSelection(spreadId, id) {
+    const { selection, multi, doc } = get();
+    if (!doc || !selection || selection.spreadId !== spreadId) return get().select({ spreadId, elementId: id });
+    const els = findSurface(doc, spreadId)?.surface.elements ?? [];
+    const current = multi.length ? multi : [selection.elementId];
+    const group = expandGroups(els, [id]);
+    const next = current.includes(id) ? current.filter((x) => !group.includes(x)) : [...current, ...group.filter((x) => !current.includes(x))];
+    if (!next.length) return get().select(null);
+    set({ selection: { spreadId, elementId: next.includes(selection.elementId) ? selection.elementId : next[next.length - 1] }, multi: next, cropElementId: null });
   },
 
   goToSpread(i) {
@@ -207,10 +240,10 @@ export const useEditor = create<EditorState>((set, get) => ({
     if (!doc) return;
     // -1 is the cover (books only); a poster has just its sheet.
     const min = doc.settings.product === 'poster' ? 0 : -1;
-    set({ currentSpread: Math.max(min, Math.min(doc.spreads.length - 1, i)), selection: null, cropElementId: null, view: 'spread' });
+    set({ currentSpread: Math.max(min, Math.min(doc.spreads.length - 1, i)), selection: null, multi: [], cropElementId: null, view: 'spread' });
   },
 
-  setView: (view) => set({ view, selection: null, cropElementId: null }),
+  setView: (view) => set({ view, selection: null, multi: [], cropElementId: null }),
   setZoom: (zoom) => set({ zoom: Math.max(0.5, Math.min(4, zoom)) }),
   toggleGuides: () => set((s) => ({ showGuides: !s.showGuides })),
   setCrop: (cropElementId) => set({ cropElementId }),
@@ -278,8 +311,13 @@ function fixSelection() {
   if (currentSpread >= doc.spreads.length) useEditor.setState({ currentSpread: doc.spreads.length - 1 });
   if (!selection) return;
   const found = findSurface(doc, selection.spreadId);
-  if (!found || !found.surface.elements.some((e) => e.id === selection.elementId)) useEditor.setState({ selection: null });
+  if (!found || !found.surface.elements.some((e) => e.id === selection.elementId)) return useEditor.setState({ selection: null, multi: [] });
+  const ids = new Set(found.surface.elements.map((e) => e.id));
+  useEditor.setState((s) => ({ multi: s.multi.filter((id) => ids.has(id)) }));
 }
+
+/** Ids of every selected element (one or many). */
+export const selectedIds = (s: Pick<EditorState, 'selection' | 'multi'>): string[] => (s.multi.length ? s.multi : s.selection ? [s.selection.elementId] : []);
 
 // ---- autosave -------------------------------------------------------------------------------
 

@@ -81,7 +81,19 @@ export interface ExportResponse {
   };
 }
 
+export interface ImageExportResponse {
+  file: string;
+  url: string;
+  bytes: number;
+  widthPx: number;
+  heightPx: number;
+  dpi: number;
+  format: 'png' | 'jpeg';
+}
+
 export const api = {
+  exportImage: (projectId: string, doc: BookDocument, format: 'png' | 'jpeg', dpi: number) =>
+    call<ImageExportResponse>('POST', `/api/projects/${projectId}/export-image`, { doc, format, dpi }),
   textOutline: (body: { text: string; fontFamily: string; fontWeight: number; italic?: boolean; uppercase?: boolean; letterSpacingEm?: number }) =>
     call<{ d: string; aspect: number }>('POST', '/api/text-outline', body),
   listProjects: () => call<ProjectSummary[]>('GET', '/api/projects'),

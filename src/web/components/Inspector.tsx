@@ -15,8 +15,9 @@ import { FontPicker } from './FontPicker';
 import { PosterPanel } from './PosterUI';
 import { DraftPanel } from './DraftPanel';
 import { AddTextMenu } from './TypePanel';
-import { ElementsPalette, PhotoShapeControls, ShapeControls, TextEffects } from './DesignPanel';
+import { ElementsPalette, PhotoAdjustControls, PhotoShapeControls, ShapeControls, TextEffects } from './DesignPanel';
 import { PageAddonsSection } from './BookTemplates';
+import { AlignTools, LayersPanel, MultiPanel } from './SelectionPanel';
 import { Icon } from './Icon';
 import { PreflightPanel } from './PreflightPanel';
 import { TemplatePicker } from './TemplatePicker';
@@ -26,6 +27,7 @@ type Tab = 'edit' | 'draft' | 'book' | 'preflight';
 export function Inspector({ issueCount }: { issueCount: { error: number; warning: number } }) {
   const [tab, setTab] = useState<Tab>('edit');
   const selected = useEditor(selectedElement);
+  const multiCount = useEditor((s) => s.multi.length);
   const onCover = useEditor((s) => s.currentSpread === COVER_INDEX);
   const poster = useEditor((s) => s.doc?.settings.product === 'poster');
   const collageFocus = useEditor((s) => s.collageFocus);
@@ -46,7 +48,7 @@ export function Inspector({ issueCount }: { issueCount: { error: number; warning
   return (
     <aside className="inspector">
       <div className="tabs">
-        <button className={tab === 'edit' ? 'on' : ''} onClick={() => setTab('edit')}>{selected ? ({ image: 'Photo', text: 'Text', shape: 'Shape' } as const)[selected.type] : poster ? 'Poster' : onCover ? 'Cover' : 'Spread'}</button>
+        <button className={tab === 'edit' ? 'on' : ''} onClick={() => setTab('edit')}>{multiCount > 1 ? 'Selection' : selected ? ({ image: 'Photo', text: 'Text', shape: 'Shape' } as const)[selected.type] : poster ? 'Poster' : onCover ? 'Cover' : 'Spread'}</button>
         {!poster && <button className={tab === 'draft' ? 'on' : ''} onClick={() => setTab('draft')}>Draft</button>}
         <button className={tab === 'book' ? 'on' : ''} onClick={() => setTab('book')}>{poster ? 'Print' : 'Book'}</button>
         <button className={tab === 'preflight' ? 'on' : ''} onClick={() => setTab('preflight')}>
@@ -55,7 +57,8 @@ export function Inspector({ issueCount }: { issueCount: { error: number; warning
         </button>
       </div>
       <div className="inspector-body">
-        {tab === 'edit' && (selected ? <ElementPanel /> : poster ? <PosterPanel /> : onCover ? <CoverPanel /> : <SpreadPanel />)}
+        {tab === 'edit' && (multiCount > 1 ? <MultiPanel /> : selected ? <ElementPanel /> : poster ? <PosterPanel /> : onCover ? <CoverPanel /> : <SpreadPanel />)}
+        {tab === 'edit' && <LayersPanel />}
         {tab === 'draft' && <DraftPanel />}
         {tab === 'book' && <BookPanel />}
         {tab === 'preflight' && <PreflightPanel />}
@@ -226,6 +229,12 @@ function ElementPanel() {
                 Empty frame
               </button>
             </div>
+            {asset && (
+              <>
+                <div className="section-title">Adjust</div>
+                <PhotoAdjustControls el={el} spreadId={sel.spreadId} analysis={asset.analysis} />
+              </>
+            )}
             <div className="section-title">Cut-out</div>
             <PhotoShapeControls el={el} spreadId={sel.spreadId} />
             <div className="field-row">
@@ -242,6 +251,9 @@ function ElementPanel() {
       {el.type === 'text' && <TextControls el={el} spreadId={sel.spreadId} />}
 
       {el.type === 'shape' && <ShapeControls el={el} spreadId={sel.spreadId} />}
+
+      <div className="section-title">Align to page</div>
+      <AlignTools spreadId={sel.spreadId} ids={[el.id]} />
 
       <div className="section-title">Position</div>
       <div className="field-row">

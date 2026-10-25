@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   COVER_INDEX, addPhotoAt, defaultCrop, effectiveDpi, elementBounds, elementPlacement, geometryFor, innerBox, panCrop, toInnerBox, zoomCropAt,
-  pageContentRect, pointInElement, setFramePhoto, surfaceAt, swapFramePhotos, updateElement, type BookDocument,
+  elementsInRect, expandGroups, pageContentRect, pointInElement, setFramePhoto, unionBounds, surfaceAt, swapFramePhotos, updateElement, type BookDocument,
   type Element, type ImageElement, type PhotoAsset, type SurfaceGeometry, MM_PER_PT,
 } from '../../core';
 import { thumbUrl } from '../api';
-import { useEditor } from '../store';
+import { selectedIds, useEditor } from '../store';
 import { ContextMenu, type MenuTarget } from './ContextMenu';
 import { Icon } from './Icon';
 import { SpreadView, textCss } from './SpreadView';
@@ -23,7 +23,9 @@ type Gesture =
   | { kind: 'rotate'; orig: Element }
   | { kind: 'crop'; start: Pt; orig: ImageElement }
   | { kind: 'cropzoom'; startDist: number; orig: ImageElement }
-  | { kind: 'swap'; orig: ImageElement; at: Pt; client: Pt; target: string | null };
+  | { kind: 'swap'; orig: ImageElement; at: Pt; client: Pt; target: string | null }
+  | { kind: 'multimove'; start: Pt; origs: Element[]; moved: boolean; clickedId: string; wasSelected: boolean }
+  | { kind: 'marquee'; start: Pt; additive: boolean; base: string[] };
 
 interface Pt {
   x: number;
@@ -62,7 +64,11 @@ export function Canvas() {
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [swapDrag, setSwapDrag] = useState<{ client: Pt; target: string | null } | null>(null);
   const [menu, setMenu] = useState<MenuTarget | null>(null);
+  const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const multi = useEditor((s) => s.multi);
   const wheelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Last pointer position in mm during a gesture (where a selection box ends). */
+  const pendingEnd = useRef<Pt | null>(null);
 
   useLayoutEffect(() => {
     const el = wrapRef.current;
@@ -126,7 +132,8 @@ export function Canvas() {
   };
 
   // ---- snapping ---------------------------------------------------------------------------
-  const snapTargets = (exclude: string) => {
+  const snapTargets = (exclude: string | Set<string>) => {
+    const skip = typeof exclude === 'string' ? new Set([exclude]) : exclude;
     const xs = [-b, g.width + b, g.width / 2];
     const ys = [-b, 0, g.height / 2, g.height, g.height + b];
     for (const p of g.panels) xs.push(p.x, p.x + p.w, p.x + p.w / 2);
@@ -142,7 +149,7 @@ export function Canvas() {
       }
     }
     for (const el of surface.elements) {
-      if (el.id === exclude) continue;
+      if (skip.has(el.id)) continue;
       const r = elementBounds(el);
       xs.push(r.x, r.x + r.w / 2, r.x + r.w);
       ys.push(r.y, r.y + r.h / 2, r.y + r.h);
@@ -205,11 +212,28 @@ export function Canvas() {
       return;
     }
     if (swapSource) setSwapSource(null);
+    const current = selection?.spreadId === surface.id ? selectedIds(useEditor.getState()) : [];
     if (!hit) {
-      select(null);
+      // Empty space: drag a box to select several items (Shift adds to the selection).
+      capture(e.pointerId);
+      gestureRef.current = { kind: 'marquee', start: p, additive: e.shiftKey, base: e.shiftKey ? current : [] };
+      if (!e.shiftKey) select(null);
       return;
     }
-    select({ spreadId: surface.id, elementId: hit.id });
+    if (e.shiftKey) {
+      useEditor.getState().toggleInSelection(surface.id, hit.id);
+      return;
+    }
+    const wasSelected = current.includes(hit.id);
+    const ids = wasSelected ? current : expandGroups(surface.elements, [hit.id]);
+    if (!wasSelected) select({ spreadId: surface.id, elementId: hit.id });
+    if (ids.length > 1) {
+      // Several items (or a group): drag moves them all; a click without dragging on an already
+      // selected group picks just that one item.
+      capture(e.pointerId);
+      gestureRef.current = { kind: 'multimove', start: p, origs: surface.elements.filter((el) => ids.includes(el.id)), moved: false, clickedId: hit.id, wasSelected };
+      return;
+    }
     if (!hit.locked) {
       capture(e.pointerId);
       gestureRef.current = { kind: 'move', start: p, orig: hit, moved: false };
@@ -221,8 +245,40 @@ export function Canvas() {
     const gst = gestureRef.current;
     if (!gst) return;
     const p = toMm(clientX, clientY);
-    const id = gst.orig.id;
     const sid = surface.id;
+    if (gst.kind === 'marquee') {
+      setMarquee({ x: Math.min(gst.start.x, p.x), y: Math.min(gst.start.y, p.y), w: Math.abs(p.x - gst.start.x), h: Math.abs(p.y - gst.start.y) });
+      return;
+    }
+    if (gst.kind === 'multimove') {
+      let dx = p.x - gst.start.x;
+      let dy = p.y - gst.start.y;
+      if (!gst.moved && Math.hypot(dx, dy) * scale < 3) return;
+      gst.moved = true;
+      if (shiftKey) (Math.abs(dx) > Math.abs(dy) ? (dy = 0) : (dx = 0));
+      const movable = gst.origs.filter((o) => !o.locked);
+      const lines: GuideLine[] = [];
+      if (!altKey && movable.length) {
+        // Snap the selection's outer box, like a single element.
+        const r = unionBounds(movable.map((o) => ({ ...o, xMm: o.xMm + dx, yMm: o.yMm + dy })));
+        const t = snapTargets(new Set(gst.origs.map((o) => o.id)));
+        const threshold = 6 / scale;
+        const sx = snapDelta([r.x, r.x + r.w / 2, r.x + r.w], t.xs, threshold);
+        const sy = snapDelta([r.y, r.y + r.h / 2, r.y + r.h], t.ys, threshold);
+        if (sx) {
+          dx += sx.d;
+          lines.push({ axis: 'x', at: sx.at });
+        }
+        if (sy) {
+          dy += sy.d;
+          lines.push({ axis: 'y', at: sy.at });
+        }
+      }
+      setGuides((prev) => (sameGuides(prev, lines) ? prev : lines));
+      gesture((d) => movable.reduce((acc, o) => updateElement(acc, sid, o.id, { xMm: o.xMm + dx, yMm: o.yMm + dy }), d));
+      return;
+    }
+    const id = gst.orig.id;
 
     if (gst.kind === 'swap') {
       const target = hitTest(p, (el) => el.type === 'image' && el.id !== id && !el.locked);
@@ -326,6 +382,7 @@ export function Canvas() {
       return;
     }
     pendingRef.current = { x: e.clientX, y: e.clientY, shift: e.shiftKey, alt: e.altKey };
+    pendingEnd.current = toMm(e.clientX, e.clientY);
     if (frameRef.current === null) {
       frameRef.current = requestAnimationFrame(() => {
         frameRef.current = null;
@@ -347,6 +404,20 @@ export function Canvas() {
     gestureRef.current = null;
     setGuides([]);
     if (!gst) return;
+    if (gst.kind === 'marquee') {
+      const r = marqueeRef(gst, pendingEnd.current);
+      setMarquee(null);
+      if (r && (r.w * scale > 3 || r.h * scale > 3)) {
+        const ids = elementsInRect(surface.elements, r);
+        useEditor.getState().selectMany(surface.id, [...new Set([...gst.base, ...ids])]);
+      }
+      return;
+    }
+    if (gst.kind === 'multimove') {
+      if (gst.moved) endGesture(`Move ${gst.origs.length} items`);
+      else if (gst.wasSelected) select({ spreadId: surface.id, elementId: gst.clickedId }, { only: true });
+      return;
+    }
     if (gst.kind === 'swap') {
       setSwapDrag(null);
       if (gst.target) {
@@ -376,7 +447,9 @@ export function Canvas() {
     if (cropId && cropId !== hit.id) setCrop(null);
     if (swapSource) setSwapSource(null);
     const sel = { spreadId: surface.id, elementId: hit.id };
-    select(sel);
+    // Right-clicking inside a multiple selection keeps it (the menu then acts on all of it).
+    const current = selection?.spreadId === surface.id ? selectedIds(useEditor.getState()) : [];
+    if (!current.includes(hit.id)) select(sel);
     setMenu({ sel, x: e.clientX, y: e.clientY });
   };
 
@@ -429,6 +502,7 @@ export function Canvas() {
     }
   };
 
+  const multiEls = selection?.spreadId === surface.id && multi.length > 1 ? surface.elements.filter((x) => multi.includes(x.id)) : [];
   const cropEl = cropId ? (surface.elements.find((x) => x.id === cropId) as ImageElement | undefined) : undefined;
   const cropAsset = cropEl?.assetId ? assets.get(cropEl.assetId) : undefined;
   const hovered = hoverId && hoverId !== selected?.id ? surface.elements.find((x) => x.id === hoverId) : undefined;
@@ -458,7 +532,14 @@ export function Canvas() {
             {dropTarget && <Outline el={surface.elements.find((x) => x.id === dropTarget)!} scale={scale} offset={b} className="drop-outline" />}
             {swapTarget && <Outline el={swapTarget} scale={scale} offset={b} className="drop-outline" />}
             {isPosterDoc && <PinBadges elements={surface.elements} scale={scale} offset={b} />}
-            {selected && !editingText && <SelectionBox el={selected} scale={scale} offset={b} cropping={cropId === selected.id} />}
+            {multiEls.length > 1 && !editingText && (
+              <>
+                {multiEls.map((el) => <Outline key={el.id} el={el} scale={scale} offset={b} className="multi-outline" />)}
+                <MultiBox els={multiEls} scale={scale} offset={b} />
+              </>
+            )}
+            {marquee && <div className="marquee" style={{ left: (marquee.x + b) * scale, top: (marquee.y + b) * scale, width: marquee.w * scale, height: marquee.h * scale }} />}
+            {selected && !editingText && multiEls.length <= 1 && <SelectionBox el={selected} scale={scale} offset={b} cropping={cropId === selected.id} />}
             {surface.locked && <div className="lock-veil" title="Locked: regeneration and layout changes leave it untouched" />}
             {editingText && <TextEditor surface={surface} elementId={editingText} scale={scale} offset={b} onDone={() => setEditingText(null)} />}
             <div
@@ -471,6 +552,7 @@ export function Canvas() {
               onPointerLeave={() => !gestureRef.current && setHoverId(null)}
               onPointerCancel={() => {
                 gestureRef.current = null;
+                setMarquee(null);
                 setSwapDrag(null);
                 useEditor.getState().cancelGesture();
               }}
@@ -481,7 +563,7 @@ export function Canvas() {
               onDragLeave={() => setDropTarget(null)}
               onDrop={onDrop}
             >
-              {selected && !selected.locked && !editingText && !cropId && <HandleLayer el={selected} scale={scale} offset={b} />}
+              {selected && !selected.locked && !editingText && !cropId && multiEls.length <= 1 && <HandleLayer el={selected} scale={scale} offset={b} />}
               {cropEl && cropAsset && <CropHandles el={cropEl} asset={cropAsset} scale={scale} offset={b} />}
             </div>
           </SpreadView>
@@ -507,6 +589,11 @@ export function Canvas() {
       {menu && <ContextMenu target={menu} onClose={() => setMenu(null)} onEditText={(id) => setEditingText(id)} />}
     </div>
   );
+}
+
+function marqueeRef(g: { start: Pt }, end: Pt | null) {
+  if (!end) return null;
+  return { x: Math.min(g.start.x, end.x), y: Math.min(g.start.y, end.y), w: Math.abs(end.x - g.start.x), h: Math.abs(end.y - g.start.y) };
 }
 
 function sameGuides(a: GuideLine[], b: GuideLine[]) {
@@ -571,6 +658,12 @@ function PinBadges({ elements, scale, offset }: { elements: Element[]; scale: nu
       )}
     </>
   );
+}
+
+/** Dashed box around everything selected. */
+function MultiBox({ els, scale, offset }: { els: Element[]; scale: number; offset: number }) {
+  const r = unionBounds(els);
+  return <div className="multi-box" style={{ left: (r.x + offset) * scale, top: (r.y + offset) * scale, width: r.w * scale, height: r.h * scale }} />;
 }
 
 function SelectionBox({ el, scale, offset, cropping }: { el: Element; scale: number; offset: number; cropping: boolean }) {
