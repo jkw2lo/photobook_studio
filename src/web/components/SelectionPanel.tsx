@@ -66,9 +66,9 @@ export function MultiPanel() {
   const groups = new Set(els.map((e) => e.groupId).filter(Boolean));
   const oneGroup = groups.size === 1 && els.every((e) => e.groupId);
   const locked = els.every((e) => e.locked);
-  const kinds = { image: 0, text: 0, shape: 0 };
+  const kinds = { image: 0, text: 0, shape: 0, calendar: 0 };
   for (const e of els) kinds[e.type]++;
-  const summary = [kinds.image && `${kinds.image} photo${kinds.image > 1 ? 's' : ''}`, kinds.text && `${kinds.text} text`, kinds.shape && `${kinds.shape} shape${kinds.shape > 1 ? 's' : ''}`].filter(Boolean).join(', ');
+  const summary = [kinds.image && `${kinds.image} photo${kinds.image > 1 ? 's' : ''}`, kinds.text && `${kinds.text} text`, kinds.shape && `${kinds.shape} shape${kinds.shape > 1 ? 's' : ''}`, kinds.calendar && `${kinds.calendar} calendar${kinds.calendar > 1 ? 's' : ''}`].filter(Boolean).join(', ');
   if (!primary) return null;
   return (
     <div className="stack">
@@ -104,6 +104,8 @@ export function MultiPanel() {
 function layerName(e: Element, assetName: (id: string) => string | undefined): string {
   if (e.type === 'image') return e.assetId ? assetName(e.assetId) ?? 'Photo' : 'Empty frame';
   if (e.type === 'text') return e.text.replace(/\s+/g, ' ').trim().slice(0, 40) || 'Text';
+  if (e.type === 'calendar') return `Calendar · ${e.title?.trim() || (e.mode === 'month' ? 'month' : 'trip')}`;
+  if (e.outline) return `Map · ${e.outline.name}`;
   return shapeDef(e.shape).name;
 }
 
@@ -131,7 +133,7 @@ export function LayersPanel() {
             const on = ids.includes(e.id);
             return (
               <div key={e.id} role="listitem" className={`layer ${on ? 'on' : ''}`} onClick={(ev) => (ev.shiftKey ? toggleInSelection(surface.id, e.id) : select({ spreadId: surface.id, elementId: e.id }, { only: true }))}>
-                <Icon name={e.type === 'image' ? 'image' : e.type === 'text' ? 'text' : 'sparkle'} size={13} />
+                <Icon name={e.type === 'image' ? 'image' : e.type === 'text' ? 'text' : e.type === 'calendar' ? 'grid' : 'sparkle'} size={13} />
                 <span className="layer-name">{layerName(e, (id) => assets.get(id)?.fileName)}</span>
                 {e.groupId && <span className="layer-tag" title="In a group">G</span>}
                 {e.type === 'image' && e.pinned && <Icon name="pin" size={11} />}

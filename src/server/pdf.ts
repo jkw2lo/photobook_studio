@@ -6,9 +6,9 @@ import PDFDocument from 'pdfkit';
 import { PDFDocument as PdfLibDocument, PDFName, PDFArray, PDFNumber } from 'pdf-lib';
 import sharp from 'sharp';
 import {
-  COVER_INDEX, archGeometry, backgroundFrame, coverGeometry, geometryFor, gradeChainKey, gradeChainMatrix, gradientLine, isNeutralChain, maskPath, pointOnArch, scalePath, shapeDef, posterGeometry, elementBounds, elementPlacement, fontFilePath, intersects, mmToInch, mmToPt, nearestWeight,
+  COVER_INDEX, archGeometry, calendarLayout, backgroundFrame, coverGeometry, geometryFor, gradeChainKey, gradeChainMatrix, gradientLine, isNeutralChain, maskPath, pointOnArch, shapePath, posterGeometry, elementBounds, elementPlacement, fontFilePath, intersects, mmToInch, mmToPt, nearestWeight,
   pageNumberRect, preflight, printablePages, roleStyle, type BleedMode, type BookDocument, type Element, type ImageElement,
-  type ColorGrade, type Gradient, type PhotoAsset, type PreflightIssue, type Rect, type ShapeElement, type Spread, type TextElement,
+  type CalendarElement, type ColorGrade, type Gradient, type PhotoAsset, type PreflightIssue, type Rect, type ShapeElement, type Spread, type TextElement,
 } from '../core';
 
 // Print export. Geometry comes from core (same functions the editor preview uses); this module only
@@ -110,6 +110,7 @@ class PdfWriter {
       pdf.translate(-mmToPt(el.widthMm / 2), -mmToPt(el.heightMm / 2));
       if (el.type === 'image') await this.image(el);
       else if (el.type === 'shape') this.shape(el);
+      else if (el.type === 'calendar') this.calendar(el);
       else if (this.text(el) && !this.overflow.some((o) => o.elementId === el.id)) {
         this.overflow.push({ elementId: el.id, label, spreadIndex });
       }
@@ -123,15 +124,41 @@ class PdfWriter {
     return this.pdf.linearGradient(l.x1, l.y1, l.x2, l.y2).stop(0, g.from).stop(1, g.to);
   }
 
+  /** Same layout and marks as the editor; text baseline at centre + 0.35 × size, as there. */
+  private calendar(el: CalendarElement) {
+    const { pdf } = this;
+    const lay = calendarLayout(el);
+    this.useFont(el.fontFamily, el.fontWeight);
+    const ascent = (pdf as unknown as { _font: { ascender: number } })._font.ascender / 1000;
+    for (const c of lay.cells) {
+      const cx = mmToPt(c.x + c.w / 2);
+      const cy = mmToPt(c.y + c.h / 2);
+      const sizeMm = c.kind === 'title' ? lay.titleMm : c.kind === 'weekday' ? lay.weekdayMm : lay.dayMm;
+      const size = mmToPt(c.text.length > 3 && c.kind === 'day' ? sizeMm * 0.72 : sizeMm);
+      const r = mmToPt(Math.min(c.w, c.h) * 0.42);
+      const alpha = c.faint ? 0.32 : c.kind === 'weekday' ? 0.6 : 1;
+      pdf.save();
+      pdf.fillOpacity(alpha);
+      if (c.marked && el.markStyle === 'circle') pdf.circle(cx, cy, r).fill(el.accent);
+      if (c.marked && el.markStyle === 'square') pdf.roundedRect(cx - r, cy - r, 2 * r, 2 * r, r * 0.25).fill(el.accent);
+      if (c.marked && el.markStyle === 'underline') pdf.rect(cx - r * 0.7, cy + mmToPt(sizeMm) * 0.55, r * 1.4, Math.max(0.7, mmToPt(sizeMm) * 0.12)).fill(el.accent);
+      const onMark = c.marked && el.markStyle !== 'underline';
+      pdf.fillColor(onMark ? '#ffffff' : el.color).fillOpacity(alpha).fontSize(size);
+      const w = mmToPt(c.w);
+      pdf.text(c.text, cx - w / 2, cy + mmToPt(sizeMm) * 0.35 - ascent * size, { width: w, align: 'center', lineBreak: false });
+      pdf.restore();
+    }
+  }
+
   private shape(el: ShapeElement) {
     const { pdf } = this;
     const w = mmToPt(el.widthMm);
     const h = mmToPt(el.heightMm);
-    const def = shapeDef(el.shape);
-    const rule = def.evenOdd ? 'even-odd' : 'non-zero';
-    const d = scalePath(def.d, w, h);
+    const p = shapePath(el, w, h);
+    const rule = p.evenOdd ? 'even-odd' : 'non-zero';
+    const d = p.d;
     pdf.fillOpacity(el.opacity).strokeOpacity(el.opacity);
-    pdf.path(d).fill(el.gradient ? this.gradient(el.gradient, w, h) : el.fill, rule);
+    if (el.gradient || el.fill !== 'none') pdf.path(d).fill(el.gradient ? this.gradient(el.gradient, w, h) : el.fill, rule);
     if (el.strokeWidthMm) pdf.path(d).lineWidth(mmToPt(el.strokeWidthMm)).lineJoin('round').stroke(el.strokeColor ?? '#000000');
   }
 

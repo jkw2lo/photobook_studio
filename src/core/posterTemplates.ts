@@ -1,7 +1,9 @@
 import type { BookDocument, CollageSettings, Element, Gradient, PhotoAsset, Rect, ShapeElement, TextElement } from './model';
 import { dateRangeOf } from './curation';
 import { gradeFromPreset } from './grade';
-import { makeShapeElement, makeTextElement } from './layout';
+import { makeImageElement, makeShapeElement, makeTextElement } from './layout';
+import { MONTHS, makeCalendar, photoDays } from './calendar';
+import { scorePhotos } from './curation';
 import { curatePool, type CuratedPool } from './generator';
 import { generatePoster, type PosterReport } from './poster';
 import { estimateTextHeightMm, quickStyle, quickStyleFields } from './quickStyles';
@@ -44,6 +46,12 @@ interface ShapeItem {
   group?: string;
 }
 
+/** Twelve tiles: each month's best photo above that month's calendar (photo days marked). */
+interface MonthsItem {
+  kind: 'months';
+  rect: Rect;
+}
+
 export interface PosterTemplate {
   id: string;
   name: string;
@@ -52,7 +60,9 @@ export interface PosterTemplate {
   collage: Partial<CollageSettings> & { area: Rect };
   photoCount: number;
   grade?: string;
-  items: (TextItem | ShapeItem)[];
+  items: (TextItem | ShapeItem | MonthsItem)[];
+  /** Photos are placed by the template itself (pinned), not by Auto collage. */
+  placesPhotos?: boolean;
 }
 
 const R = (x: number, y: number, w: number, h: number): Rect => ({ x, y, w, h });
@@ -156,6 +166,19 @@ export const POSTER_TEMPLATES: PosterTemplate[] = [
     ],
   },
   {
+    id: 'months',
+    name: '12 months',
+    description: 'A year on one sheet: each month’s best photo above its calendar, with the days you took photos marked.',
+    background: '#faf7f2',
+    collage: { style: 'grid', area: R(0.05, 0.12, 0.9, 0.85), gapMm: 4 },
+    photoCount: 12,
+    placesPhotos: true,
+    items: [
+      { kind: 'text', text: '{year}', quick: 'modern', rect: R(0.05, 0.025, 0.9, 0.08), sizePt: 54, color: '#2b2b2b' },
+      { kind: 'months', rect: R(0.05, 0.12, 0.9, 0.85) },
+    ],
+  },
+  {
     id: 'film',
     name: 'Film strip',
     description: 'Black with sprocket dots, a tight grid and a typewriter caption.',
@@ -201,7 +224,12 @@ export function templateElements(doc: BookDocument, t: PosterTemplate, assets: P
     if (!groups.has(key)) groups.set(key, newId());
     return groups.get(key);
   };
-  return t.items.map((item): Element => {
+  return t.items.flatMap((item): Element[] => {
+    if (item.kind === 'months') return monthTiles(doc, box(item.rect), assets);
+    return [templateItem(item)];
+  });
+
+  function templateItem(item: TextItem | ShapeItem): Element {
     if (item.kind === 'shape') {
       const b = box(item.rect);
       // Icons keep their proportions: fit them into the box.
@@ -241,7 +269,48 @@ export function templateElements(doc: BookDocument, t: PosterTemplate, assets: P
     const need = estimateTextHeightMm(text, out.widthMm, sizePt, out.lineHeight, out.letterSpacingEm, out.paddingMm ?? 0);
     if (!out.arch && need > out.heightMm) out.heightMm = need;
     return out;
-  });
+  }
+}
+
+/**
+ * The year with the most photos as twelve tiles (4 × 3, or 3 × 4 on a portrait sheet): the best
+ * photo of each month — pinned, so Arrange leaves it — over that month's calendar.
+ */
+export function monthTiles(doc: BookDocument, r: Rect, assets: PhotoAsset[]): Element[] {
+  const usable = assets.filter((a) => !a.excluded && !a.missing && a.capturedAt);
+  const year = photoYear(usable);
+  const scores = scorePhotos(usable);
+  const gap = Math.min(r.w, r.h) * 0.025;
+  const PHOTO = 0.42;
+  // A month's calendar is about 1.2× as tall as it is wide: choose the grid (3, 4 or 6 across)
+  // that lets the calendars come out largest under their photos.
+  const fit = (c: number) => {
+    const rw = 12 / c;
+    const w = (r.w - gap * (c - 1)) / c;
+    const h = (r.h - gap * (rw - 1)) / rw;
+    return Math.min(w, (h * (1 - PHOTO) - gap * 0.5) / 1.2);
+  };
+  const cols = [3, 4, 6].sort((a, b) => fit(b) - fit(a))[0];
+  const rows = 12 / cols;
+  const cw = (r.w - gap * (cols - 1)) / cols;
+  const ch = (r.h - gap * (rows - 1)) / rows;
+  const out: Element[] = [];
+  for (let m = 0; m < 12; m++) {
+    const key = `${year}-${String(m + 1).padStart(2, '0')}`;
+    const inMonth = usable.filter((a) => a.capturedAt!.startsWith(key));
+    const best = [...inMonth].sort((a, b) => Number(b.favorite) - Number(a.favorite) || (scores.get(b.id)?.total ?? 0) - (scores.get(a.id)?.total ?? 0))[0] ?? null;
+    const x = r.x + (m % cols) * (cw + gap);
+    const y = r.y + Math.floor(m / cols) * (ch + gap);
+    const photoH = ch * PHOTO;
+    const img = { ...makeImageElement(doc, best, { x, y, w: cw, h: photoH }), pinned: true };
+    out.push(img);
+    const cal = makeCalendar(doc, { x, y: 0, w: cw }, photoDays(inMonth), { mode: 'month', start: `${key}-01` });
+    const room = ch - photoH - gap * 0.5;
+    const k = Math.min(1, room / cal.heightMm);
+    const w = cw * k;
+    out.push({ ...cal, title: MONTHS[m], widthMm: w, heightMm: cal.heightMm * k, xMm: x + (cw - w) / 2, yMm: y + photoH + gap * 0.5 });
+  }
+  return out;
 }
 
 /**
@@ -268,6 +337,13 @@ export function applyPosterTemplate(
     style: 'mosaic', gapMm: 3, marginMm: 0, titlePosition: 'none', ...t.collage,
     photoCount: t.photoCount, seed: 1, source: 'best', order: prev?.order,
   };
+  if (t.placesPhotos) {
+    const placed = withItems.spreads[0].elements.filter((e) => e.type === 'image' && e.assetId).length;
+    return {
+      doc: { ...withItems, collage: settings, template: t.id },
+      report: { available: placed, placed, nearDuplicatesSet: curated.alternates.length, exactDuplicates: curated.exactDuplicates, excluded: curated.excluded, notes: ['Each month shows its best photo; drag another photo onto a frame to change it.'] },
+    };
+  }
   const res = generatePoster(withItems, assets, settings, curated);
   return { doc: { ...res.doc, template: t.id }, report: res.report };
 }

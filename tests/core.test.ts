@@ -110,7 +110,7 @@ describe('draft generation', () => {
     const book = createBook({ title: 'Trip' });
     const a = generateDraft(book, assets, settingsFor(16)).doc;
     const b = generateDraft(book, assets, settingsFor(16)).doc;
-    const strip = (d: BookDocument) => d.spreads.map((s) => [s.layout, s.elements.map((e) => [e.type, e.xMm, e.yMm, e.type === 'image' ? e.assetId : e.type === 'text' ? e.text : e.fill])]);
+    const strip = (d: BookDocument) => d.spreads.map((s) => [s.layout, s.elements.map((e) => [e.type, e.xMm, e.yMm, e.type === 'image' ? e.assetId : e.type === 'text' ? e.text : e.type === 'shape' ? e.fill : e.start])]);
     expect(strip(a)).toEqual(strip(b));
   });
 

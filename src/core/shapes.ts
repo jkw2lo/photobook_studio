@@ -249,9 +249,16 @@ export function fitPath(d: string, srcW: number, srcH: number, w: number, h: num
 }
 
 /** The outline of a photo mask in a w × h frame (frame-local units). */
-export function maskPath(mask: { kind: 'shape'; shape: string } | { kind: 'text'; d: string; aspect: number }, w: number, h: number): { d: string; evenOdd: boolean } {
-  if (mask.kind === 'text') return { d: fitPath(mask.d, 100 * mask.aspect, 100, w, h), evenOdd: false };
+export function maskPath(mask: { kind: 'shape'; shape: string } | { kind: 'text' | 'outline'; d: string; aspect: number }, w: number, h: number): { d: string; evenOdd: boolean } {
+  if (mask.kind !== 'shape') return { d: fitPath(mask.d, 100 * mask.aspect, 100, w, h), evenOdd: false };
   const def = shapeDef(mask.shape);
+  return { d: scalePath(def.d, w, h), evenOdd: !!def.evenOdd };
+}
+
+/** The path of a shape element in a w × h box: its place outline (fitted) or its library shape (stretched). */
+export function shapePath(el: { shape?: string; outline?: { d: string; aspect: number } }, w: number, h: number): { d: string; evenOdd: boolean } {
+  if (el.outline) return { d: fitPath(el.outline.d, 100 * el.outline.aspect, 100, w, h), evenOdd: false };
+  const def = shapeDef(el.shape);
   return { d: scalePath(def.d, w, h), evenOdd: !!def.evenOdd };
 }
 

@@ -92,6 +92,9 @@ export interface ImageExportResponse {
 }
 
 export const api = {
+  places: () => call<{ id: string; name: string }[]>('GET', '/api/places'),
+  placeOutline: (id: string) => call<{ name: string; d: string; aspect: number }>('GET', `/api/places/${encodeURIComponent(id)}/outline`),
+  suggestPlaces: (points: [number, number][]) => call<{ id: string; name: string; photos: number }[]>('POST', '/api/places/suggest', { points }),
   exportImage: (projectId: string, doc: BookDocument, format: 'png' | 'jpeg', dpi: number) =>
     call<ImageExportResponse>('POST', `/api/projects/${projectId}/export-image`, { doc, format, dpi }),
   textOutline: (body: { text: string; fontFamily: string; fontWeight: number; italic?: boolean; uppercase?: boolean; letterSpacingEm?: number }) =>

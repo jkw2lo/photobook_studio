@@ -16,7 +16,8 @@ test('import, draft, edit, reopen and export a book', async ({ page }) => {
   const path = page.getByLabel('Folder path');
   await path.fill(FIXTURES);
   await path.press('Enter');
-  await expect(page.getByText('21 photos directly in this folder')).toBeVisible();
+  // Generous: the performance test may be importing 500 photos in parallel.
+  await expect(page.getByText('21 photos directly in this folder')).toBeVisible({ timeout: 20_000 });
   await page.getByRole('button', { name: 'Import this folder' }).click();
   await expect(page.getByText(/Imported 21 photos/)).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('.library .tile')).toHaveCount(21);

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   ADDON_CATEGORIES, BOOK_TEMPLATES, MM_PER_PT, PAGE_ADDONS, addonElements, applyBookTemplate, applyPageAddon, chapterDateRanges, insertAddonSpread,
-  isPrintable, scalePath, shapeDef, typePack,
+  isPrintable, photoDays, scalePath, shapeDef, typePack,
   type AddonCategory, type BookDocument, type BookTemplate, type Element, type PageAddon,
 } from '../../core';
 import { useEditor } from '../store';
@@ -16,6 +16,13 @@ function MiniElements({ elements, offsetX = 0 }: { elements: Element[]; offsetX?
       {elements.map((e) => {
         const x0 = e.xMm - offsetX;
         if (e.type === 'image') return <rect key={e.id} x={x0} y={e.yMm} width={e.widthMm} height={e.heightMm} fill="#c9ccd3" />;
+        if (e.type === 'calendar') {
+          return (
+            <g key={e.id} transform={`translate(${x0} ${e.yMm})`} fill={e.color}>
+              {Array.from({ length: 21 }, (_, i) => <circle key={i} cx={(e.widthMm / 7) * ((i % 7) + 0.5)} cy={e.heightMm * 0.42 + (e.widthMm / 7) * Math.floor(i / 7)} r={e.widthMm / 40} fill={i % 7 > 1 && i % 7 < 5 && i < 14 ? e.accent : e.color} />)}
+            </g>
+          );
+        }
         if (e.type === 'shape') {
           const def = shapeDef(e.shape);
           return <path key={e.id} d={scalePath(def.d, e.widthMm, e.heightMm)} transform={`translate(${x0} ${e.yMm})`} fill={e.fill} opacity={e.opacity} fillRule={def.evenOdd ? 'evenodd' : 'nonzero'} />;
@@ -131,14 +138,16 @@ export function PageAddonsSection({ spreadIndex }: { spreadIndex: number }) {
   const [target, setTarget] = useState<Target>('new');
   const effective: Target = (target === 'left' && !canLeft) || (target === 'right' && !canRight) ? 'new' : target;
   const dates = useMemo(() => chapterDateRanges(doc, assets), [doc, assets]);
+  const allAssets = useEditor((s) => s.assets);
+  const days = useMemo(() => photoDays(allAssets.filter((a) => !a.excluded && !a.missing)), [doc, allAssets]);
 
   const add = (a: PageAddon) => {
     const st = useEditor.getState();
     if (effective === 'new') {
       // Front matter reads best on the left of a new spread; most others on the right.
       const side = a.category === 'front' || a.id === 'notes' ? 'left' : 'right';
-      if (st.run(`Add page: ${a.name}`, (d) => insertAddonSpread(d, spreadIndex, { [side]: a.id }, { chapterDates: dates }))) st.goToSpread(Math.min(spreadIndex + 1, n - 1));
-    } else st.run(`Page: ${a.name}`, (d) => applyPageAddon(d, spreadIndex, effective, a.id, { chapterDates: dates }));
+      if (st.run(`Add page: ${a.name}`, (d) => insertAddonSpread(d, spreadIndex, { [side]: a.id }, { chapterDates: dates, photoDays: days }))) st.goToSpread(Math.min(spreadIndex + 1, n - 1));
+    } else st.run(`Page: ${a.name}`, (d) => applyPageAddon(d, spreadIndex, effective, a.id, { chapterDates: dates, photoDays: days }));
   };
 
   return (

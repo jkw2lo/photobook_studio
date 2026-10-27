@@ -28,3 +28,6 @@ export * from './posterTemplates';
 export * from './pageAddons';
 export * from './bookTemplates';
 export * from './selection';
+export * from './cleanup';
+export * from './spacing';
+export * from './calendar';

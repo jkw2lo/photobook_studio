@@ -5,6 +5,7 @@ import { CommandError } from './commands';
 import { dateRangeOf } from './curation';
 import { makeImageElement, makeShapeElement, makeTextElement, pageOfElement } from './layout';
 import { shapeDef } from './shapes';
+import { MONTHS, makeCalendar } from './calendar';
 import { mixColor, roleSizePt } from './typography';
 import { MM_PER_PT } from './units';
 
@@ -20,7 +21,9 @@ type Tone = 'text' | 'muted' | 'accent';
 type Item =
   | { kind: 'text'; role: TextRole; text: string; x: number; y: number; w: number; h: number; align?: 'left' | 'center' | 'right'; scale?: number; italic?: boolean; lineHeight?: number; auto?: TextElement['auto'] }
   | { kind: 'shape'; shape: string; x: number; y: number; w: number; h: number; tone?: Tone; keepAspect?: boolean }
-  | { kind: 'frame'; x: number; y: number; w: number; h: number };
+  | { kind: 'frame'; x: number; y: number; w: number; h: number }
+  /** A calendar of the photos' days ('range': the trip's weeks; 'year': twelve small months). */
+  | { kind: 'calendar'; mode: 'range' | 'year'; x: number; y: number; w: number; h: number };
 
 export interface PageAddon {
   id: string;
@@ -105,6 +108,14 @@ export const PAGE_ADDONS: PageAddon[] = [
     items: [S('i-pin', 0.45, 0.28, 0.1, 0.1, { keepAspect: true, tone: 'accent' }), T('heading', 'Chapter title', 0.05, 0.41, 0.9, 0.12), T('subtitle', '', 0.1, 0.55, 0.8, 0.05)],
   },
   {
+    id: 'trip-calendar', name: 'Trip calendar', category: 'chapter', description: 'The weeks of the trip with the days you took photos marked.',
+    items: [T('heading', 'When we went', 0.1, 0.1, 0.8, 0.09), { kind: 'calendar', mode: 'range', x: 0.12, y: 0.26, w: 0.76, h: 0.5 }, T('caption', '{subtitle}', 0.1, 0.84, 0.8, 0.05)],
+  },
+  {
+    id: 'year-glance', name: 'Year at a glance', category: 'back', description: 'Twelve small months, with every day you took photos marked.',
+    items: [T('heading', '{year} at a glance', 0.05, 0.03, 0.9, 0.08), { kind: 'calendar', mode: 'year', x: 0, y: 0.14, w: 1, h: 0.84 }],
+  },
+  {
     id: 'itinerary', name: 'Itinerary', category: 'chapter', description: 'Each chapter with its dates, like a travel plan.',
     items: [T('heading', 'Itinerary', 0.1, 0.08, 0.8, 0.09), S('dots', 0.3, 0.185, 0.4, 0.008), T('body', '{itinerary}', 0.12, 0.24, 0.76, 0.68, { align: 'left' })],
   },
@@ -186,6 +197,40 @@ export function refreshContents(doc: BookDocument): BookDocument {
 
 // ---- building pages -------------------------------------------------------------------------------
 
+/**
+ * Calendars for an add-on: one for the trip's weeks, centred in its box; or a 3 × 4 grid of the
+ * months of the year with the most photos.
+ */
+export function calendarItems(doc: BookDocument, r: Rect, mode: 'range' | 'year', days: string[]): Element[] {
+  if (mode === 'range') {
+    const cal = makeCalendar(doc, { x: r.x, y: r.y, w: r.w }, days, { mode: 'range' });
+    // Fit the height: shrink the width if the calendar would be taller than the box.
+    const k = Math.min(1, r.h / cal.heightMm);
+    const w = cal.widthMm * k;
+    return [{ ...cal, widthMm: w, heightMm: cal.heightMm * k, xMm: r.x + (r.w - w) / 2, yMm: r.y + (r.h - cal.heightMm * k) / 2 }];
+  }
+  const year = yearOf(days) ?? String(new Date().getFullYear());
+  const cols = 3;
+  const rows = 4;
+  const gap = Math.min(r.w, r.h) * 0.04;
+  const cw = (r.w - gap * (cols - 1)) / cols;
+  const ch = (r.h - gap * (rows - 1)) / rows;
+  return Array.from({ length: 12 }, (_, m) => {
+    const start = `${year}-${String(m + 1).padStart(2, '0')}-01`;
+    const cal = makeCalendar(doc, { x: 0, y: 0, w: cw }, days.filter((d) => d.startsWith(start.slice(0, 7))), { mode: 'month', start });
+    const k = Math.min(1, ch / cal.heightMm);
+    const w = cw * k;
+    return { ...cal, title: MONTHS[m], widthMm: w, heightMm: cal.heightMm * k, xMm: r.x + (m % cols) * (cw + gap) + (cw - w) / 2, yMm: r.y + Math.floor(m / cols) * (ch + gap) };
+  });
+}
+
+/** The year most of these days fall in. */
+export function yearOf(days: string[]): string | undefined {
+  const counts = new Map<string, number>();
+  for (const d of days) counts.set(d.slice(0, 4), (counts.get(d.slice(0, 4)) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0];
+}
+
 /** The year in the book's dates (its subtitle), or this year. */
 function bookYear(doc: BookDocument): string {
   const m = `${doc.subtitle} ${doc.title}`.match(/\b(19|20)\d{2}\b/);
@@ -212,6 +257,8 @@ function itinerary(doc: BookDocument, dates: (chapterId: string) => string): str
 }
 
 export interface AddonContext {
+  /** Days with photos ('YYYY-MM-DD'), for calendars. */
+  photoDays?: string[];
   /** Chapter title / subtitle for openers (defaults to placeholders). */
   heading?: string;
   subtitle?: string;
@@ -229,12 +276,16 @@ export function addonElements(doc: BookDocument, addon: PageAddon, side: PageSid
     s
       .replace(/\{title\}/g, doc.title)
       .replace(/\{subtitle\}/g, doc.subtitle || '')
-      .replace(/\{year\}/g, bookYear(doc))
+      .replace(/\{year\}/g, yearOf(ctx.photoDays ?? []) ?? bookYear(doc))
       .replace(/\{itinerary\}/g, itinerary(doc, ctx.chapterDates ?? (() => '')));
   const out: Element[] = [];
   for (const item of addon.items) {
     if (item.kind === 'frame') {
       out.push(makeImageElement(doc, null, box(item)));
+      continue;
+    }
+    if (item.kind === 'calendar') {
+      out.push(...calendarItems(doc, box(item), item.mode, ctx.photoDays ?? []));
       continue;
     }
     if (item.kind === 'shape') {

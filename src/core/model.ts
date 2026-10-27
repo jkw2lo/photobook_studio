@@ -170,7 +170,15 @@ export interface ImageElement extends ElementBase {
  */
 export type PhotoMask =
   | { kind: 'shape'; shape: string }
-  | { kind: 'text'; text: string; fontFamily: string; fontWeight: number; italic?: boolean; uppercase?: boolean; letterSpacingEm?: number; d: string; aspect: number };
+  | { kind: 'text'; text: string; fontFamily: string; fontWeight: number; italic?: boolean; uppercase?: boolean; letterSpacingEm?: number; d: string; aspect: number }
+  | ({ kind: 'outline' } & PlaceOutline);
+
+/** A country or territory outline, 100 units tall (`aspect` = width / height). */
+export interface PlaceOutline {
+  name: string;
+  d: string;
+  aspect: number;
+}
 
 /** Two-colour linear gradient. Angle as in CSS: 0 = bottom → top, 90 = left → right. */
 export interface Gradient {
@@ -225,12 +233,38 @@ export interface ShapeElement extends ElementBase {
   opacity: number;
   /** Id in the shape library (shapes, banners, icons, lines). Missing = a plain rectangle. */
   shape?: string;
+  /** A place's outline (map sticker) instead of a library shape; fitted without distortion. */
+  outline?: PlaceOutline;
   gradient?: Gradient;
   strokeColor?: string;
   strokeWidthMm?: number;
 }
 
-export type Element = ImageElement | TextElement | ShapeElement;
+/** A calendar: the weeks of a trip, or a whole month, with the photo days marked. */
+export interface CalendarElement extends ElementBase {
+  type: 'calendar';
+  /** 'range': only the weeks from `start` to `end`; 'month': the whole month of `start`. */
+  mode: 'range' | 'month';
+  /** 'YYYY-MM-DD'. */
+  start: string;
+  end: string;
+  /** Marked days ('YYYY-MM-DD'), usually the days photos were taken. */
+  highlights: string[];
+  /** 0 = Sunday, 1 = Monday. */
+  weekStart: 0 | 1;
+  showTitle: boolean;
+  showWeekdays: boolean;
+  /** Replaces the automatic title ("14 – 23 March 2026"). */
+  title?: string;
+  fontFamily: string;
+  fontWeight: number;
+  color: string;
+  /** Colour of the marks. */
+  accent: string;
+  markStyle: 'circle' | 'square' | 'underline';
+}
+
+export type Element = ImageElement | TextElement | ShapeElement | CalendarElement;
 
 export interface BackgroundImage {
   assetId: ID;

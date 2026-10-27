@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  GRADE_PRESETS, MM_PER_PT, PHOTO_SHAPES, autoAdjust, SHAPES, SHAPE_CATEGORIES, addShapeAt, fontFamily, gradeColor, gradeFromPreset, isNeutralGrade, nearestWeight, scalePath,
+  GRADE_PRESETS, MM_PER_PT, PHOTO_SHAPES, addCalendarAt, addElement, fitPath, makeShapeElement, type PlaceOutline, autoAdjust, photoDays, SHAPES, SHAPE_CATEGORIES, addShapeAt, fontFamily, gradeColor, gradeFromPreset, isNeutralGrade, nearestWeight, scalePath,
   updateElement, weightName, NO_GRADE, type BookDocument, type ColorGrade, type Gradient, type ImageElement, type ShapeCategory, type ShapeElement,
   type TextElement,
 } from '../../core';
@@ -10,17 +10,26 @@ import { ColorInput } from './ColorInput';
 import { FontPicker } from './FontPicker';
 import { Icon } from './Icon';
 import { NumField } from './Inspector';
+import { PlacePicker } from './PlacePicker';
 
 // Design tools: the elements palette (shapes, banners, lines, icons), shape settings, photo
 // cut-outs, text effects and the colour grade.
 
 /** A library shape drawn small, for pickers. */
-export function ShapeGlyph({ id, d, evenOdd, size = 26 }: { id?: string; d?: string; evenOdd?: boolean; size?: number }) {
+export function ShapeGlyph({ id, d, evenOdd, size = 26, aspect }: { id?: string; d?: string; evenOdd?: boolean; size?: number; aspect?: number }) {
+  // A raw outline (map) is drawn in a (100 × aspect) × 100 box and fitted without distortion.
+  if (d && aspect) {
+    return (
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
+        <path d={fitPath(d, 100 * aspect, 100, size, size)} fill="currentColor" />
+      </svg>
+    );
+  }
   const def = SHAPES.find((s) => s.id === id);
   const path = d ?? def?.d ?? '';
-  const aspect = def ? Math.min(3, Math.max(0.5, def.aspect)) : 1;
-  const w = aspect >= 1 ? size : size * aspect;
-  const h = aspect >= 1 ? size / aspect : size;
+  const ratio = def ? Math.min(3, Math.max(0.5, def.aspect)) : 1;
+  const w = ratio >= 1 ? size : size * ratio;
+  const h = ratio >= 1 ? size / ratio : size;
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
       <g transform={`translate(${(size - w) / 2} ${(size - h) / 2})`}>
@@ -33,7 +42,38 @@ export function ShapeGlyph({ id, d, evenOdd, size = 26 }: { id?: string; d?: str
 // ---- elements palette ------------------------------------------------------------------------------
 
 export function ElementsPalette({ surfaceId, at }: { surfaceId: string; at: { x: number; y: number } }) {
-  const [cat, setCat] = useState<ShapeCategory>('shape');
+  const [cat, setCat] = useState<ShapeCategory | 'calendar' | 'map'>('shape');
+  const [mapFill, setMapFill] = useState<'outline' | 'filled'>('outline');
+  const addMap = (o: PlaceOutline) => {
+    const st = useEditor.getState();
+    const d = st.doc!;
+    const short = Math.min(d.settings.trimWidthMm, d.settings.trimHeightMm);
+    const w0 = short * 0.45;
+    const w = o.aspect >= 1 ? w0 : w0 * o.aspect;
+    const h = w / o.aspect;
+    const surface = d.cover?.id === surfaceId ? d.cover : d.spreads.find((sp) => sp.id === surfaceId);
+    const paper = surface?.background ?? d.style.background;
+    const dark = parseInt(paper.slice(1, 3), 16) * 0.2126 + parseInt(paper.slice(3, 5), 16) * 0.7152 + parseInt(paper.slice(5, 7), 16) * 0.0722 < 115;
+    const ink = dark ? '#f5f2ea' : d.style.textColor;
+    let id = '';
+    st.run(`Add map: ${o.name}`, (doc) => {
+      const el = { ...makeShapeElement({ x: at.x - w / 2, y: at.y - h / 2, w, h }, mapFill === 'filled' ? ink : 'none'), outline: o, ...(mapFill === 'outline' ? { strokeColor: ink, strokeWidthMm: Math.max(0.5, short * 0.004) } : {}) };
+      id = el.id;
+      return addElement(doc, surfaceId, el);
+    });
+    if (id) st.select({ spreadId: surfaceId, elementId: id });
+  };
+  const addCalendar = (mode: 'range' | 'month') => {
+    const st = useEditor.getState();
+    const days = photoDays(st.assets.filter((a) => !a.excluded && !a.missing));
+    let id = '';
+    st.run(mode === 'range' ? 'Add trip calendar' : 'Add month calendar', (d) => {
+      const r = addCalendarAt(d, surfaceId, at.x, at.y, days, { mode });
+      id = r.newId;
+      return r.doc;
+    });
+    if (id) st.select({ spreadId: surfaceId, elementId: id });
+  };
   const add = (shapeId: string, name: string) => {
     let id = '';
     // Each new element lands a little offset from the last, so they don't stack exactly.
@@ -52,7 +92,27 @@ export function ElementsPalette({ surfaceId, at }: { surfaceId: string; at: { x:
         {SHAPE_CATEGORIES.map((c) => (
           <button key={c.id} className={cat === c.id ? 'on' : ''} onClick={() => setCat(c.id)}>{c.label}</button>
         ))}
+        <button className={cat === 'calendar' ? 'on' : ''} onClick={() => setCat('calendar')}>Calendar</button>
+        <button className={cat === 'map' ? 'on' : ''} onClick={() => setCat('map')}>Map</button>
       </div>
+      {cat === 'map' ? (
+        <>
+          <div className="seg seg-wide">
+            <button className={mapFill === 'outline' ? 'on' : ''} onClick={() => setMapFill('outline')}>Outline</button>
+            <button className={mapFill === 'filled' ? 'on' : ''} onClick={() => setMapFill('filled')}>Filled</button>
+          </div>
+          <PlacePicker action="add" onPick={addMap} />
+          <p className="muted small">A place’s outline as a sticker — lay it over photos from there. To fill the shape with a photo, select the photo and use Cut-out → Map.</p>
+        </>
+      ) : cat === 'calendar' ? (
+        <>
+          <div className="btn-grid">
+            <button className="btn btn-small" onClick={() => addCalendar('range')} title="Only the weeks of the trip, photo days marked"><Icon name="grid" /> Trip weeks</button>
+            <button className="btn btn-small" onClick={() => addCalendar('month')} title="The whole month, photo days marked"><Icon name="grid" /> Whole month</button>
+          </div>
+          <p className="muted small">Dates and marks come from your photos; change them in the calendar’s panel.</p>
+        </>
+      ) : (
       <div className="palette-grid">
         {SHAPES.filter((s) => s.category === cat).map((s) => (
           <button key={s.id} className="palette-item" title={s.name} aria-label={`Add ${s.name}`} onClick={() => add(s.id, s.name)}>
@@ -60,7 +120,8 @@ export function ElementsPalette({ surfaceId, at }: { surfaceId: string; at: { x:
           </button>
         ))}
       </div>
-      <p className="muted small">{cat === 'banner' ? 'Banners come with a text box on top.' : 'Click to add; drag and resize it on the page. Text and shapes stay put when you Arrange.'}</p>
+      )}
+      {cat !== 'calendar' && cat !== 'map' && <p className="muted small">{cat === 'banner' ? 'Banners come with a text box on top.' : 'Click to add; drag and resize it on the page. Text and shapes stay put when you Arrange.'}</p>}
     </div>
   );
 }
@@ -103,19 +164,19 @@ export function ShapeControls({ el, spreadId }: { el: ShapeElement; spreadId: st
   const { run, gesture, endGesture } = useEditor.getState();
   const upd = (label: string, patch: Partial<ShapeElement>) => run(label, (d) => updateElement(d, spreadId, el.id, patch));
   const [picking, setPicking] = useState(false);
-  const current = SHAPES.find((s) => s.id === (el.shape ?? 'rect'));
+  const current = el.outline ? undefined : SHAPES.find((s) => s.id === (el.shape ?? 'rect'));
   return (
     <div className="stack">
       <div className="field">
         <span>Shape</span>
         <button className="btn btn-small shape-current" onClick={() => setPicking(!picking)}>
-          <ShapeGlyph id={current?.id} size={20} /> {current?.name ?? 'Rectangle'} <Icon name="down" size={12} />
+          {el.outline ? <ShapeGlyph d={el.outline.d} aspect={el.outline.aspect} size={20} /> : <ShapeGlyph id={current?.id} size={20} />} {el.outline ? `Map · ${el.outline.name}` : current?.name ?? 'Rectangle'} <Icon name="down" size={12} />
         </button>
       </div>
       {picking && (
         <div className="palette-grid">
           {SHAPES.map((s) => (
-            <button key={s.id} className={`palette-item ${s.id === (el.shape ?? 'rect') ? 'on' : ''}`} title={s.name} onClick={() => { upd(`Shape: ${s.name}`, { shape: s.id }); setPicking(false); }}>
+            <button key={s.id} className={`palette-item ${s.id === (el.shape ?? 'rect') ? 'on' : ''}`} title={s.name} onClick={() => { upd(`Shape: ${s.name}`, { shape: s.id, outline: undefined }); setPicking(false); }}>
               <ShapeGlyph id={s.id} />
             </button>
           ))}
@@ -124,13 +185,14 @@ export function ShapeControls({ el, spreadId }: { el: ShapeElement; spreadId: st
       <div className="field">
         <span>Fill</span>
         <div className="seg seg-wide">
-          <button className={!el.gradient ? 'on' : ''} onClick={() => upd('Solid fill', { gradient: undefined })}>Solid</button>
-          <button className={el.gradient ? 'on' : ''} onClick={() => !el.gradient && upd('Gradient fill', { gradient: defaultGradient(doc, el.fill) })}>Gradient</button>
+          <button className={!el.gradient && el.fill === 'none' ? 'on' : ''} onClick={() => upd('No fill', { gradient: undefined, fill: 'none', strokeWidthMm: el.strokeWidthMm || 0.6, strokeColor: el.strokeColor ?? doc.style.textColor })}>None</button>
+          <button className={!el.gradient && el.fill !== 'none' ? 'on' : ''} onClick={() => upd('Solid fill', { gradient: undefined, fill: el.fill === 'none' ? el.strokeColor ?? doc.style.textColor : el.fill })}>Solid</button>
+          <button className={el.gradient ? 'on' : ''} onClick={() => !el.gradient && upd('Gradient fill', { gradient: defaultGradient(doc, el.fill === 'none' ? doc.style.textColor : el.fill) })}>Gradient</button>
         </div>
       </div>
       {el.gradient ? (
         <GradientFields value={el.gradient} label="Shape" apply={(d, g) => updateElement(d, spreadId, el.id, { gradient: g })} />
-      ) : (
+      ) : el.fill === 'none' ? null : (
         <label className="field">
           <span>Colour</span>
           <ColorInput value={el.fill} label="Fill colour" apply={(d, c) => updateElement(d, spreadId, el.id, { fill: c })} />
@@ -167,7 +229,7 @@ export function PhotoShapeControls({ el, spreadId }: { el: ImageElement; spreadI
   const [text, setText] = useState(textMask?.text ?? doc.title.split(' ')[0]?.toUpperCase() ?? 'LOVE');
   const [family, setFamily] = useState(textMask?.fontFamily ?? 'Abril Fatface');
   const [weight, setWeight] = useState(textMask?.fontWeight ?? 400);
-  const [mode, setMode] = useState<'shape' | 'text'>(textMask ? 'text' : 'shape');
+  const [mode, setMode] = useState<'shape' | 'text' | 'map'>(textMask ? 'text' : el.mask?.kind === 'outline' ? 'map' : 'shape');
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (textMask) {
@@ -197,8 +259,19 @@ export function PhotoShapeControls({ el, spreadId }: { el: ImageElement; spreadI
       <div className="seg seg-wide">
         <button className={mode === 'shape' ? 'on' : ''} onClick={() => setMode('shape')}>Shape</button>
         <button className={mode === 'text' ? 'on' : ''} onClick={() => setMode('text')}>Text</button>
+        <button className={mode === 'map' ? 'on' : ''} onClick={() => setMode('map')}>Map</button>
       </div>
-      {mode === 'shape' ? (
+      {mode === 'map' ? (
+        <>
+          {el.mask?.kind === 'outline' && (
+            <div className="row between">
+              <span className="small">Cut to {el.mask.name}</span>
+              <button className="link small" onClick={() => run('Remove map cut-out', (d) => updateElement(d, spreadId, el.id, { mask: undefined }))}>Remove</button>
+            </div>
+          )}
+          <PlacePicker action="cut" onPick={(o) => run(`Cut photo to ${o.name}`, (d) => updateElement(d, spreadId, el.id, { mask: { kind: 'outline', ...o }, ...keep }))} />
+        </>
+      ) : mode === 'shape' ? (
         <div className="palette-grid">
           <button className={`palette-item ${!el.mask ? 'on' : ''}`} title="No shape" onClick={() => run('Remove photo shape', (d) => updateElement(d, spreadId, el.id, { mask: undefined }))}>
             <Icon name="x" />

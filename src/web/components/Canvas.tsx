@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   COVER_INDEX, addPhotoAt, defaultCrop, effectiveDpi, elementBounds, elementPlacement, geometryFor, innerBox, panCrop, toInnerBox, zoomCropAt,
-  elementsInRect, expandGroups, pageContentRect, pointInElement, setFramePhoto, unionBounds, surfaceAt, swapFramePhotos, updateElement, type BookDocument,
+  elementsInRect, expandGroups, sizeSnap, spacingSnap, type SpacingMark, pageContentRect, pointInElement, setFramePhoto, unionBounds, surfaceAt, swapFramePhotos, updateElement, type BookDocument,
   type Element, type ImageElement, type PhotoAsset, type SurfaceGeometry, MM_PER_PT,
 } from '../../core';
 import { thumbUrl } from '../api';
@@ -65,6 +65,9 @@ export function Canvas() {
   const [swapDrag, setSwapDrag] = useState<{ client: Pt; target: string | null } | null>(null);
   const [menu, setMenu] = useState<MenuTarget | null>(null);
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  /** Equal-gap markers and size matches shown while dragging. */
+  const [marks, setMarks] = useState<SpacingMark[]>([]);
+  const [sizeMatch, setSizeMatch] = useState<{ w: { x: number; y: number; w: number; h: number } | null; h: { x: number; y: number; w: number; h: number } | null }>({ w: null, h: null });
   const multi = useEditor((s) => s.multi);
   const wheelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Last pointer position in mm during a gesture (where a selection box ends). */
@@ -164,6 +167,25 @@ export function Canvas() {
       if (Math.abs(d) <= threshold && (!best || Math.abs(d) < Math.abs(best.d))) best = { d, at: t };
     }
     return best;
+  };
+
+  /** Equal-spacing snap on the axes that had no edge snap; shows the matching gaps. */
+  const spacing = (r: { x: number; y: number; w: number; h: number }, exclude: Set<string>, threshold: number, onX: boolean, onY: boolean) => {
+    const others = surface.elements.filter((x) => !exclude.has(x.id)).map(elementBounds);
+    const sp = spacingSnap(r, others, threshold);
+    const marks: SpacingMark[] = [];
+    let dx = 0;
+    let dy = 0;
+    if (onX && sp.x) {
+      dx = sp.x.d;
+      marks.push(...sp.x.marks);
+    }
+    if (onY && sp.y) {
+      dy = sp.y.d;
+      marks.push(...sp.y.marks);
+    }
+    setMarks((prev) => (prev.length === 0 && marks.length === 0 ? prev : marks));
+    return { dx, dy };
   };
 
   // ---- pointer handling -------------------------------------------------------------------
@@ -273,6 +295,9 @@ export function Canvas() {
           dy += sy.d;
           lines.push({ axis: 'y', at: sy.at });
         }
+        const sp = spacing(unionBounds(movable.map((o) => ({ ...o, xMm: o.xMm + dx, yMm: o.yMm + dy }))), new Set(gst.origs.map((o) => o.id)), threshold, !sx, !sy);
+        dx += sp.dx;
+        dy += sp.dy;
       }
       setGuides((prev) => (sameGuides(prev, lines) ? prev : lines));
       gesture((d) => movable.reduce((acc, o) => updateElement(acc, sid, o.id, { xMm: o.xMm + dx, yMm: o.yMm + dy }), d));
@@ -307,6 +332,10 @@ export function Canvas() {
           dy += sy.d;
           lines.push({ axis: 'y', at: sy.at });
         }
+        // No edge to snap to on an axis: try equal spacing with the neighbours.
+        const sp = spacing(elementBounds({ ...gst.orig, xMm: gst.orig.xMm + dx, yMm: gst.orig.yMm + dy }), new Set([id]), threshold, !sx, !sy);
+        dx += sp.dx;
+        dy += sp.dy;
       }
       setGuides((prev) => (sameGuides(prev, lines) ? prev : lines));
       gesture((d) => updateElement(d, sid, id, { xMm: gst.orig.xMm + dx, yMm: gst.orig.yMm + dy }));
@@ -331,6 +360,15 @@ export function Canvas() {
       }
       w = Math.max(5, w);
       h = Math.max(5, h);
+      // Match another item's width or height (Alt turns snapping off).
+      setMarks([]);
+      if (!altKey && !(shiftKey && gst.handle.length === 2)) {
+        const others = surface.elements.filter((x) => x.id !== o.id).map(elementBounds);
+        const m = sizeSnap(w, h, others, 5 / scale);
+        if (gst.handle.includes('e') || gst.handle.includes('w')) w = m.w;
+        if (gst.handle.includes('n') || gst.handle.includes('s')) h = m.h;
+        setSizeMatch({ w: m.matchW && (gst.handle.includes('e') || gst.handle.includes('w')) ? m.matchW : null, h: m.matchH && (gst.handle.includes('n') || gst.handle.includes('s')) ? m.matchH : null });
+      }
       let ox = 0;
       let oy = 0;
       if (gst.handle.includes('e')) ox = (w - o.widthMm) / 2;
@@ -403,6 +441,8 @@ export function Canvas() {
     const gst = gestureRef.current;
     gestureRef.current = null;
     setGuides([]);
+    setMarks([]);
+    setSizeMatch({ w: null, h: null });
     if (!gst) return;
     if (gst.kind === 'marquee') {
       const r = marqueeRef(gst, pendingEnd.current);
@@ -528,6 +568,9 @@ export function Canvas() {
             {guides.map((gl, i) =>
               gl.axis === 'x' ? <div key={i} className="snap-line snap-x" style={{ left: (gl.at + b) * scale }} /> : <div key={i} className="snap-line snap-y" style={{ top: (gl.at + b) * scale }} />,
             )}
+            {marks.map((m, i) => <GapMark key={i} m={m} scale={scale} offset={b} />)}
+            {sizeMatch.w && <div className="size-match" style={{ left: (sizeMatch.w.x + b) * scale, top: (sizeMatch.w.y + b) * scale - 10, width: sizeMatch.w.w * scale }}>=</div>}
+            {sizeMatch.h && <div className="size-match size-match-v" style={{ left: (sizeMatch.h.x + b) * scale - 12, top: (sizeMatch.h.y + b) * scale, height: sizeMatch.h.h * scale }}>=</div>}
             {hovered && !gestureRef.current && <Outline el={hovered} scale={scale} offset={b} className="hover-outline" />}
             {dropTarget && <Outline el={surface.elements.find((x) => x.id === dropTarget)!} scale={scale} offset={b} className="drop-outline" />}
             {swapTarget && <Outline el={swapTarget} scale={scale} offset={b} className="drop-outline" />}
@@ -587,6 +630,20 @@ export function Canvas() {
       {swapSource && <div className="canvas-hint">Click another photo to swap with — on any spread. Esc to cancel.</div>}
       {cropEl && cropAsset && <CropToolbar el={cropEl} asset={cropAsset} surfaceId={surface.id} />}
       {menu && <ContextMenu target={menu} onClose={() => setMenu(null)} onEditText={(id) => setEditingText(id)} />}
+    </div>
+  );
+}
+
+/** A measured gap: a thin line with ticks at both ends and its length in mm. */
+function GapMark({ m, scale, offset }: { m: SpacingMark; scale: number; offset: number }) {
+  const len = m.to - m.from;
+  if (len <= 0) return null;
+  const style: CSSProperties = m.axis === 'x'
+    ? { left: (m.from + offset) * scale, top: (m.at + offset) * scale, width: len * scale }
+    : { left: (m.at + offset) * scale, top: (m.from + offset) * scale, height: len * scale };
+  return (
+    <div className={`gap-mark gap-${m.axis}`} style={style}>
+      <span>{len.toFixed(1)}</span>
     </div>
   );
 }

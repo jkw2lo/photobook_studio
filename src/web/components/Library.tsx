@@ -5,6 +5,7 @@ import { useEditor } from '../store';
 import { ASSET_MIME } from './Canvas';
 import { FolderPicker } from './FolderPicker';
 import { Icon } from './Icon';
+import { CleanupDialog } from './CleanupDialog';
 
 type Filter = 'all' | 'unused' | 'favorites' | 'hidden' | 'issues';
 
@@ -16,6 +17,7 @@ export function Library() {
   const projectId = useEditor((s) => s.projectId)!;
   const [filter, setFilter] = useState<Filter>('all');
   const [picker, setPicker] = useState<'import' | 'relink' | null>(null);
+  const [cleanup, setCleanup] = useState(false);
   const previewId = useEditor((s) => s.previewAssetId);
 
   const usage = useMemo(() => parseUsage(usageKey), [usageKey]);
@@ -52,9 +54,16 @@ export function Library() {
     <aside className="library">
       <div className="panel-head">
         <h2>Library</h2>
-        <button className="btn btn-small" onClick={() => setPicker('import')} disabled={!!running}>
-          <Icon name="plus" /> Import
-        </button>
+        <div className="row">
+          {assets.length > 1 && (
+            <button className="btn btn-small btn-ghost" onClick={() => setCleanup(true)} title="Review similar shots, blurry photos and duplicates">
+              <Icon name="sparkle" /> Clean up
+            </button>
+          )}
+          <button className="btn btn-small" onClick={() => setPicker('import')} disabled={!!running}>
+            <Icon name="plus" /> Import
+          </button>
+        </div>
       </div>
       {job && (
         <div className="import-progress">
@@ -94,6 +103,7 @@ export function Library() {
         </div>
       )}
       <PreviewPane usage={usage} />
+      {cleanup && <CleanupDialog usage={usage} onClose={() => setCleanup(false)} />}
       {picker && (
         <FolderPicker
           title={picker === 'import' ? 'Import photos from a folder' : 'Find missing originals'}

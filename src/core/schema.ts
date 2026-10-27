@@ -94,7 +94,7 @@ export function validateDocument(doc: Record<string, unknown>): BookDocument {
     for (const e of s.elements as Record<string, unknown>[]) {
       if (typeof e.id !== 'string' || ids.has(e.id)) fail('element ids must be unique strings');
       ids.add(e.id as string);
-      if (e.type !== 'image' && e.type !== 'text' && e.type !== 'shape') fail(`unknown element type ${String(e.type)}`);
+      if (e.type !== 'image' && e.type !== 'text' && e.type !== 'shape' && e.type !== 'calendar') fail(`unknown element type ${String(e.type)}`);
       for (const k of ['xMm', 'yMm', 'widthMm', 'heightMm', 'rotationDeg']) {
         if (typeof e[k] !== 'number' || !Number.isFinite(e[k])) fail(`element ${e.id} has invalid ${k}`);
       }

@@ -1,8 +1,8 @@
 import { memo, useId, useMemo, type CSSProperties, type ReactNode } from 'react';
 import {
   COVER_INDEX, archGeometry, backgroundFrame, elementPlacement, geometryFor, gradeChainSvg, gradeSvgMatrix, gradientLine, isNeutralGrade, maskPath, pageNumberRect,
-  roleStyle, scalePath, shapeDef, type BookSettings, type BookStyle, type ColorGrade, type Element, type Gradient, type ImageElement, type PhotoAsset,
-  type ShapeElement, type Spread, type TextElement, MM_PER_PT,
+  roleStyle, shapePath, type BookSettings, type BookStyle, type ColorGrade, type Element, type Gradient, type ImageElement, type PhotoAsset,
+  type ShapeElement, type Spread, type TextElement, type CalendarElement, calendarLayout, MM_PER_PT,
 } from '../../core';
 import { thumbUrl } from '../api';
 
@@ -100,8 +100,36 @@ export const ElementView = memo(function ElementView({ el, scale, offset, asset,
   };
   if (el.type === 'image') return <ImageView el={el} scale={scale} style={style} asset={asset} thumbSize={thumbSize} filter={filter} grade={grade} />;
   if (el.type === 'shape') return <ShapeView el={el} scale={scale} style={style} />;
+  if (el.type === 'calendar') return <CalendarView el={el} scale={scale} style={style} />;
   return <TextView el={el} scale={scale} style={style} />;
 });
+
+/** A calendar: same layout as the PDF (core/calendar), drawn in SVG. */
+function CalendarView({ el, scale, style }: { el: CalendarElement; scale: number; style: CSSProperties }) {
+  const lay = calendarLayout(el);
+  const k = scale;
+  return (
+    <div className="el el-calendar" style={style}>
+      <svg width={el.widthMm * k} height={el.heightMm * k} style={{ overflow: 'visible', display: 'block' }} fontFamily={`'${el.fontFamily}'`} fontWeight={el.fontWeight}>
+        {lay.cells.map((c, i) => {
+          const cx = (c.x + c.w / 2) * k;
+          const cy = (c.y + c.h / 2) * k;
+          const size = (c.kind === 'title' ? lay.titleMm : c.kind === 'weekday' ? lay.weekdayMm : lay.dayMm) * k;
+          const r = Math.min(c.w, c.h) * 0.42 * k;
+          const markOn = c.marked && el.markStyle !== 'underline';
+          return (
+            <g key={i} opacity={c.faint ? 0.32 : c.kind === 'weekday' ? 0.6 : 1}>
+              {c.marked && el.markStyle === 'circle' && <circle cx={cx} cy={cy} r={r} fill={el.accent} />}
+              {c.marked && el.markStyle === 'square' && <rect x={cx - r} y={cy - r} width={2 * r} height={2 * r} rx={r * 0.25} fill={el.accent} />}
+              {c.marked && el.markStyle === 'underline' && <rect x={cx - r * 0.7} y={cy + size * 0.55} width={r * 1.4} height={Math.max(1, size * 0.12)} fill={el.accent} />}
+              <text x={cx} y={cy + size * 0.35} fontSize={c.text.length > 3 && c.kind === 'day' ? size * 0.72 : size} textAnchor="middle" fill={markOn ? '#ffffff' : el.color}>{c.text}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
 
 function ImageView({ el, scale, style, asset, thumbSize, filter, grade }: { el: ImageElement; scale: number; style: CSSProperties; asset?: PhotoAsset; thumbSize: 's' | 'm'; filter?: string; grade?: ColorGrade }) {
   // A photo with its own adjustments gets its own filter: its adjustment, then the document's grade.
@@ -164,14 +192,14 @@ function ShapeView({ el, scale, style }: { el: ShapeElement; scale: number; styl
   const gid = `sg${useId().replace(/:/g, '')}`;
   const w = el.widthMm * scale;
   const h = el.heightMm * scale;
-  if (!el.shape && !el.gradient && !el.strokeWidthMm) return <div className="el el-shape" style={{ ...style, background: el.fill, opacity: el.opacity }} />;
-  const def = shapeDef(el.shape);
+  if (!el.shape && !el.outline && !el.gradient && !el.strokeWidthMm && el.fill !== 'none') return <div className="el el-shape" style={{ ...style, background: el.fill, opacity: el.opacity }} />;
+  const path = shapePath(el, w, h);
   return (
     <div className="el el-shape" style={{ ...style, opacity: el.opacity }}>
       <svg width={w} height={h} style={{ overflow: 'visible', display: 'block' }}>
         {el.gradient && <defs><GradientDef id={gid} gradient={el.gradient} w={w} h={h} /></defs>}
         <path
-          d={scalePath(def.d, w, h)} fillRule={def.evenOdd ? 'evenodd' : 'nonzero'} fill={el.gradient ? `url(#${gid})` : el.fill}
+          d={path.d} fillRule={path.evenOdd ? 'evenodd' : 'nonzero'} fill={el.gradient ? `url(#${gid})` : el.fill}
           stroke={el.strokeWidthMm ? el.strokeColor ?? '#000000' : undefined} strokeWidth={el.strokeWidthMm ? el.strokeWidthMm * scale : undefined} strokeLinejoin="round"
         />
       </svg>

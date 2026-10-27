@@ -4,6 +4,7 @@ import { duplicate, group, remove, toggleLock, togglePin, ungroup } from '../ele
 import { retrySave, selectedElement, selectedIds, useEditor } from '../store';
 import { Canvas } from './Canvas';
 import { ExportDialog } from './ExportDialog';
+import { FlipPreview } from './FlipPreview';
 import { Icon } from './Icon';
 import { Inspector } from './Inspector';
 import { Library } from './Library';
@@ -37,7 +38,7 @@ export function Editor({ projectId }: { projectId: string }) {
   const loaded = useEditor((s) => !!s.doc);
   const loadError = useEditor((s) => s.loadError);
   const view = useEditor((s) => s.view);
-  const [dialog, setDialog] = useState<'export' | null>(null);
+  const [dialog, setDialog] = useState<'export' | 'preview' | null>(null);
   const issues = usePreflight();
   const counts = issueCounts(issues);
   const assetsCount = useEditor((s) => s.assets.length);
@@ -67,7 +68,7 @@ export function Editor({ projectId }: { projectId: string }) {
 
   return (
     <div className="editor">
-      <TopBar onGenerate={poster ? focusAutoCollage : focusAutoDraft} onExport={() => setDialog('export')} />
+      <TopBar onGenerate={poster ? focusAutoCollage : focusAutoDraft} onExport={() => setDialog('export')} onPreview={() => setDialog('preview')} />
       <div className="workspace">
         <Library />
         <main className="stage">
@@ -93,11 +94,12 @@ export function Editor({ projectId }: { projectId: string }) {
       </div>
       <Toasts />
       {dialog === 'export' && <ExportDialog onClose={() => setDialog(null)} />}
+      {dialog === 'preview' && <FlipPreview onClose={() => setDialog(null)} />}
     </div>
   );
 }
 
-function TopBar({ onGenerate, onExport }: { onGenerate: () => void; onExport: () => void }) {
+function TopBar({ onGenerate, onExport, onPreview }: { onGenerate: () => void; onExport: () => void; onPreview: () => void }) {
   const title = useEditor((s) => s.doc?.title ?? '');
   const poster = useEditor((s) => s.doc?.settings.product === 'poster');
   const past = useEditor((s) => s.past);
@@ -140,6 +142,7 @@ function TopBar({ onGenerate, onExport }: { onGenerate: () => void; onExport: ()
         )}
       </div>
       <div className="row">
+        <button className="btn" onClick={onPreview} title="Flip through it like a reader"><Icon name="eye" /> Preview</button>
         <button className="btn" onClick={onGenerate}><Icon name="sparkle" /> {poster ? 'Auto collage' : 'Auto draft'}</button>
         <button className="btn btn-primary" onClick={onExport}><Icon name="download" /> Export PDF</button>
       </div>

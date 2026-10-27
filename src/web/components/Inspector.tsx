@@ -15,6 +15,7 @@ import { FontPicker } from './FontPicker';
 import { PosterPanel } from './PosterUI';
 import { DraftPanel } from './DraftPanel';
 import { AddTextMenu } from './TypePanel';
+import { CalendarControls } from './CalendarControls';
 import { ElementsPalette, PhotoAdjustControls, PhotoShapeControls, ShapeControls, TextEffects } from './DesignPanel';
 import { PageAddonsSection } from './BookTemplates';
 import { AlignTools, LayersPanel, MultiPanel } from './SelectionPanel';
@@ -48,7 +49,7 @@ export function Inspector({ issueCount }: { issueCount: { error: number; warning
   return (
     <aside className="inspector">
       <div className="tabs">
-        <button className={tab === 'edit' ? 'on' : ''} onClick={() => setTab('edit')}>{multiCount > 1 ? 'Selection' : selected ? ({ image: 'Photo', text: 'Text', shape: 'Shape' } as const)[selected.type] : poster ? 'Poster' : onCover ? 'Cover' : 'Spread'}</button>
+        <button className={tab === 'edit' ? 'on' : ''} onClick={() => setTab('edit')}>{multiCount > 1 ? 'Selection' : selected ? ({ image: 'Photo', text: 'Text', shape: 'Shape', calendar: 'Calendar' } as const)[selected.type] : poster ? 'Poster' : onCover ? 'Cover' : 'Spread'}</button>
         {!poster && <button className={tab === 'draft' ? 'on' : ''} onClick={() => setTab('draft')}>Draft</button>}
         <button className={tab === 'book' ? 'on' : ''} onClick={() => setTab('book')}>{poster ? 'Print' : 'Book'}</button>
         <button className={tab === 'preflight' ? 'on' : ''} onClick={() => setTab('preflight')}>
@@ -140,7 +141,7 @@ function ElementPanel() {
   return (
     <div className="stack">
       <div className="row between">
-        <strong>{({ image: 'Photo frame', text: 'Text', shape: 'Colour panel' } as const)[el.type]}</strong>
+        <strong>{el.type === 'shape' && el.outline ? `Map · ${el.outline.name}` : ({ image: 'Photo frame', text: 'Text', shape: 'Shape', calendar: 'Calendar' } as const)[el.type]}</strong>
         <div className="row">
           <button className={`icon-btn ${el.locked ? 'on' : ''}`} title={el.locked ? 'Unlock (L)' : 'Lock (L)'} onClick={() => toggleLock(sel, el)}>
             <Icon name={el.locked ? 'lock' : 'unlock'} />
@@ -251,6 +252,7 @@ function ElementPanel() {
       {el.type === 'text' && <TextControls el={el} spreadId={sel.spreadId} />}
 
       {el.type === 'shape' && <ShapeControls el={el} spreadId={sel.spreadId} />}
+      {el.type === 'calendar' && <CalendarControls el={el} spreadId={sel.spreadId} />}
 
       <div className="section-title">Align to page</div>
       <AlignTools spreadId={sel.spreadId} ids={[el.id]} />

@@ -6,6 +6,7 @@ import { API_VERSION, SCHEMA_VERSION, UnknownSizeError, createBook, createPoster
 import { Store, toPhotoAsset, type AssetRow } from './db';
 import { Importer, scanFolder } from './importer';
 import { textOutline } from './textOutline';
+import { listPlaces, placeOutline, suggestPlaces } from './places';
 import { exportPosterImage } from './imageExport';
 import { ALPHA_FORMATS, colorFeatures, existingThumb, hashFile, hasTransparency, isSupported, makeThumbnails, THUMB_SIZES, type ThumbSize } from './media';
 import { exportCoverPdf, exportPdf, exportPosterPdf, type ExportAsset, type ExportOptions } from './pdf';
@@ -165,6 +166,20 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
     } catch (e) {
       throw new HttpError(400, e instanceof Error ? e.message : String(e));
     }
+  }));
+
+  // ---- place outlines (map stickers)
+  app.get('/api/places', (_req, res) => res.json(listPlaces()));
+  app.get('/api/places/:id/outline', wrap((req, res) => {
+    try {
+      res.json(placeOutline(P(req).id));
+    } catch (e) {
+      throw new HttpError(404, e instanceof Error ? e.message : String(e));
+    }
+  }));
+  app.post('/api/places/suggest', wrap((req, res) => {
+    const pts = Array.isArray(req.body?.points) ? (req.body.points as unknown[]).filter((p): p is [number, number] => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === 'number' && Number.isFinite(n))) : [];
+    res.json(suggestPlaces(pts));
   }));
 
   // ---- import
