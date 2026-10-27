@@ -26,16 +26,26 @@ end reopen
 
 on idle
 	if editorURL is not "" then
-		try
-			do shell script "/usr/bin/curl -sf -m 3 -o /dev/null " & quoted form of (editorURL & "/api/health")
-		on error
+		-- The server can be away for a while when it restarts itself onto new code (the editor's
+		-- "Restart server now" rebuilds first): only ask once it has been gone for about a minute.
+		set alive to false
+		repeat 20 times
+			try
+				do shell script "/usr/bin/curl -sf -m 3 -o /dev/null " & quoted form of (editorURL & "/api/health")
+				set alive to true
+				exit repeat
+			on error
+				delay 3
+			end try
+		end repeat
+		if not alive then
 			set choice to button returned of (display dialog "The Photobook Studio server stopped." buttons {"Quit", "Restart"} default button "Restart" with title "Photobook Studio")
 			if choice is "Restart" then
 				startServer()
 			else
 				quit
 			end if
-		end try
+		end if
 	end if
 	return 15
 end idle
