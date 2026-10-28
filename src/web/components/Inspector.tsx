@@ -14,19 +14,24 @@ import { CoverPanel } from './CoverPanel';
 import { FontPicker } from './FontPicker';
 import { PosterPanel } from './PosterUI';
 import { DraftPanel } from './DraftPanel';
-import { AddTextMenu } from './TypePanel';
 import { CalendarControls } from './CalendarControls';
-import { ElementsPalette, PhotoAdjustControls, PhotoShapeControls, ShapeControls, TextEffects } from './DesignPanel';
-import { PageAddonsSection } from './BookTemplates';
+import { OpacitySlider, PhotoAdjustControls, PhotoShapeControls, ShapeControls, TextEffects } from './DesignPanel';
+import { AddPanel, type AddSection } from './AddPanel';
 import { AlignTools, LayersPanel, MultiPanel } from './SelectionPanel';
 import { Icon } from './Icon';
 import { PreflightPanel } from './PreflightPanel';
 import { TemplatePicker } from './TemplatePicker';
 
-type Tab = 'edit' | 'draft' | 'book' | 'preflight';
+type Tab = 'edit' | 'add' | 'draft' | 'book' | 'preflight';
+
+/** Sub-tabs within each kind of element panel (remembered per kind while you work). */
+type Sub = { image: 'photo' | 'adjust' | 'cutout' | 'position'; text: 'text' | 'effects' | 'position'; shape: 'shape' | 'position'; calendar: 'calendar' | 'position' };
+const DEFAULT_SUB: Sub = { image: 'photo', text: 'text', shape: 'shape', calendar: 'calendar' };
 
 export function Inspector({ issueCount }: { issueCount: { error: number; warning: number } }) {
   const [tab, setTab] = useState<Tab>('edit');
+  const [sub, setSub] = useState<Sub>(DEFAULT_SUB);
+  const [addSection, setAddSection] = useState<AddSection>('text');
   const selected = useEditor(selectedElement);
   const multiCount = useEditor((s) => s.multi.length);
   const onCover = useEditor((s) => s.currentSpread === COVER_INDEX);
@@ -50,6 +55,7 @@ export function Inspector({ issueCount }: { issueCount: { error: number; warning
     <aside className="inspector">
       <div className="tabs">
         <button className={tab === 'edit' ? 'on' : ''} onClick={() => setTab('edit')}>{multiCount > 1 ? 'Selection' : selected ? ({ image: 'Photo', text: 'Text', shape: 'Shape', calendar: 'Calendar' } as const)[selected.type] : poster ? 'Poster' : onCover ? 'Cover' : 'Spread'}</button>
+        <button className={tab === 'add' ? 'on' : ''} onClick={() => setTab('add')} title="Add text, shapes, icons, calendars, maps and page designs"><Icon name="plus" size={13} /> Add</button>
         {!poster && <button className={tab === 'draft' ? 'on' : ''} onClick={() => setTab('draft')}>Draft</button>}
         <button className={tab === 'book' ? 'on' : ''} onClick={() => setTab('book')}>{poster ? 'Print' : 'Book'}</button>
         <button className={tab === 'preflight' ? 'on' : ''} onClick={() => setTab('preflight')}>
@@ -58,7 +64,8 @@ export function Inspector({ issueCount }: { issueCount: { error: number; warning
         </button>
       </div>
       <div className="inspector-body">
-        {tab === 'edit' && (multiCount > 1 ? <MultiPanel /> : selected ? <ElementPanel /> : poster ? <PosterPanel /> : onCover ? <CoverPanel /> : <SpreadPanel />)}
+        {tab === 'edit' && (multiCount > 1 ? <MultiPanel /> : selected ? <ElementPanel sub={sub} setSub={setSub} /> : poster ? <PosterPanel /> : onCover ? <CoverPanel /> : <SpreadPanel />)}
+        {tab === 'add' && <AddPanel section={addSection} onSection={setAddSection} />}
         {tab === 'edit' && <LayersPanel />}
         {tab === 'draft' && <DraftPanel />}
         {tab === 'book' && <BookPanel />}
@@ -126,7 +133,18 @@ const fmt = (v: number) => String(Math.round(v * 100) / 100);
 
 // ---- element ---------------------------------------------------------------------------------
 
-function ElementPanel() {
+/** Small tab row inside a panel. */
+export function SubTabs<T extends string>({ items, value, onChange }: { items: { id: T; label: string }[]; value: T; onChange: (v: T) => void }) {
+  return (
+    <div className="subtabs" role="tablist">
+      {items.map((x) => (
+        <button key={x.id} role="tab" aria-selected={value === x.id} className={value === x.id ? 'on' : ''} onClick={() => onChange(x.id)}>{x.label}</button>
+      ))}
+    </div>
+  );
+}
+
+function ElementPanel({ sub, setSub }: { sub: Sub; setSub: (s: Sub) => void }) {
   const doc = useEditor((s) => s.doc)!;
   const sel = useEditor((s) => s.selection)!;
   const el = useEditor(selectedElement)!;
@@ -155,7 +173,34 @@ function ElementPanel() {
         </div>
       </div>
 
-      {el.type === 'image' && (() => {
+      {el.type === 'image' && (
+        <SubTabs
+          items={[{ id: 'photo', label: 'Photo' }, ...(el.assetId ? [{ id: 'adjust' as const, label: 'Adjust' }] : []), { id: 'cutout', label: 'Cut-out' }, { id: 'position', label: 'Position' }]}
+          value={!el.assetId && sub.image === 'adjust' ? 'photo' : sub.image} onChange={(v) => setSub({ ...sub, image: v })}
+        />
+      )}
+      {el.type === 'text' && <SubTabs items={[{ id: 'text', label: 'Text' }, { id: 'effects', label: 'Effects' }, { id: 'position', label: 'Position' }]} value={sub.text} onChange={(v) => setSub({ ...sub, text: v })} />}
+      {el.type === 'shape' && <SubTabs items={[{ id: 'shape', label: el.outline ? 'Map' : 'Shape' }, { id: 'position', label: 'Position' }]} value={sub.shape} onChange={(v) => setSub({ ...sub, shape: v })} />}
+      {el.type === 'calendar' && <SubTabs items={[{ id: 'calendar', label: 'Calendar' }, { id: 'position', label: 'Position' }]} value={sub.calendar} onChange={(v) => setSub({ ...sub, calendar: v })} />}
+
+      {el.type === 'image' && sub.image === 'adjust' && el.assetId && assets.get(el.assetId) && (
+        <PhotoAdjustControls el={el} spreadId={sel.spreadId} analysis={assets.get(el.assetId)!.analysis} />
+      )}
+      {el.type === 'image' && sub.image === 'cutout' && (
+        <>
+          <PhotoShapeControls el={el} spreadId={sel.spreadId} />
+          <div className="section-title">Border</div>
+          <div className="field-row">
+            <NumField label="Border" value={el.borderMm} min={0} max={20} suffix="mm" onCommit={(v) => upd('Border', { borderMm: v })} />
+            <label className="field">
+              <span>Colour</span>
+              <ColorInput value={el.borderColor} label="Border colour" apply={(d, c) => updateElement(d, sel.spreadId, el.id, { borderColor: c })} />
+            </label>
+          </div>
+          {el.mask && <p className="muted small">Borders don’t apply to cut-out photos.</p>}
+        </>
+      )}
+      {el.type === 'image' && (sub.image === 'photo' || (sub.image === 'adjust' && !el.assetId)) && (() => {
         const asset = el.assetId ? assets.get(el.assetId) : undefined;
         const dpi = asset ? Math.round(effectiveDpi(el, asset)) : 0;
         const dpiClass = dpi >= doc.settings.minDpiWarning ? 'ok' : dpi >= doc.settings.minDpiError ? 'warn' : 'error';
@@ -230,30 +275,17 @@ function ElementPanel() {
                 Empty frame
               </button>
             </div>
-            {asset && (
-              <>
-                <div className="section-title">Adjust</div>
-                <PhotoAdjustControls el={el} spreadId={sel.spreadId} analysis={asset.analysis} />
-              </>
-            )}
-            <div className="section-title">Cut-out</div>
-            <PhotoShapeControls el={el} spreadId={sel.spreadId} />
-            <div className="field-row">
-              <NumField label="Border" value={el.borderMm} min={0} max={20} suffix="mm" onCommit={(v) => upd('Border', { borderMm: v })} />
-              <label className="field">
-                <span>Colour</span>
-                <ColorInput value={el.borderColor} label="Border colour" apply={(d, c) => updateElement(d, sel.spreadId, el.id, { borderColor: c })} />
-              </label>
-            </div>
+            <OpacitySlider spreadId={sel.spreadId} ids={[el.id]} value={el.opacity ?? 1} />
           </>
         );
       })()}
 
-      {el.type === 'text' && <TextControls el={el} spreadId={sel.spreadId} />}
+      {el.type === 'text' && sub.text !== 'position' && <TextControls el={el} spreadId={sel.spreadId} part={sub.text} />}
+      {el.type === 'shape' && sub.shape === 'shape' && <ShapeControls el={el} spreadId={sel.spreadId} />}
+      {el.type === 'calendar' && sub.calendar === 'calendar' && <CalendarControls el={el} spreadId={sel.spreadId} />}
 
-      {el.type === 'shape' && <ShapeControls el={el} spreadId={sel.spreadId} />}
-      {el.type === 'calendar' && <CalendarControls el={el} spreadId={sel.spreadId} />}
-
+      {isPositionTab(el.type, sub) && (
+        <>
       <div className="section-title">Align to page</div>
       <AlignTools spreadId={sel.spreadId} ids={[el.id]} />
 
@@ -277,15 +309,19 @@ function ElementPanel() {
         </div>
       </div>
       <p className="muted small">Double-click a photo to crop, or text to edit. Arrow keys nudge 0.5 mm (Shift: 5 mm). Hold Alt while dragging to turn off snapping.</p>
+        </>
+      )}
     </div>
   );
 }
+
+const isPositionTab = (type: keyof Sub, sub: Sub) => sub[type] === 'position';
 
 // ---- text ------------------------------------------------------------------------------------
 
 const SIZE_STEPS = [6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 42, 48, 56, 64, 72, 84, 96, 120, 144, 180, 220, 300];
 
-function TextControls({ el, spreadId }: { el: TextElement; spreadId: string }) {
+function TextControls({ el, spreadId, part }: { el: TextElement; spreadId: string; part: 'text' | 'effects' }) {
   const doc = useEditor((s) => s.doc)!;
   const { run } = useEditor.getState();
   const upd = (label: string, patch: Partial<TextElement>) => run(label, (d) => updateElement(d, spreadId, el.id, patch));
@@ -306,6 +342,7 @@ function TextControls({ el, spreadId }: { el: TextElement; spreadId: string }) {
   const bold = isBold(el.fontWeight);
   const hasBg = !!el.backgroundColor;
 
+  if (part === 'effects') return <TextEffectsPart el={el} spreadId={spreadId} />;
   return (
     <>
       <textarea
@@ -395,6 +432,19 @@ function TextControls({ el, spreadId }: { el: TextElement; spreadId: string }) {
         </div>
       </div>
 
+    </>
+  );
+}
+
+/** Text panel → Effects: background fill, gradient letters, curve, outline, shadow. */
+function TextEffectsPart({ el, spreadId }: { el: TextElement; spreadId: string }) {
+  const doc = useEditor((s) => s.doc)!;
+  const { run } = useEditor.getState();
+  const upd = (label: string, patch: Partial<TextElement>) => run(label, (d) => updateElement(d, spreadId, el.id, patch));
+  const hasBg = !!el.backgroundColor;
+  return (
+    <>
+      <OpacitySlider spreadId={spreadId} ids={[el.id]} value={el.opacity ?? 1} label="Opacity (whole box)" />
       <div className="section-title">Background</div>
       <div className="field-row">
         <div className="field">
@@ -429,7 +479,7 @@ function TextControls({ el, spreadId }: { el: TextElement; spreadId: string }) {
         </>
       )}
 
-      <div className="section-title">Effects</div>
+      <div className="section-title">Letters</div>
       <TextEffects el={el} spreadId={spreadId} />
     </>
   );
@@ -467,7 +517,6 @@ function SpreadPanel() {
         }}>
           <Icon name="shuffle" /> Shuffle layout
         </button>
-        <AddTextMenu surfaceId={spread.id} at={{ x: doc.settings.trimWidthMm * (isPrintable(i, 'right', n) ? 1.5 : 0.5), y: doc.settings.trimHeightMm * 0.85 }} disabled={spread.locked} />
         <button className="btn btn-small" onClick={() => {
           if (run('Insert spread', (d) => insertSpreadAfter(d, i))) goToSpread(Math.min(i + 1, n - 1));
         }}>
@@ -481,8 +530,7 @@ function SpreadPanel() {
         </button>
       </div>
 
-      <div className="section-title">Page designs</div>
-      <PageAddonsSection spreadIndex={i} />
+      <p className="muted small">Text, shapes, calendars, maps and ready-made pages (contents, quotes…) are in the <strong>Add</strong> tab.</p>
 
       <label className="field">
         <span>Chapter</span>
@@ -532,8 +580,6 @@ function SpreadPanel() {
             </div>
           ))}
           <p className="muted small">Highlighted layouts fit the number of photos already on the page. Extra photos go back to the library; extra frames start empty.</p>
-          <div className="section-title">Add an element</div>
-          <ElementsPalette surfaceId={spread.id} at={{ x: doc.settings.trimWidthMm * (isPrintable(i, 'right', n) ? 1.5 : 0.5), y: doc.settings.trimHeightMm / 2 }} />
         </>
       )}
     </div>

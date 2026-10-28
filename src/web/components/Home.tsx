@@ -4,13 +4,49 @@ import { api, type ProjectSummary } from '../api';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
 
+type Deleted = { id: string; title: string; deletedAt: string; product: 'book' | 'poster' };
+
 export function Home() {
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
+  const [deleted, setDeleted] = useState<Deleted[]>([]);
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [undo, setUndo] = useState<{ id: string; title: string } | null>(null);
+  const [confirmPurge, setConfirmPurge] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
+  const reload = () => {
     api.listProjects().then(setProjects).catch((e) => setError(String(e.message ?? e)));
-  }, []);
+    api.deletedProjects().then(setDeleted).catch(() => undefined);
+  };
+  useEffect(reload, []);
+  // The undo bar goes away by itself after a while; Recently deleted still has the project.
+  useEffect(() => {
+    if (!undo) return;
+    const t = setTimeout(() => setUndo(null), 10_000);
+    return () => clearTimeout(t);
+  }, [undo]);
+
+  const trash = async (p: ProjectSummary) => {
+    try {
+      await api.trashProject(p.id);
+      setUndo({ id: p.id, title: p.title });
+      reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const restore = async (id: string) => {
+    await api.restoreProject(id).catch((e) => setError(String(e.message ?? e)));
+    setUndo(null);
+    reload();
+  };
+  const purge = async (id: string) => {
+    await api.purgeProject(id).catch((e) => setError(String(e.message ?? e)));
+    setConfirmPurge(null);
+    reload();
+  };
+  const daysLeft = (iso: string) => Math.max(0, 30 - Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
+
   return (
     <div className="home">
       <header className="home-head">
@@ -21,6 +57,12 @@ export function Home() {
         <button className="btn btn-primary" onClick={() => setCreating(true)}><Icon name="plus" /> New book or poster</button>
       </header>
       {error && <div className="notice notice-error">Could not reach the local server: {error}</div>}
+      {undo && (
+        <div className="undo-bar" role="status">
+          <span>Moved “{undo.title}” to Recently deleted.</span>
+          <button className="btn btn-small" onClick={() => void restore(undo.id)}>Undo</button>
+        </div>
+      )}
       {projects && projects.length === 0 && (
         <div className="home-empty">
           <h2>Make your first book or poster</h2>
@@ -36,9 +78,45 @@ export function Home() {
               {p.product === 'poster' ? `Poster · ${(p.trimWidthMm / 25.4).toFixed(0)} × ${(p.trimHeightMm / 25.4).toFixed(0)} in` : `${p.pageCount} pages`} · {p.photoCount} photos
             </span>
             <span className="muted small">Edited {new Date(p.updatedAt).toLocaleString()}</span>
+            <button
+              className="icon-btn project-delete" title={`Delete “${p.title}”`} aria-label={`Delete ${p.title}`}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                void trash(p);
+              }}
+            >
+              <Icon name="trash" />
+            </button>
           </a>
         ))}
       </div>
+      {deleted.length > 0 && (
+        <section className="deleted">
+          <button className="link" onClick={() => setShowDeleted(!showDeleted)} aria-expanded={showDeleted}>
+            Recently deleted ({deleted.length}) <Icon name="down" size={12} />
+          </button>
+          {showDeleted && (
+            <div className="deleted-list">
+              {deleted.map((d) => (
+                <div key={d.id} className="deleted-row">
+                  <span>{d.title}</span>
+                  <span className="muted small">{d.product === 'poster' ? 'Poster' : 'Book'} · deleted {new Date(d.deletedAt).toLocaleDateString()} · removed for good in {daysLeft(d.deletedAt)} days</span>
+                  <div className="row">
+                    <button className="btn btn-small" onClick={() => void restore(d.id)}>Restore</button>
+                    {confirmPurge === d.id ? (
+                      <button className="btn btn-small danger-solid" onClick={() => void purge(d.id)}>Yes, delete for good</button>
+                    ) : (
+                      <button className="btn btn-small btn-ghost danger" onClick={() => setConfirmPurge(d.id)}>Delete for good…</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              <p className="muted small">Deleting for good removes the book’s pages and history, and photos no other book uses leave the library. Your original photo files are never touched.</p>
+            </div>
+          )}
+        </section>
+      )}
       {creating && <NewBook onClose={() => setCreating(false)} />}
     </div>
   );

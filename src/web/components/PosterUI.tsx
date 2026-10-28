@@ -7,9 +7,9 @@ import { useEditor } from '../store';
 import { CollageControls, gapOptions, marginOptions } from './CollageControls';
 import { ColorInput } from './ColorInput';
 import { Icon } from './Icon';
-import { AddTextMenu } from './TypePanel';
 import { BackgroundImageField } from './BackgroundImageField';
-import { ElementsPalette, GradeControls } from './DesignPanel';
+import { GradeControls } from './DesignPanel';
+import { SubTabs } from './Inspector';
 import { PosterTemplates } from './PosterTemplates';
 
 /** Sensible first settings for a sheet: spacing and border scaled to its size. */
@@ -43,6 +43,7 @@ export function PosterPanel() {
   const focus = useEditor((s) => s.collageFocus);
   const sectionRef = useRef<HTMLDivElement>(null);
   const [flash, setFlash] = useState(false);
+  const [tab, setTab] = useState<'collage' | 'templates' | 'sheet'>('collage');
   const [report, setReport] = useState<PosterReport | null>(null);
   const curated = useMemo(() => curatePool(assetList), [assetList]);
   const sheet = doc.spreads[0];
@@ -59,6 +60,7 @@ export function PosterPanel() {
   // Top-bar "Auto collage" brings this section into view.
   useEffect(() => {
     if (!focus) return;
+    setTab('collage');
     sectionRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
     setFlash(true);
     const t = setTimeout(() => setFlash(false), 900);
@@ -115,6 +117,9 @@ export function PosterPanel() {
 
   return (
     <div className="stack">
+      <SubTabs items={[{ id: 'collage', label: 'Collage' }, { id: 'templates', label: 'Templates' }, { id: 'sheet', label: 'Sheet' }]} value={tab} onChange={setTab} />
+      {tab === 'collage' && (
+        <>
       <div ref={sectionRef} className={`auto-collage ${flash ? 'flash' : ''}`}>
         <div className="row between">
           <strong>Auto collage</strong>
@@ -167,22 +172,15 @@ export function PosterPanel() {
         )}
       </div>
 
-      <div className="section-title">Templates</div>
-      <PosterTemplates />
-
       <div className="section-title">Layout</div>
       {hasPhotos && <p className="muted small">Style, spacing, border and title re-flow the photos already on the sheet.</p>}
       <CollageControls doc={doc} value={settings} compact onChange={(next) => reflow(next.style !== settings.style ? 'Change collage style' : 'Adjust collage', next)} />
 
-      <div className="section-title">Text</div>
-      <AddTextMenu surfaceId={sheet.id} at={{ x: s.trimWidthMm / 2, y: s.trimHeightMm * 0.9 }} />
-
-      <div className="section-title">Design elements</div>
-      <ElementsPalette surfaceId={sheet.id} at={{ x: s.trimWidthMm / 2, y: s.trimHeightMm / 2 }} />
-
-      <div className="section-title">Colour grade</div>
-      <GradeControls />
-
+        </>
+      )}
+      {tab === 'templates' && <PosterTemplates />}
+      {tab === 'sheet' && (
+        <>
       <div className="section-title">Sheet</div>
       <label className="field">
         <span>Size</span>
@@ -210,6 +208,12 @@ export function PosterPanel() {
         <BackgroundImageField surfaceId={sheet.id} />
       </div>
       <p className="muted small">Arranging replaces manual moves on the sheet — pin a photo (right-click it) to keep it where it is, or undo (⌘Z). Posters warn below {s.minDpiWarning} DPI: they're seen from further away than book pages.</p>
+      <div className="section-title">Colour grade</div>
+      <GradeControls />
+
+        </>
+      )}
+      <p className="muted small">Text, shapes, calendars and maps are in the <strong>Add</strong> tab.</p>
     </div>
   );
 }

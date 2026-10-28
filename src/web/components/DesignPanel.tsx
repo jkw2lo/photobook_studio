@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  GRADE_PRESETS, MM_PER_PT, PHOTO_SHAPES, addCalendarAt, addElement, fitPath, makeShapeElement, type PlaceOutline, autoAdjust, photoDays, SHAPES, SHAPE_CATEGORIES, addShapeAt, fontFamily, gradeColor, gradeFromPreset, isNeutralGrade, nearestWeight, scalePath,
+  GRADE_PRESETS, MM_PER_PT, PHOTO_SHAPES, addCalendarAt, addElement, reorderElements, fitPath, makeShapeElement, type PlaceOutline, autoAdjust, photoDays, SHAPES, SHAPE_CATEGORIES, addShapeAt, fontFamily, gradeColor, gradeFromPreset, isNeutralGrade, nearestWeight, scalePath,
   updateElement, weightName, NO_GRADE, type BookDocument, type ColorGrade, type Gradient, type ImageElement, type ShapeCategory, type ShapeElement,
   type TextElement,
 } from '../../core';
@@ -39,27 +39,57 @@ export function ShapeGlyph({ id, d, evenOdd, size = 26, aspect }: { id?: string;
   );
 }
 
+/** Opacity of any element (photo, text, shape, calendar) — one undo step per drag. */
+export function OpacitySlider({ spreadId, ids, value, label = 'Opacity' }: { spreadId: string; ids: string[]; value: number; label?: string }) {
+  const { gesture, endGesture } = useEditor.getState();
+  return (
+    <label className="field">
+      <span>{label} — {Math.round(value * 100)}%</span>
+      <input
+        type="range" min={0.05} max={1} step={0.01} value={value} aria-label={label}
+        onChange={(e) => {
+          const v = Number(e.target.value);
+          gesture((d) => ids.reduce((acc, id) => updateElement(acc, spreadId, id, { opacity: v }), d));
+        }}
+        onPointerUp={() => endGesture('Opacity')} onKeyUp={() => endGesture('Opacity')}
+      />
+    </label>
+  );
+}
+
 // ---- elements palette ------------------------------------------------------------------------------
 
-export function ElementsPalette({ surfaceId, at }: { surfaceId: string; at: { x: number; y: number } }) {
-  const [cat, setCat] = useState<ShapeCategory | 'calendar' | 'map'>('shape');
+export function ElementsPalette({ surfaceId, at, only }: { surfaceId: string; at: { x: number; y: number }; only?: 'shapes' | 'calendar' | 'map' }) {
+  const [picked, setCat] = useState<ShapeCategory | 'calendar' | 'map'>('shape');
+  // Shown as one part of the Add tab: calendars and maps get their own sections there.
+  const cat = only === 'calendar' ? 'calendar' : only === 'map' ? 'map' : only === 'shapes' && (picked === 'calendar' || picked === 'map') ? 'shape' : picked;
   const [mapFill, setMapFill] = useState<'outline' | 'filled'>('outline');
+  const [mapPlace, setMapPlace] = useState<'sticker' | 'background'>('sticker');
   const addMap = (o: PlaceOutline) => {
     const st = useEditor.getState();
     const d = st.doc!;
     const short = Math.min(d.settings.trimWidthMm, d.settings.trimHeightMm);
-    const w0 = short * 0.45;
-    const w = o.aspect >= 1 ? w0 : w0 * o.aspect;
+    // A sticker is a modest size; a background fills most of the page (or sheet) behind the photos.
+    const back = mapPlace === 'background';
+    const boxW = back ? d.settings.trimWidthMm * 0.92 : short * 0.45;
+    const boxH = back ? d.settings.trimHeightMm * 0.92 : short * 0.45;
+    const w = Math.min(boxW, boxH * o.aspect);
     const h = w / o.aspect;
     const surface = d.cover?.id === surfaceId ? d.cover : d.spreads.find((sp) => sp.id === surfaceId);
     const paper = surface?.background ?? d.style.background;
     const dark = parseInt(paper.slice(1, 3), 16) * 0.2126 + parseInt(paper.slice(3, 5), 16) * 0.7152 + parseInt(paper.slice(5, 7), 16) * 0.0722 < 115;
     const ink = dark ? '#f5f2ea' : d.style.textColor;
     let id = '';
-    st.run(`Add map: ${o.name}`, (doc) => {
-      const el = { ...makeShapeElement({ x: at.x - w / 2, y: at.y - h / 2, w, h }, mapFill === 'filled' ? ink : 'none'), outline: o, ...(mapFill === 'outline' ? { strokeColor: ink, strokeWidthMm: Math.max(0.5, short * 0.004) } : {}) };
+    st.run(back ? `Add map background: ${o.name}` : `Add map: ${o.name}`, (doc) => {
+      const el = {
+        ...makeShapeElement({ x: at.x - w / 2, y: at.y - h / 2, w, h }, mapFill === 'filled' ? ink : 'none', back ? (mapFill === 'filled' ? 0.14 : 0.35) : 1),
+        outline: o,
+        ...(mapFill === 'outline' ? { strokeColor: ink, strokeWidthMm: Math.max(0.5, short * (back ? 0.003 : 0.004)) } : {}),
+        ...(back ? { behind: true } : {}),
+      };
       id = el.id;
-      return addElement(doc, surfaceId, el);
+      const added = addElement(doc, surfaceId, el);
+      return back ? reorderElements(added, surfaceId, [el.id], 'back') : added;
     });
     if (id) st.select({ spreadId: surfaceId, elementId: id });
   };
@@ -88,21 +118,31 @@ export function ElementsPalette({ surfaceId, at }: { surfaceId: string; at: { x:
   };
   return (
     <div className="palette">
-      <div className="seg seg-wide">
-        {SHAPE_CATEGORIES.map((c) => (
-          <button key={c.id} className={cat === c.id ? 'on' : ''} onClick={() => setCat(c.id)}>{c.label}</button>
-        ))}
-        <button className={cat === 'calendar' ? 'on' : ''} onClick={() => setCat('calendar')}>Calendar</button>
-        <button className={cat === 'map' ? 'on' : ''} onClick={() => setCat('map')}>Map</button>
-      </div>
+      {only !== 'calendar' && only !== 'map' && (
+        <div className="seg seg-wide">
+          {SHAPE_CATEGORIES.map((c) => (
+            <button key={c.id} className={cat === c.id ? 'on' : ''} onClick={() => setCat(c.id)}>{c.label}</button>
+          ))}
+          {!only && <button className={cat === 'calendar' ? 'on' : ''} onClick={() => setCat('calendar')}>Calendar</button>}
+          {!only && <button className={cat === 'map' ? 'on' : ''} onClick={() => setCat('map')}>Map</button>}
+        </div>
+      )}
       {cat === 'map' ? (
         <>
+          <div className="seg seg-wide">
+            <button className={mapPlace === 'sticker' ? 'on' : ''} onClick={() => setMapPlace('sticker')} title="On top of everything, at a modest size">Sticker</button>
+            <button className={mapPlace === 'background' ? 'on' : ''} onClick={() => setMapPlace('background')} title="Large and faint, behind the photos">Background</button>
+          </div>
           <div className="seg seg-wide">
             <button className={mapFill === 'outline' ? 'on' : ''} onClick={() => setMapFill('outline')}>Outline</button>
             <button className={mapFill === 'filled' ? 'on' : ''} onClick={() => setMapFill('filled')}>Filled</button>
           </div>
           <PlacePicker action="add" onPick={addMap} />
-          <p className="muted small">A place’s outline as a sticker — lay it over photos from there. To fill the shape with a photo, select the photo and use Cut-out → Map.</p>
+          <p className="muted small">
+            {mapPlace === 'background'
+              ? 'A large, faint outline behind the photos — it stays behind them when you Arrange. Change its colour and opacity in its panel.'
+              : 'A place’s outline as a sticker — lay it over photos from there.'} To fill the shape with a photo instead, select the photo and use Cut-out → Map.
+          </p>
         </>
       ) : cat === 'calendar' ? (
         <>
@@ -205,6 +245,13 @@ export function ShapeControls({ el, spreadId }: { el: ShapeElement; spreadId: st
         </label>
         <NumField label="Width" value={el.strokeWidthMm ?? 0} min={0} max={20} step={0.25} suffix="mm" apply={(d, v) => updateElement(d, spreadId, el.id, { strokeWidthMm: v })} undoLabel="Outline width" />
       </div>
+      <label className="field check" title="Draw it behind the photos (and keep it there when you Arrange)">
+        <input
+          type="checkbox" checked={!!el.behind}
+          onChange={(e) => run(e.target.checked ? 'Send behind photos' : 'Bring in front of photos', (d) => reorderElements(updateElement(d, spreadId, el.id, { behind: e.target.checked || undefined }), spreadId, [el.id], e.target.checked ? 'back' : 'front'))}
+        />
+        <span>Behind the photos (background layer)</span>
+      </label>
       <label className="field">
         <span>Opacity — {Math.round(el.opacity * 100)}%</span>
         <input

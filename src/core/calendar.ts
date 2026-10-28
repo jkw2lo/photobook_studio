@@ -1,4 +1,5 @@
-import type { BookDocument, CalendarElement, PhotoAsset } from './model';
+import type { BookDocument, CalendarElement, CalendarMark, PhotoAsset } from './model';
+import { mapPath, shapeDef } from './shapes';
 import { addElement } from './commands';
 import { newId } from './random';
 import { roleStyle } from './typography';
@@ -157,3 +158,60 @@ export function fitCalendarHeight(el: CalendarElement): number {
 }
 
 export const calendarFontMm = (pt: number) => pt * MM_PER_PT;
+
+// ---- marks ------------------------------------------------------------------------------------
+
+export const CALENDAR_MARKS: { id: CalendarMark; name: string }[] = [
+  { id: 'circle', name: 'Circle' },
+  { id: 'ring', name: 'Ring' },
+  { id: 'square', name: 'Square' },
+  { id: 'heart', name: 'Heart' },
+  { id: 'star', name: 'Star' },
+  { id: 'highlight', name: 'Highlighter' },
+  { id: 'dot', name: 'Dot' },
+  { id: 'underline', name: 'Underline' },
+  { id: 'cross', name: 'Crossed off' },
+];
+
+export interface MarkDrawing {
+  /** Path in element-local mm. */
+  d: string;
+  /** Filled (else stroked with `strokeMm`). */
+  fill: boolean;
+  strokeMm?: number;
+  /** Extra transparency for the mark itself (highlighter). */
+  opacity?: number;
+  /** The day number sits on a solid mark: draw it in white. */
+  knockout: boolean;
+}
+
+/** The mark for one marked day, sized to its cell — shared by the editor and the PDF. */
+export function calendarMark(style: CalendarMark, c: { x: number; y: number; w: number; h: number }, dayMm: number): MarkDrawing {
+  const cx = c.x + c.w / 2;
+  const cy = c.y + c.h / 2;
+  const r = Math.min(c.w, c.h) * 0.42;
+  const box = (w: number, h: number, x = cx - w / 2, y = cy - h / 2) => ({ x, y, w, h });
+  const place = (d: string, b: { x: number; y: number; w: number; h: number }) => mapPath(d, (px, py) => [b.x + (px / 100) * b.w, b.y + (py / 100) * b.h]);
+  switch (style) {
+    case 'ring':
+      return { d: place(shapeDef('circle').d, box(2 * r * 0.92, 2 * r * 0.92)), fill: false, strokeMm: r * 0.14, knockout: false };
+    case 'square':
+      return { d: place(shapeDef('rounded').d, box(2 * r, 2 * r)), fill: true, knockout: true };
+    case 'heart':
+      return { d: place(shapeDef('i-heart').d, box(2.3 * r, 2.3 * r / 1.05, cx - 1.15 * r, cy - 1.0 * r)), fill: true, knockout: true };
+    case 'star':
+      return { d: place(shapeDef('i-star').d, box(2.5 * r, 2.5 * r, cx - 1.25 * r, cy - 1.3 * r)), fill: true, knockout: true };
+    case 'highlight':
+      return { d: place(shapeDef('pill').d, box(c.w * 0.94, dayMm * 1.25, cx - c.w * 0.47, cy - dayMm * 0.55)), fill: true, opacity: 0.38, knockout: false };
+    case 'dot':
+      return { d: place(shapeDef('circle').d, box(r * 0.36, r * 0.36, cx - r * 0.18, cy + dayMm * 0.58)), fill: true, knockout: false };
+    case 'underline':
+      return { d: place(shapeDef('rect').d, box(r * 1.4, Math.max(0.3, dayMm * 0.12), cx - r * 0.7, cy + dayMm * 0.55)), fill: true, knockout: false };
+    case 'cross': {
+      const k = r * 0.75;
+      return { d: `M${cx - k} ${cy - k}L${cx + k} ${cy + k}M${cx + k} ${cy - k}L${cx - k} ${cy + k}`, fill: false, strokeMm: r * 0.16, knockout: false };
+    }
+    default:
+      return { d: place(shapeDef('circle').d, box(2 * r, 2 * r)), fill: true, knockout: true };
+  }
+}

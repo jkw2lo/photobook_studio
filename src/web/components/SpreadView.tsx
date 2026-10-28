@@ -2,7 +2,7 @@ import { memo, useId, useMemo, type CSSProperties, type ReactNode } from 'react'
 import {
   COVER_INDEX, archGeometry, backgroundFrame, elementPlacement, geometryFor, gradeChainSvg, gradeSvgMatrix, gradientLine, isNeutralGrade, maskPath, pageNumberRect,
   roleStyle, shapePath, type BookSettings, type BookStyle, type ColorGrade, type Element, type Gradient, type ImageElement, type PhotoAsset,
-  type ShapeElement, type Spread, type TextElement, type CalendarElement, calendarLayout, MM_PER_PT,
+  type ShapeElement, type Spread, type TextElement, type CalendarElement, calendarLayout, calendarMark, mapPath, MM_PER_PT,
 } from '../../core';
 import { thumbUrl } from '../api';
 
@@ -109,19 +109,22 @@ function CalendarView({ el, scale, style }: { el: CalendarElement; scale: number
   const lay = calendarLayout(el);
   const k = scale;
   return (
-    <div className="el el-calendar" style={style}>
+    <div className="el el-calendar" style={{ ...style, opacity: el.opacity }}>
       <svg width={el.widthMm * k} height={el.heightMm * k} style={{ overflow: 'visible', display: 'block' }} fontFamily={`'${el.fontFamily}'`} fontWeight={el.fontWeight}>
         {lay.cells.map((c, i) => {
           const cx = (c.x + c.w / 2) * k;
           const cy = (c.y + c.h / 2) * k;
           const size = (c.kind === 'title' ? lay.titleMm : c.kind === 'weekday' ? lay.weekdayMm : lay.dayMm) * k;
-          const r = Math.min(c.w, c.h) * 0.42 * k;
-          const markOn = c.marked && el.markStyle !== 'underline';
+          const mark = c.marked ? calendarMark(el.markStyle, c, lay.dayMm) : null;
+          const markOn = !!mark?.knockout;
           return (
             <g key={i} opacity={c.faint ? 0.32 : c.kind === 'weekday' ? 0.6 : 1}>
-              {c.marked && el.markStyle === 'circle' && <circle cx={cx} cy={cy} r={r} fill={el.accent} />}
-              {c.marked && el.markStyle === 'square' && <rect x={cx - r} y={cy - r} width={2 * r} height={2 * r} rx={r * 0.25} fill={el.accent} />}
-              {c.marked && el.markStyle === 'underline' && <rect x={cx - r * 0.7} y={cy + size * 0.55} width={r * 1.4} height={Math.max(1, size * 0.12)} fill={el.accent} />}
+              {mark && (
+                <path
+                  d={mapPath(mark.d, (x, y) => [x * k, y * k])} opacity={mark.opacity}
+                  fill={mark.fill ? el.accent : 'none'} stroke={mark.fill ? undefined : el.accent} strokeWidth={mark.strokeMm ? mark.strokeMm * k : undefined} strokeLinecap="round"
+                />
+              )}
               <text x={cx} y={cy + size * 0.35} fontSize={c.text.length > 3 && c.kind === 'day' ? size * 0.72 : size} textAnchor="middle" fill={markOn ? '#ffffff' : el.color}>{c.text}</text>
             </g>
           );
@@ -256,7 +259,7 @@ function TextView({ el, scale, style }: { el: TextElement; scale: number; style:
   const arch = archGeometry(el.widthMm, el.heightMm, el.arch ?? 0, el.fontSizePt * MM_PER_PT);
   if (arch) return <ArchedText el={el} scale={scale} style={{ ...style, ...css, padding: 0 }} />;
   return (
-    <div className="el el-text" style={{ ...style, ...css }}>
+    <div className="el el-text" style={{ ...style, ...css, opacity: el.opacity }}>
       <span style={letterCss(el, scale)}>{el.text}</span>
     </div>
   );
@@ -275,7 +278,7 @@ function ArchedText({ el, scale, style }: { el: TextElement; scale: number; styl
   };
   const path = <textPath href={`#p${uid}`} startOffset="50%" textAnchor="middle">{text}</textPath>;
   return (
-    <div className="el el-text" style={{ ...style, color: undefined }}>
+    <div className="el el-text" style={{ ...style, color: undefined, opacity: el.opacity }}>
       <svg width={w} height={h} style={{ overflow: 'visible', display: 'block' }}>
         <defs>
           <path id={`p${uid}`} d={arch.path} />

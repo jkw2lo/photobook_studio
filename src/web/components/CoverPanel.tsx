@@ -7,7 +7,6 @@ import { useEditor } from '../store';
 import { ColorInput } from './ColorInput';
 import { Icon } from './Icon';
 import { NumField } from './Inspector';
-import { AddTextMenu } from './TypePanel';
 
 const SOURCE_LABEL = {
   table: 'from the printer’s page-count table',
@@ -83,9 +82,6 @@ export function CoverPanel() {
 
       {cover && !cover.locked && (
         <>
-          <div className="btn-grid">
-            <AddTextMenu surfaceId={cover.id} at={{ x: dims.panelW + dims.spine.mm + dims.panelW / 2, y: dims.panelH * 0.88 }} />
-          </div>
           <BackAndSpine />
           <label className="field">
             <span>Cover colour</span>

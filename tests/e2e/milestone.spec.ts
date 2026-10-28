@@ -44,12 +44,14 @@ test('import, draft, edit, reopen and export a book', async ({ page }) => {
   await page.mouse.down();
   await page.mouse.move(from.x - 40, from.y + 30, { steps: 8 });
   await page.mouse.up();
+  // Position fields live on the photo panel's Position tab.
+  await page.locator('.inspector .subtabs').getByRole('tab', { name: 'Position' }).click();
   const xField = page.locator('.field', { hasText: /^X/ }).locator('input');
   const movedX = await xField.inputValue();
   // Add a text box and edit it inline.
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Add text' }).click();
-  await page.getByRole('menuitem', { name: 'Body' }).click();
+  await page.locator('.inspector .tabs').getByRole('button', { name: 'Add', exact: true }).click();
+  await page.locator('.add-panel').getByRole('menuitem', { name: 'Body' }).click();
   await page.locator('.text-input').fill('Written in the E2E test');
   await page.locator('.text-input').blur();
   await expect(page.locator('.save')).toHaveText('Saved');
@@ -58,12 +60,13 @@ test('import, draft, edit, reopen and export a book', async ({ page }) => {
   await page.reload();
   await expect(page.locator('.canvas .el-text', { hasText: 'Written in the E2E test' })).toBeVisible();
   await page.mouse.click(from.x - 40, from.y + 30);
+  await page.locator('.inspector .subtabs').getByRole('tab', { name: 'Position' }).click();
   await expect(xField).toHaveValue(movedX);
 
   // Undo/redo round-trip on a fresh edit
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Add text' }).click();
-  await page.getByRole('menuitem', { name: 'Body' }).click();
+  await page.locator('.inspector .tabs').getByRole('button', { name: 'Add', exact: true }).click();
+  await page.locator('.add-panel').getByRole('menuitem', { name: 'Body' }).click();
   const added = page.locator('.canvas .el-text', { hasText: 'Double-click to edit' });
   await expect(added).toHaveCount(1);
   await page.keyboard.press('Escape');
@@ -113,8 +116,8 @@ test('make a collage poster: import, auto collage, switch style, export', async 
   await expect(page.locator('.preview-pane .preview-meta')).toContainText('MP');
 
   // Text can be added to a poster, and survives re-arranging.
-  await page.locator('.inspector').getByRole('button', { name: 'Add text' }).click();
-  await page.getByRole('menuitem', { name: 'Quote' }).click();
+  await page.locator('.inspector .tabs').getByRole('button', { name: 'Add', exact: true }).click();
+  await page.locator('.add-panel').getByRole('menuitem', { name: 'Quote' }).click();
   await expect(page.locator('.canvas .el-text')).toHaveCount(1);
   // Quick styles restyle it in one click (here: a band of colour behind the text).
   await page.locator('.inspector .quick-style', { hasText: 'Label band' }).click();
@@ -153,9 +156,12 @@ test('make a collage poster: import, auto collage, switch style, export', async 
   await expect(page.locator('.save')).toHaveText('Saved');
 
   // A template restyles the sheet: round photos, its own type and stars; then an icon from the palette.
+  await page.locator('.inspector .subtabs').getByRole('tab', { name: 'Templates' }).click();
   await page.locator('.template-card', { hasText: 'Night circles' }).click();
   await expect.poll(() => page.locator('.canvas .el-image').first().evaluate((e) => (e as HTMLElement).style.clipPath)).toContain('path(');
   await expect(page.locator('.canvas .el-shape')).toHaveCount(3);
+  await page.locator('.inspector .tabs').getByRole('button', { name: 'Add', exact: true }).click();
+  await page.locator('.add-panel .subtabs').getByRole('tab', { name: 'Shapes' }).click();
   await page.locator('.palette .seg button', { hasText: 'Icons' }).click();
   await page.locator('.palette [aria-label="Add Heart"]').click();
   await expect(page.locator('.canvas .el-shape svg path')).toHaveCount(4);

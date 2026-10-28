@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import {
-  alignElements, distributeElements, findSurface, shapeDef, stepElement, updateElement, type AlignEdge, type Element,
+  alignElements, distributeElements, elementOpacity, findSurface, shapeDef, stepElement, updateElement, type AlignEdge, type Element,
 } from '../../core';
 import { duplicate, group, remove, reorder, toggleLock, ungroup } from '../elementActions';
 import { useShallow } from 'zustand/react/shallow';
 import { selectedIds, useEditor } from '../store';
 import { Icon } from './Icon';
+import { OpacitySlider } from './DesignPanel';
 
 // Several things selected: align, distribute, group. And the Layers list for the current page.
 
@@ -94,6 +95,7 @@ export function MultiPanel() {
 
       <div className="section-title">Align</div>
       <AlignTools spreadId={sel.spreadId} ids={ids} />
+      <OpacitySlider spreadId={sel.spreadId} ids={ids} value={elementOpacity(primary)} label="Opacity (all selected)" />
       {oneGroup && <p className="muted small">Click a grouped item again to select just that item and edit it.</p>}
     </div>
   );

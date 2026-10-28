@@ -6,7 +6,7 @@ import PDFDocument from 'pdfkit';
 import { PDFDocument as PdfLibDocument, PDFName, PDFArray, PDFNumber } from 'pdf-lib';
 import sharp from 'sharp';
 import {
-  COVER_INDEX, archGeometry, calendarLayout, backgroundFrame, coverGeometry, geometryFor, gradeChainKey, gradeChainMatrix, gradientLine, isNeutralChain, maskPath, pointOnArch, shapePath, posterGeometry, elementBounds, elementPlacement, fontFilePath, intersects, mmToInch, mmToPt, nearestWeight,
+  COVER_INDEX, archGeometry, calendarLayout, calendarMark, elementOpacity, mapPath, backgroundFrame, coverGeometry, geometryFor, gradeChainKey, gradeChainMatrix, gradientLine, isNeutralChain, maskPath, pointOnArch, shapePath, posterGeometry, elementBounds, elementPlacement, fontFilePath, intersects, mmToInch, mmToPt, nearestWeight,
   pageNumberRect, preflight, printablePages, roleStyle, type BleedMode, type BookDocument, type Element, type ImageElement,
   type CalendarElement, type ColorGrade, type Gradient, type PhotoAsset, type PreflightIssue, type Rect, type ShapeElement, type Spread, type TextElement,
 } from '../core';
@@ -63,6 +63,8 @@ class PdfWriter {
   private readonly fonts = new Set<string>();
   private readonly imageCache = new Map<string, Buffer>();
   readonly overflow: { elementId: string; label: string; spreadIndex: number }[] = [];
+  /** Opacity of the element being drawn. */
+  private alpha = 1;
 
   constructor(readonly outPath: string, title: string, private readonly assets: Map<string, ExportAsset>, private readonly grade?: ColorGrade) {
     this.pdf = new PDFDocument({ autoFirstPage: false, compress: true, info: { Title: title, Creator: 'Photobook Studio', Producer: 'Photobook Studio (PDFKit)' } });
@@ -108,6 +110,10 @@ class PdfWriter {
       pdf.translate(mmToPt(el.xMm + el.widthMm / 2 - area.x), mmToPt(el.yMm + el.heightMm / 2 - area.y));
       if (el.rotationDeg) pdf.rotate(el.rotationDeg);
       pdf.translate(-mmToPt(el.widthMm / 2), -mmToPt(el.heightMm / 2));
+      // Element opacity: the base alpha for everything drawn below; parts with their own alpha
+      // (text backgrounds, shadows, calendar marks) multiply it in.
+      this.alpha = elementOpacity(el);
+      if (el.type !== 'shape' && this.alpha < 1) pdf.opacity(this.alpha);
       if (el.type === 'image') await this.image(el);
       else if (el.type === 'shape') this.shape(el);
       else if (el.type === 'calendar') this.calendar(el);
@@ -135,15 +141,16 @@ class PdfWriter {
       const cy = mmToPt(c.y + c.h / 2);
       const sizeMm = c.kind === 'title' ? lay.titleMm : c.kind === 'weekday' ? lay.weekdayMm : lay.dayMm;
       const size = mmToPt(c.text.length > 3 && c.kind === 'day' ? sizeMm * 0.72 : sizeMm);
-      const r = mmToPt(Math.min(c.w, c.h) * 0.42);
-      const alpha = c.faint ? 0.32 : c.kind === 'weekday' ? 0.6 : 1;
+      const alpha = (c.faint ? 0.32 : c.kind === 'weekday' ? 0.6 : 1) * this.alpha;
       pdf.save();
-      pdf.fillOpacity(alpha);
-      if (c.marked && el.markStyle === 'circle') pdf.circle(cx, cy, r).fill(el.accent);
-      if (c.marked && el.markStyle === 'square') pdf.roundedRect(cx - r, cy - r, 2 * r, 2 * r, r * 0.25).fill(el.accent);
-      if (c.marked && el.markStyle === 'underline') pdf.rect(cx - r * 0.7, cy + mmToPt(sizeMm) * 0.55, r * 1.4, Math.max(0.7, mmToPt(sizeMm) * 0.12)).fill(el.accent);
-      const onMark = c.marked && el.markStyle !== 'underline';
-      pdf.fillColor(onMark ? '#ffffff' : el.color).fillOpacity(alpha).fontSize(size);
+      const mark = c.marked ? calendarMark(el.markStyle, c, lay.dayMm) : null;
+      if (mark) {
+        const d = mapPath(mark.d, (x, y) => [mmToPt(x), mmToPt(y)]);
+        const a = alpha * (mark.opacity ?? 1);
+        if (mark.fill) pdf.fillOpacity(a).path(d).fill(el.accent);
+        else pdf.strokeOpacity(a).lineWidth(mmToPt(mark.strokeMm ?? 0.3)).lineCap('round').path(d).stroke(el.accent);
+      }
+      pdf.fillColor(mark?.knockout ? '#ffffff' : el.color).fillOpacity(alpha).fontSize(size);
       const w = mmToPt(c.w);
       pdf.text(c.text, cx - w / 2, cy + mmToPt(sizeMm) * 0.35 - ascent * size, { width: w, align: 'center', lineBreak: false });
       pdf.restore();
@@ -207,7 +214,6 @@ class PdfWriter {
       buf = cutout ? await img.png({ compressionLevel: 6 }).toBuffer() : await img.jpeg({ quality: 92, chromaSubsampling: '4:4:4' }).toBuffer();
       this.imageCache.set(key, buf);
     }
-    if (el.opacity !== undefined && el.opacity < 1) pdf.opacity(el.opacity);
     pdf.image(buf, mmToPt(box.x + visible.dest.x), mmToPt(box.y + visible.dest.y), { width: mmToPt(visible.dest.w), height: mmToPt(visible.dest.h) });
   }
 
@@ -220,7 +226,7 @@ class PdfWriter {
     if (el.backgroundColor) {
       pdf.save();
       const r = mmToPt(el.backgroundRadiusMm ?? 0);
-      (r > 0 ? pdf.roundedRect(0, 0, W, H, Math.min(r, W / 2, H / 2)) : pdf.rect(0, 0, W, H)).fillOpacity(el.backgroundOpacity ?? 1).fill(el.backgroundColor);
+      (r > 0 ? pdf.roundedRect(0, 0, W, H, Math.min(r, W / 2, H / 2)) : pdf.rect(0, 0, W, H)).fillOpacity((el.backgroundOpacity ?? 1) * this.alpha).fill(el.backgroundColor);
       pdf.restore();
     }
     const pad = mmToPt(el.paddingMm ?? 0);
@@ -237,7 +243,7 @@ class PdfWriter {
       if (el.shadow) {
         pdf.save();
         pdf.translate(mmToPt(el.shadow.dxMm), mmToPt(el.shadow.dyMm));
-        pdf.fillColor(el.shadow.color).fillOpacity(el.shadow.opacity).strokeColor(el.shadow.color).strokeOpacity(el.shadow.opacity);
+        pdf.fillColor(el.shadow.color).fillOpacity(el.shadow.opacity * this.alpha).strokeColor(el.shadow.color).strokeOpacity(el.shadow.opacity * this.alpha);
         if (stroke) {
           pdf.lineWidth(stroke.width).lineJoin('round');
           draw('stroke');

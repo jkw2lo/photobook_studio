@@ -92,6 +92,10 @@ export interface ImageExportResponse {
 }
 
 export const api = {
+  deletedProjects: () => call<{ id: string; title: string; deletedAt: string; product: 'book' | 'poster' }[]>('GET', '/api/projects-deleted'),
+  trashProject: (id: string) => call<{ ok: true }>('DELETE', `/api/projects/${id}`),
+  restoreProject: (id: string) => call<{ ok: true }>('POST', `/api/projects/${id}/restore`),
+  purgeProject: (id: string) => call<{ removedPhotos: number }>('DELETE', `/api/projects/${id}?forever=1`),
   places: () => call<{ id: string; name: string }[]>('GET', '/api/places'),
   placeOutline: (id: string) => call<{ name: string; d: string; aspect: number }>('GET', `/api/places/${encodeURIComponent(id)}/outline`),
   suggestPlaces: (points: [number, number][]) => call<{ id: string; name: string; photos: number }[]>('POST', '/api/places/suggest', { points }),

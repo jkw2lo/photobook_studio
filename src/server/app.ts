@@ -58,6 +58,21 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
 
   // ---- projects
   app.get('/api/projects', (_req, res) => res.json(store.listProjects()));
+  // Recently deleted: kept for 30 days (restore or delete for good), then purged on start-up.
+  store.purgeOldDeleted(30);
+  app.get('/api/projects-deleted', (_req, res) => res.json(store.listDeleted()));
+  app.delete('/api/projects/:id', wrap((req, res) => {
+    if (req.query.forever) {
+      if (!store.listDeleted().some((p) => p.id === P(req).id)) throw new HttpError(409, 'Move the project to Recently deleted first');
+      return void res.json(store.purgeProject(P(req).id));
+    }
+    if (!store.trashProject(P(req).id)) throw new HttpError(404, 'Project not found');
+    res.json({ ok: true });
+  }));
+  app.post('/api/projects/:id/restore', wrap((req, res) => {
+    if (!store.restoreProject(P(req).id)) throw new HttpError(404, 'Not in Recently deleted');
+    res.json({ ok: true });
+  }));
 
   app.post('/api/projects', wrap((req, res) => {
     const { title, sizeId, stylePresetId, pages, printerId, bindingId, product, landscape } = req.body ?? {};

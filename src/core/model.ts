@@ -222,6 +222,8 @@ export interface TextElement extends ElementBase {
   arch?: number;
   /** Filled in automatically: the table of contents' chapter titles or their page numbers. */
   auto?: 'toc' | 'toc-pages';
+  /** 0–1, the whole box (text, background, outline, shadow). Missing = 1. */
+  opacity?: number;
   /** Follows its role's style; false once its font or size is edited by hand. */
   styleLinked: boolean;
 }
@@ -239,6 +241,8 @@ export interface ShapeElement extends ElementBase {
   strokeColor?: string;
   strokeWidthMm?: number;
 }
+
+export type CalendarMark = 'circle' | 'ring' | 'square' | 'heart' | 'star' | 'dot' | 'underline' | 'highlight' | 'cross';
 
 /** A calendar: the weeks of a trip, or a whole month, with the photo days marked. */
 export interface CalendarElement extends ElementBase {
@@ -261,7 +265,9 @@ export interface CalendarElement extends ElementBase {
   color: string;
   /** Colour of the marks. */
   accent: string;
-  markStyle: 'circle' | 'square' | 'underline';
+  markStyle: CalendarMark;
+  /** 0–1. Missing = 1. */
+  opacity?: number;
 }
 
 export type Element = ImageElement | TextElement | ShapeElement | CalendarElement;

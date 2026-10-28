@@ -115,8 +115,58 @@ function RoleEditor({ role, ts }: { role: TextRole; ts: TextStyle }) {
 }
 
 /** "Add text" with a choice of style; each option previews in its own style. */
-export function AddTextMenu({ surfaceId, at, disabled }: { surfaceId: string; at: { x: number; y: number }; disabled?: boolean }) {
+/** Add a text box in a role style or a quick style; it is selected straight away. */
+function addText(surfaceId: string, at: { x: number; y: number }, role: TextRole, quick?: (typeof TEXT_QUICK_STYLES)[number]) {
+  let id = '';
+  useEditor.getState().run(quick ? `Add text: ${quick.name}` : `Add ${roleLabel(role).toLowerCase()}`, (d) => {
+    const r = addTextAt(d, surfaceId, at.x, at.y, quick?.sample, role);
+    id = r.newId;
+    return quick ? applyQuickStyle(r.doc, surfaceId, r.newId, quick.id) : r.doc;
+  });
+  if (id) useEditor.getState().select({ spreadId: surfaceId, elementId: id });
+}
+
+/** Every way to add text: the book's text styles, then the quick styles — each shown in its look. */
+export function TextChoices({ surfaceId, at, onPick }: { surfaceId: string; at: { x: number; y: number }; onPick?: () => void }) {
   const doc = useEditor((s) => s.doc)!;
+  const pick = (role: TextRole, quick?: (typeof TEXT_QUICK_STYLES)[number]) => {
+    onPick?.();
+    addText(surfaceId, at, role, quick);
+  };
+  return (
+    <div className="text-choices">
+      <div className="add-text-head">Text styles</div>
+      <div className="add-text-roles">
+        {TEXT_ROLES.map(({ role, label }) => (
+          <button key={role} role="menuitem" className="add-text-option" style={{ background: doc.style.background }} onClick={() => pick(role)} title={`Add ${label.toLowerCase()} text`}>
+            {/* Shown on the book's own paper colour, in its own text style. */}
+            <span style={previewCss(doc.style, roleStyle(doc.style, role), Math.min(17, Math.max(9, roleStyle(doc.style, role).sizePt * 0.7)))}>{label}</span>
+          </button>
+        ))}
+      </div>
+      <div className="add-text-head">Quick styles</div>
+      <div className="add-text-quick">
+        {TEXT_QUICK_STYLES.map((q) => (
+          <button key={q.id} role="menuitem" className="add-text-option quick" title={q.name} onClick={() => pick(q.sizePt >= 20 ? 'title' : 'body', q)}>
+            <span
+              style={{
+                fontFamily: `'${q.family}'`, fontWeight: q.weight, fontStyle: q.italic ? 'italic' : undefined,
+                textTransform: q.uppercase ? 'uppercase' : undefined, letterSpacing: q.letterSpacingEm ? `${Math.min(q.letterSpacingEm, 0.15)}em` : undefined,
+                fontSize: q.sizePt >= 30 ? 16 : q.sizePt >= 20 ? 14 : 10.5,
+                ...(q.background ? { background: q.background.tone === 'text' ? '#1b1b1d' : '#e4e0d6', color: q.background.tone === 'text' ? '#f7f5f0' : '#1b1b1d', padding: '1px 5px' } : {}),
+              }}
+            >
+              {q.name}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** "Add text" button with the choices in a drop-down (used where the Add tab isn't at hand). */
+export function AddTextMenu({ surfaceId, at, disabled }: { surfaceId: string; at: { x: number; y: number }; disabled?: boolean }) {
   const [open, setOpen] = useState(false);
   const [place, setPlace] = useState<CSSProperties>({});
   const ref = useRef<HTMLDivElement>(null);
@@ -138,16 +188,6 @@ export function AddTextMenu({ surfaceId, at, disabled }: { surfaceId: string; at
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, [open]);
-  const add = (role: TextRole, quick?: (typeof TEXT_QUICK_STYLES)[number]) => {
-    setOpen(false);
-    let id = '';
-    useEditor.getState().run(quick ? `Add text: ${quick.name}` : `Add ${roleLabel(role).toLowerCase()}`, (d) => {
-      const r = addTextAt(d, surfaceId, at.x, at.y, quick?.sample, role);
-      id = r.newId;
-      return quick ? applyQuickStyle(r.doc, surfaceId, r.newId, quick.id) : r.doc;
-    });
-    if (id) useEditor.getState().select({ spreadId: surfaceId, elementId: id });
-  };
   return (
     <div className="add-text" ref={ref}>
       <button className="btn btn-small" disabled={disabled} onClick={toggle} aria-haspopup="menu" aria-expanded={open}>
@@ -155,29 +195,7 @@ export function AddTextMenu({ surfaceId, at, disabled }: { surfaceId: string; at
       </button>
       {open && (
         <div className="add-text-menu" role="menu" style={place}>
-          <div className="add-text-head">Text styles</div>
-          {TEXT_ROLES.map(({ role, label }) => (
-            <button key={role} role="menuitem" className="add-text-option" onClick={() => add(role)}>
-              <span style={previewCss(doc.style, roleStyle(doc.style, role), Math.min(17, Math.max(9, roleStyle(doc.style, role).sizePt * 0.7)))}>{label}</span>
-            </button>
-          ))}
-          <div className="add-text-head">Quick styles</div>
-          <div className="add-text-quick">
-            {TEXT_QUICK_STYLES.map((q) => (
-              <button key={q.id} role="menuitem" className="add-text-option" title={q.name} onClick={() => add(q.sizePt >= 20 ? 'title' : 'body', q)}>
-                <span
-                  style={{
-                    fontFamily: `'${q.family}'`, fontWeight: q.weight, fontStyle: q.italic ? 'italic' : undefined, color: '#1b1b1d',
-                    textTransform: q.uppercase ? 'uppercase' : undefined, letterSpacing: q.letterSpacingEm ? `${Math.min(q.letterSpacingEm, 0.15)}em` : undefined,
-                    fontSize: q.sizePt >= 30 ? 16 : q.sizePt >= 20 ? 14 : 10.5,
-                    ...(q.background ? { background: q.background.tone === 'text' ? '#1b1b1d' : '#e4e0d6', color: q.background.tone === 'text' ? '#f7f5f0' : '#1b1b1d', padding: '1px 5px' } : {}),
-                  }}
-                >
-                  {q.name}
-                </span>
-              </button>
-            ))}
-          </div>
+          <TextChoices surfaceId={surfaceId} at={at} onPick={() => setOpen(false)} />
         </div>
       )}
     </div>

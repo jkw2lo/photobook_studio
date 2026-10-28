@@ -55,6 +55,12 @@ export function makeImageElement(
   };
 }
 
+/** How opaque an element is drawn (0–1): every kind of element has an optional opacity. */
+export function elementOpacity(el: Element): number {
+  const o = el.type === 'shape' ? el.opacity : el.opacity ?? 1;
+  return Math.max(0, Math.min(1, o));
+}
+
 export function makeShapeElement(rect: { x: number; y: number; w: number; h: number }, fill: string, opacity = 1): ShapeElement {
   return { id: newId(), type: 'shape', xMm: rect.x, yMm: rect.y, widthMm: rect.w, heightMm: rect.h, rotationDeg: 0, locked: false, fill, opacity };
 }

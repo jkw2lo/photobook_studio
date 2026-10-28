@@ -1,7 +1,8 @@
-import { calendarTitle, fitCalendarHeight, photoDays, updateElement, type BookDocument, type CalendarElement } from '../../core';
+import { CALENDAR_MARKS, calendarMark, mapPath, calendarTitle, fitCalendarHeight, photoDays, updateElement, type BookDocument, type CalendarElement } from '../../core';
 import { useEditor } from '../store';
 import { ColorInput } from './ColorInput';
 import { FontPicker } from './FontPicker';
+import { OpacitySlider } from './DesignPanel';
 
 // Settings for a calendar layer: trip weeks or a whole month, the dates, which days are marked,
 // and its look.
@@ -85,12 +86,18 @@ export function CalendarControls({ el, spreadId }: { el: CalendarElement; spread
           <span>Marks</span>
           <ColorInput value={el.accent} label="Calendar mark colour" apply={(d, c) => updateElement(d, spreadId, el.id, { accent: c })} />
         </label>
-        <div className="seg">
-          {(['circle', 'square', 'underline'] as const).map((m) => (
-            <button key={m} className={el.markStyle === m ? 'on' : ''} title={m} onClick={() => upd('Mark style', { markStyle: m })}>{{ circle: '●', square: '■', underline: '▁' }[m]}</button>
+      </div>
+      <div className="field">
+        <span>Mark</span>
+        <div className="mark-grid">
+          {CALENDAR_MARKS.map((m) => (
+            <button key={m.id} className={`mark-btn ${el.markStyle === m.id ? 'on' : ''}`} title={m.name} aria-label={`Mark: ${m.name}`} onClick={() => upd(`Mark: ${m.name}`, { markStyle: m.id })}>
+              <MarkPreview mark={m.id} color={el.accent} />
+            </button>
           ))}
         </div>
       </div>
+      <OpacitySlider spreadId={spreadId} ids={[el.id]} value={el.opacity ?? 1} />
     </div>
   );
 }
@@ -103,4 +110,17 @@ function dayList(el: CalendarElement): string[] {
   const out: string[] = [];
   for (let d = from; d <= end && out.length < 62; d = new Date(d.getTime() + 86_400_000)) out.push(d.toISOString().slice(0, 10));
   return out;
+}
+
+/** A marked "14" in the given style, for the mark picker. */
+function MarkPreview({ mark, color }: { mark: (typeof CALENDAR_MARKS)[number]['id']; color: string }) {
+  const cell = { x: 0, y: 0, w: 10, h: 10 };
+  const m = calendarMark(mark, cell, 4.2);
+  const k = 2.6;
+  return (
+    <svg width={26} height={26} viewBox="0 0 26 26" aria-hidden>
+      <path d={mapPath(m.d, (x, y) => [x * k, y * k])} fill={m.fill ? color : 'none'} stroke={m.fill ? undefined : color} strokeWidth={m.strokeMm ? m.strokeMm * k : undefined} strokeLinecap="round" opacity={m.opacity} />
+      <text x={13} y={13 + 4.2 * k * 0.35} fontSize={4.2 * k} textAnchor="middle" fill={m.knockout ? '#fff' : 'currentColor'} fontWeight={600}>14</text>
+    </svg>
+  );
 }

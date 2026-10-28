@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { BookDocument, PhotoAnalysis, PhotoAsset } from '../core';
 import { migrateDocument } from '../core';
@@ -7,7 +7,7 @@ import { migrateDocument } from '../core';
 // SQLite catalog + project store. All writes are synchronous transactions, so a crash
 // mid-save leaves the previous committed state intact (WAL journaling).
 
-const DB_SCHEMA_VERSION = 1;
+const DB_SCHEMA_VERSION = 2;
 
 export interface AssetRow {
   id: string;
@@ -110,7 +110,14 @@ export class Store {
             PRIMARY KEY (project_id, revision)
           );
         `);
-        this.db.prepare(`INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)`).run(String(DB_SCHEMA_VERSION));
+        this.db.prepare(`INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '1')`).run();
+      });
+    }
+    if (current < 2) {
+      // v2: "Recently deleted" — a deleted project is kept (hidden) until restored or purged.
+      this.tx(() => {
+        this.db.exec(`ALTER TABLE projects ADD COLUMN deleted_at TEXT`);
+        this.db.prepare(`INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '2')`).run();
       });
     }
   }
@@ -138,7 +145,7 @@ export class Store {
       .prepare(
         `SELECT p.id, p.title, p.revision, p.updated_at, p.created_at, p.doc,
                 (SELECT COUNT(*) FROM project_assets pa WHERE pa.project_id = p.id) AS photo_count
-         FROM projects p ORDER BY p.updated_at DESC`,
+         FROM projects p WHERE p.deleted_at IS NULL ORDER BY p.updated_at DESC`,
       )
       .all() as { id: string; title: string; revision: number; updated_at: string; created_at: string; doc: string; photo_count: number }[];
     return rows.map((r) => {
@@ -169,8 +176,51 @@ export class Store {
     return { revision: 1 };
   }
 
+  /** Projects in "Recently deleted", newest first. */
+  listDeleted(): { id: string; title: string; deletedAt: string; product: 'book' | 'poster' }[] {
+    const rows = this.db.prepare(`SELECT id, title, deleted_at, doc FROM projects WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC`).all() as { id: string; title: string; deleted_at: string; doc: string }[];
+    return rows.map((r) => ({ id: r.id, title: r.title, deletedAt: r.deleted_at, product: JSON.parse(r.doc).settings?.product === 'poster' ? 'poster' : 'book' }));
+  }
+
+  /** Move to Recently deleted (nothing is removed yet). */
+  trashProject(id: string): boolean {
+    return Number(this.db.prepare(`UPDATE projects SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL`).run(new Date().toISOString(), id).changes) > 0;
+  }
+
+  restoreProject(id: string): boolean {
+    return Number(this.db.prepare(`UPDATE projects SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL`).run(id).changes) > 0;
+  }
+
+  /**
+   * Delete a project for good: its pages, history and photo links. Photos no other project uses
+   * leave the catalogue too, with their thumbnails and converted copies. Original files are never
+   * touched.
+   */
+  purgeProject(id: string): { removedPhotos: number } {
+    return this.tx(() => {
+      this.db.prepare(`DELETE FROM project_revisions WHERE project_id = ?`).run(id);
+      this.db.prepare(`DELETE FROM project_assets WHERE project_id = ?`).run(id);
+      this.db.prepare(`DELETE FROM projects WHERE id = ?`).run(id);
+      const orphans = this.db.prepare(`SELECT id, derived_path FROM assets WHERE id NOT IN (SELECT asset_id FROM project_assets)`).all() as { id: string; derived_path: string | null }[];
+      for (const o of orphans) {
+        this.db.prepare(`DELETE FROM assets WHERE id = ?`).run(o.id);
+        for (const f of ['s.jpg', 'm.jpg', 's.webp', 'm.webp']) rmSync(join(this.dataDir, 'thumbs', `${o.id}_${f}`), { force: true });
+        if (o.derived_path && o.derived_path.startsWith(join(this.dataDir, 'derived'))) rmSync(o.derived_path, { force: true });
+      }
+      return { removedPhotos: orphans.length };
+    });
+  }
+
+  /** Purge projects that have been in Recently deleted for more than `days` days. */
+  purgeOldDeleted(days = 30): number {
+    const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+    const ids = (this.db.prepare(`SELECT id FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?`).all(cutoff) as { id: string }[]).map((r) => r.id);
+    for (const id of ids) this.purgeProject(id);
+    return ids.length;
+  }
+
   getProject(id: string): { doc: BookDocument; revision: number; updatedAt: string } | null {
-    const row = this.db.prepare(`SELECT doc, revision, updated_at FROM projects WHERE id = ?`).get(id) as
+    const row = this.db.prepare(`SELECT doc, revision, updated_at FROM projects WHERE id = ? AND deleted_at IS NULL`).get(id) as
       | { doc: string; revision: number; updated_at: string }
       | undefined;
     if (!row) return null;
