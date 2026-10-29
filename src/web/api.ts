@@ -91,6 +91,17 @@ export interface ImageExportResponse {
   format: 'png' | 'jpeg';
 }
 
+export interface FlipbookResponse {
+  file: string;
+  url: string;
+  bytes: number;
+  pages: number;
+  hasCover: boolean;
+  widthPx: number;
+  heightPx: number;
+  durationMs: number;
+}
+
 export const api = {
   deletedProjects: () => call<{ id: string; title: string; deletedAt: string; product: 'book' | 'poster' }[]>('GET', '/api/projects-deleted'),
   trashProject: (id: string) => call<{ ok: true }>('DELETE', `/api/projects/${id}`),
@@ -101,6 +112,8 @@ export const api = {
   suggestPlaces: (points: [number, number][]) => call<{ id: string; name: string; photos: number }[]>('POST', '/api/places/suggest', { points }),
   exportImage: (projectId: string, doc: BookDocument, format: 'png' | 'jpeg', dpi: number) =>
     call<ImageExportResponse>('POST', `/api/projects/${projectId}/export-image`, { doc, format, dpi }),
+  exportFlipbook: (projectId: string, doc: BookDocument, size: 'standard' | 'sharp') =>
+    call<FlipbookResponse>('POST', `/api/projects/${projectId}/export-flipbook`, { doc, size }),
   textOutline: (body: { text: string; fontFamily: string; fontWeight: number; italic?: boolean; uppercase?: boolean; letterSpacingEm?: number }) =>
     call<{ d: string; aspect: number }>('POST', '/api/text-outline', body),
   listProjects: () => call<ProjectSummary[]>('GET', '/api/projects'),

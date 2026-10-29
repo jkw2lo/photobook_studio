@@ -7,6 +7,7 @@ import { Store, toPhotoAsset, type AssetRow } from './db';
 import { Importer, scanFolder } from './importer';
 import { textOutline } from './textOutline';
 import { listPlaces, placeOutline, suggestPlaces } from './places';
+import { exportFlipbook, type FlipbookSize } from './flipbook';
 import { exportPosterImage } from './imageExport';
 import { ALPHA_FORMATS, colorFeatures, existingThumb, hashFile, hasTransparency, isSupported, makeThumbnails, THUMB_SIZES, type ThumbSize } from './media';
 import { exportCoverPdf, exportPdf, exportPosterPdf, type ExportAsset, type ExportOptions } from './pdf';
@@ -246,17 +247,22 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
   }));
 
   // ---- export
+  /** The project's photos that can be drawn: originals, or their converted copy when the original is missing. */
+  const exportAssets = (projectId: string) => {
+    const assets = new Map<string, ExportAsset>();
+    for (const r of store.projectAssetRows(projectId)) {
+      const missing = isMissing(r);
+      const workPath = r.derived_path && existsSync(r.derived_path) ? r.derived_path : r.original_path;
+      if (!missing || (r.derived_path && existsSync(r.derived_path))) assets.set(r.id, { asset: toPhotoAsset(r, missing), workPath });
+    }
+    return assets;
+  };
+
   app.post('/api/projects/:id/export', wrap(async (req, res) => {
     const p = requireProject(P(req).id);
     const doc = req.body?.doc ? migrateDocument(req.body.doc) : p.doc;
     const options: ExportOptions = req.body?.bleedMode === 'outer' || req.body?.bleedMode === 'all' ? { bleedMode: req.body.bleedMode } : {};
-    const rows = new Map(store.projectAssetRows(P(req).id).map((r) => [r.id, r]));
-    const assets = new Map<string, ExportAsset>();
-    for (const [id, r] of rows) {
-      const missing = isMissing(r);
-      const workPath = r.derived_path && existsSync(r.derived_path) ? r.derived_path : r.original_path;
-      if (!missing || (r.derived_path && existsSync(r.derived_path))) assets.set(id, { asset: toPhotoAsset(r, missing), workPath });
-    }
+    const assets = exportAssets(P(req).id);
     const safeTitle = doc.title.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'photobook';
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     if (doc.settings.product === 'poster') {
@@ -282,17 +288,29 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
     if (doc.settings.product !== 'poster') throw new HttpError(400, 'Image export is for posters');
     const format = req.body?.format === 'jpeg' ? 'jpeg' : 'png';
     const dpi = Math.max(36, Math.min(600, Number(req.body?.dpi) || 150));
-    const assets = new Map<string, ExportAsset>();
-    for (const r of store.projectAssetRows(P(req).id)) {
-      const missing = isMissing(r);
-      const workPath = r.derived_path && existsSync(r.derived_path) ? r.derived_path : r.original_path;
-      if (!missing || (r.derived_path && existsSync(r.derived_path))) assets.set(r.id, { asset: toPhotoAsset(r, missing), workPath });
-    }
+    const assets = exportAssets(P(req).id);
     const safeTitle = doc.title.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'poster';
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const file = `${safeTitle}-${stamp}-${dpi}dpi.${format === 'jpeg' ? 'jpg' : 'png'}`;
     try {
       const result = await exportPosterImage(doc, assets, join(dataDir, 'exports', file), { format, dpi });
+      res.json({ ...result, file, url: `/api/exports/${encodeURIComponent(file)}` });
+    } catch (e) {
+      throw new HttpError(500, e instanceof Error ? e.message : String(e));
+    }
+  }));
+
+  // Book as a shareable web flipbook: one HTML file with every page in it.
+  app.post('/api/projects/:id/export-flipbook', wrap(async (req, res) => {
+    const p = requireProject(P(req).id);
+    const doc = req.body?.doc ? migrateDocument(req.body.doc) : p.doc;
+    if (doc.settings.product === 'poster') throw new HttpError(400, 'The flipbook is for books');
+    const size: FlipbookSize = req.body?.size === 'sharp' ? 'sharp' : 'standard';
+    const safeTitle = doc.title.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'photobook';
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const file = `${safeTitle}-${stamp}-flipbook.html`;
+    try {
+      const result = await exportFlipbook(doc, exportAssets(P(req).id), join(dataDir, 'exports', file), { size });
       res.json({ ...result, file, url: `/api/exports/${encodeURIComponent(file)}` });
     } catch (e) {
       throw new HttpError(500, e instanceof Error ? e.message : String(e));

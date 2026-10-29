@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { binding, coverGeometry, issueCounts, printablePages, printer, updateSettings, type BleedMode } from '../../core';
-import { api, type ExportResponse, type FileVerification, type ImageExportResponse } from '../api';
+import { api, type ExportResponse, type FileVerification, type FlipbookResponse, type ImageExportResponse } from '../api';
 import { useEditor } from '../store';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
@@ -95,7 +95,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
       )}
       {error && <div className="notice notice-error">{error}</div>}
 
-      {poster && <ImageExport />}
+      {poster ? <ImageExport /> : <FlipbookExport />}
 
       {result && (
         <div className="export-results">
@@ -179,6 +179,55 @@ function ImageExport() {
         </div>
       )}
       <p className="muted small">JPEG is smaller and fine for sharing; PNG is lossless. For a print shop, use the PDF.</p>
+    </div>
+  );
+}
+
+/** Book as a web flipbook: one HTML file to send or put online, with page turns. */
+function FlipbookExport() {
+  const doc = useEditor((s) => s.doc)!;
+  const projectId = useEditor((s) => s.projectId)!;
+  const [size, setSize] = useState<'standard' | 'sharp'>('standard');
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState<FlipbookResponse | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const pages = printablePages(doc).length + (doc.cover ? 2 : 0);
+  // Rough size per page image (WebP), to set expectations before exporting.
+  const perPage = size === 'sharp' ? 0.55 : 0.28;
+  const go = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      setRes(await api.exportFlipbook(projectId, doc, size));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="image-export">
+      <div className="row between">
+        <strong>Web flipbook</strong>
+        <span className="muted small">{pages} pages · about {Math.max(1, Math.round(pages * perPage))} MB</span>
+      </div>
+      <div className="field-row">
+        <div className="seg seg-wide">
+          <button className={size === 'standard' ? 'on' : ''} title="Pages 1400 px tall: quick to send" onClick={() => setSize('standard')}>Standard</button>
+          <button className={size === 'sharp' ? 'on' : ''} title="Pages 2200 px tall: crisp on big screens" onClick={() => setSize('sharp')}>Sharp</button>
+        </div>
+        <button className="btn btn-small" onClick={() => void go()} disabled={busy}>{busy ? `Rendering ${pages} pages…` : 'Make flipbook'}</button>
+      </div>
+      {err && <div className="notice notice-error small">{err}</div>}
+      {res && (
+        <div className="row">
+          <Icon name="check" size={16} />
+          <span className="small">{res.pages} pages{res.hasCover ? ' + cover' : ''} · {(res.bytes / 1e6).toFixed(1)} MB</span>
+          <a className="btn btn-small" href={res.url} target="_blank" rel="noreferrer">Open</a>
+          <a className="btn btn-small btn-primary" href={`${res.url}?download=1`}><Icon name="download" /> Download</a>
+        </div>
+      )}
+      <p className="muted small">One web page with page turns that works offline in any browser, on a phone too. Send it by AirDrop, email or a shared drive, or put it on any web host for a link. Nothing is uploaded from here.</p>
     </div>
   );
 }

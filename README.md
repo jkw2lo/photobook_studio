@@ -119,6 +119,15 @@ For books, the **Collage** style builds every multi-photo page as a mosaic, and 
 - **Opacity for everything.** Photos (Photo tab), text (Effects tab, covering the whole box: letters, background, outline and shadow), shapes, maps and calendars all have an Opacity slider. Select several items to fade them all at once. It prints the same way in the PDF.
 - **Deleting a book or poster.** Hover a card on the home page and click its bin icon. It moves to **Recently deleted**, and the Undo bar can bring it straight back. From Recently deleted you can **Restore** it, or **Delete for good**, which removes its pages and history and drops photos no other book uses from the library. Anything still there after 30 days is removed automatically. Your original photo files are never touched.
 
+## Sharing a web flipbook
+
+In the export dialog, **Web flipbook** turns a book into one web page you can send to people:
+
+- It opens in any browser, offline, with nothing to install. The front cover starts closed, spreads turn like the Preview, and the back cover comes last. Use the arrow keys, swipe, click a page or drag the slider. On a phone held upright it shows one page at a time.
+- Every page and both cover boards are cut from the same verified print PDF (rendered by macOS, like poster images), so the flipbook looks exactly like the printed book, trimmed and without bleed.
+- **Standard** makes pages 1400 px on the long edge; **Sharp** makes them 2200 px. Expect roughly 0.3 MB (Standard) or 0.5 MB (Sharp) per page with real photos.
+- Send the file by AirDrop, email or a shared drive, or put it on any static web host for a link. Nothing is uploaded from the app.
+
 ## The side panel
 
 - **Edit tab** (named after what is selected: Poster, Spread, Cover, Photo, Text, Shape, Calendar or Selection) changes things already on the page. Each kind of item has small sub-tabs:
