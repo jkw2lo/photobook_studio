@@ -1,13 +1,13 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { BookDocument, PhotoAnalysis, PhotoAsset } from '../core';
 import { migrateDocument } from '../core';
 
 // SQLite catalog + project store. All writes are synchronous transactions, so a crash
 // mid-save leaves the previous committed state intact (WAL journaling).
 
-const DB_SCHEMA_VERSION = 2;
+const DB_SCHEMA_VERSION = 3;
 
 export interface AssetRow {
   id: string;
@@ -120,6 +120,21 @@ export class Store {
         this.db.prepare(`INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '2')`).run();
       });
     }
+    if (current < 3) {
+      // v3: linked folders — a project keeps these in sync (new photos added, deleted ones dropped).
+      this.tx(() => {
+        this.db.exec(`
+          CREATE TABLE project_links (
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            folder TEXT NOT NULL,
+            added_at TEXT NOT NULL,
+            synced_at TEXT,
+            PRIMARY KEY (project_id, folder)
+          );
+        `);
+        this.db.prepare(`INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '3')`).run();
+      });
+    }
   }
 
   tx<T>(fn: () => T): T {
@@ -136,6 +151,15 @@ export class Store {
 
   close() {
     this.db.close();
+  }
+
+  getSetting(key: string): string | null {
+    const row = this.db.prepare(`SELECT value FROM meta WHERE key = ?`).get(`setting:${key}`) as { value: string } | undefined;
+    return row?.value ?? null;
+  }
+
+  setSetting(key: string, value: string) {
+    this.db.prepare(`INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)`).run(`setting:${key}`, value);
   }
 
   // ---- projects --------------------------------------------------------------------------
@@ -200,6 +224,7 @@ export class Store {
     return this.tx(() => {
       this.db.prepare(`DELETE FROM project_revisions WHERE project_id = ?`).run(id);
       this.db.prepare(`DELETE FROM project_assets WHERE project_id = ?`).run(id);
+      this.db.prepare(`DELETE FROM project_links WHERE project_id = ?`).run(id);
       this.db.prepare(`DELETE FROM projects WHERE id = ?`).run(id);
       const orphans = this.db.prepare(`SELECT id, derived_path FROM assets WHERE id NOT IN (SELECT asset_id FROM project_assets)`).all() as { id: string; derived_path: string | null }[];
       for (const o of orphans) {
@@ -315,7 +340,38 @@ export class Store {
   }
 
   relocateAsset(id: string, newPath: string) {
-    this.db.prepare(`UPDATE assets SET original_path = ? WHERE id = ?`).run(newPath, id);
+    this.db.prepare(`UPDATE assets SET original_path = ?, file_name = ? WHERE id = ?`).run(newPath, basename(newPath), id);
+  }
+
+  /** This project's photos with the given contents (to recognise a file that was moved). */
+  projectAssetsWithHash(projectId: string, hash: string): AssetRow[] {
+    return this.db
+      .prepare(`SELECT a.* FROM assets a JOIN project_assets pa ON pa.asset_id = a.id WHERE pa.project_id = ? AND a.content_hash = ?`)
+      .all(projectId, hash) as unknown as AssetRow[];
+  }
+
+  unlinkAsset(projectId: string, assetId: string) {
+    this.db.prepare(`DELETE FROM project_assets WHERE project_id = ? AND asset_id = ?`).run(projectId, assetId);
+  }
+
+  // ---- linked folders --------------------------------------------------------------------
+
+  listLinks(projectId: string): { folder: string; addedAt: string; syncedAt: string | null }[] {
+    return this.db
+      .prepare(`SELECT folder, added_at AS addedAt, synced_at AS syncedAt FROM project_links WHERE project_id = ? ORDER BY added_at`)
+      .all(projectId) as { folder: string; addedAt: string; syncedAt: string | null }[];
+  }
+
+  addLink(projectId: string, folder: string) {
+    this.db.prepare(`INSERT OR IGNORE INTO project_links (project_id, folder, added_at) VALUES (?, ?, ?)`).run(projectId, folder, new Date().toISOString());
+  }
+
+  removeLink(projectId: string, folder: string): boolean {
+    return Number(this.db.prepare(`DELETE FROM project_links WHERE project_id = ? AND folder = ?`).run(projectId, folder).changes) > 0;
+  }
+
+  markLinkSynced(projectId: string, folder: string) {
+    this.db.prepare(`UPDATE project_links SET synced_at = ? WHERE project_id = ? AND folder = ?`).run(new Date().toISOString(), projectId, folder);
   }
 }
 

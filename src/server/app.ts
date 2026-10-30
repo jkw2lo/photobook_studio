@@ -4,7 +4,8 @@ import { readdir } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { API_VERSION, SCHEMA_VERSION, UnknownSizeError, createBook, createPoster, posterSize, migrateDocument, type BookDocument, type PhotoAnalysis, type PhotoAsset } from '../core';
 import { Store, toPhotoAsset, type AssetRow } from './db';
-import { Importer, scanFolder } from './importer';
+import { Importer, isInside, resolveFolder, scanFolder } from './importer';
+import { createShelf, folderName, listShelf, setShelfRoot, shelfPreview, shelfRoot } from './shelf';
 import { textOutline } from './textOutline';
 import { listPlaces, placeOutline, suggestPlaces } from './places';
 import { exportFlipbook, type FlipbookSize } from './flipbook';
@@ -213,6 +214,87 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
     res.json(job);
   });
 
+  // ---- linked folders: kept in sync with the library (new photos added, deleted ones dropped)
+  const linksOf = (projectId: string) => {
+    const rows = store.projectAssetRows(projectId);
+    const root = shelfRoot(store);
+    return store.listLinks(projectId).map((l) => ({
+      folder: l.folder,
+      name: folderName(l.folder),
+      exists: existsSync(l.folder),
+      onShelf: isInside(l.folder, root),
+      syncedAt: l.syncedAt,
+      assetIds: rows.filter((r) => isInside(r.original_path, l.folder)).map((r) => r.id),
+    }));
+  };
+
+  app.get('/api/projects/:id/links', wrap((req, res) => {
+    requireProject(P(req).id);
+    res.json(linksOf(P(req).id));
+  }));
+
+  /** Link a folder and import it now. */
+  app.post('/api/projects/:id/links', wrap((req, res) => {
+    requireProject(P(req).id);
+    if (typeof req.body?.folder !== 'string' || !req.body.folder) throw new HttpError(400, 'Choose a folder to link');
+    const folder = resolveFolder(req.body.folder);
+    if (!existsSync(folder) || !statSync(folder).isDirectory()) throw new HttpError(400, `Folder not found: ${folder}`);
+    store.addLink(P(req).id, folder);
+    res.status(202).json(importer.start(P(req).id, folder));
+  }));
+
+  /** Stop syncing a folder. Its photos stay in the library. */
+  app.delete('/api/projects/:id/links', wrap((req, res) => {
+    requireProject(P(req).id);
+    const folder = resolveFolder(String(req.query.folder ?? ''));
+    if (!store.removeLink(P(req).id, folder)) throw new HttpError(404, 'That folder is not linked');
+    res.json(linksOf(P(req).id));
+  }));
+
+  /** Re-read every linked folder. `inUse` adds photos placed in edits not saved yet. */
+  app.post('/api/projects/:id/links/sync', wrap((req, res) => {
+    const { doc } = requireProject(P(req).id);
+    const folders = store.listLinks(P(req).id).map((l) => l.folder);
+    if (!folders.length) return void res.json({ job: null });
+    const inUse = assetIdsInUse(doc);
+    if (Array.isArray(req.body?.inUse)) for (const id of req.body.inUse) if (typeof id === 'string') inUse.add(id);
+    res.status(202).json({ job: importer.sync(P(req).id, folders, inUse) });
+  }));
+
+  // ---- the shelf (a shared folder of ready-sorted photos, offered to every book)
+  app.get('/api/shelf', wrap(async (req, res) => {
+    try {
+      res.json(await listShelf(store, typeof req.query.path === 'string' && req.query.path ? req.query.path : undefined));
+    } catch (e) {
+      throw new HttpError(404, e instanceof Error ? e.message : String(e));
+    }
+  }));
+
+  app.put('/api/shelf', wrap(async (req, res) => {
+    try {
+      setShelfRoot(store, String(req.body?.root ?? ''));
+    } catch (e) {
+      throw new HttpError(400, e instanceof Error ? e.message : String(e));
+    }
+    res.json(await listShelf(store));
+  }));
+
+  app.post('/api/shelf/create', wrap(async (_req, res) => {
+    createShelf(store);
+    res.json(await listShelf(store));
+  }));
+
+  app.get('/api/shelf/preview', wrap(async (req, res) => {
+    let file: string;
+    try {
+      file = await shelfPreview(store, dataDir, String(req.query.path ?? ''));
+    } catch {
+      throw new HttpError(404, 'No preview');
+    }
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    res.sendFile(file);
+  }));
+
   /** Minimal folder browser so import works with real paths (originals are referenced, not copied). */
   app.get('/api/fs', wrap(async (req, res) => {
     const raw = typeof req.query.path === 'string' && req.query.path ? req.query.path : (process.env.HOME ?? '/');
@@ -356,3 +438,13 @@ export class HttpError extends Error {
 }
 
 export { THUMB_SIZES };
+
+/** Every photo placed on a page, the cover or as a background. */
+function assetIdsInUse(doc: BookDocument): Set<string> {
+  const ids = new Set<string>();
+  for (const s of doc.cover ? [doc.cover, ...doc.spreads] : doc.spreads) {
+    for (const e of s.elements) if (e.type === 'image' && e.assetId) ids.add(e.assetId);
+    if (s.backgroundImage) ids.add(s.backgroundImage.assetId);
+  }
+  return ids;
+}

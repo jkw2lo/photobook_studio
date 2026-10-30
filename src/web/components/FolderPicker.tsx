@@ -4,8 +4,16 @@ import { Icon } from './Icon';
 import { Modal } from './Modal';
 
 /** Browse local folders through the local server (the browser cannot expose real paths itself). */
-export function FolderPicker({ title, action, onChoose, onCancel }: { title: string; action: string; onChoose: (path: string) => void; onCancel: () => void }) {
+export function FolderPicker({ title, action, offerLink, onChoose, onCancel }: {
+  title: string;
+  action: string;
+  /** Offer "keep linked" (sync the folder with the library from now on). */
+  offerLink?: boolean;
+  onChoose: (path: string, link: boolean) => void;
+  onCancel: () => void;
+}) {
   const [listing, setListing] = useState<FolderListing | null>(null);
+  const [link, setLink] = useState(false);
   const [path, setPath] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -38,7 +46,7 @@ export function FolderPicker({ title, action, onChoose, onCancel }: { title: str
     } catch {
       // storage unavailable
     }
-    onChoose(path);
+    onChoose(path, offerLink ? link : false);
   };
 
   return (
@@ -68,6 +76,12 @@ export function FolderPicker({ title, action, onChoose, onCancel }: { title: str
           ))}
           {listing.folders.length === 0 && <p className="muted pad">No subfolders.</p>}
         </div>
+      )}
+      {offerLink && (
+        <label className="field check folder-link">
+          <input type="checkbox" checked={link} onChange={(e) => setLink(e.target.checked)} />
+          <span>Keep linked: photos added to this folder later join the library, and deleted ones leave it</span>
+        </label>
       )}
       <div className="modal-foot">
         <span className="muted">

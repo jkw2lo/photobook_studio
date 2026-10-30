@@ -629,3 +629,46 @@ input[type='checkbox'] { accent-color: var(--accent); width: 15px; height: 15px;
 .deleted-row { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; column-gap: 12px; align-items: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 .deleted-row > .row { grid-row: 1 / 3; grid-column: 2; }
 .btn.danger-solid { background: var(--error); border-color: var(--error); color: #fff; }
+
+/* ---- shelf (shared folder of ready-sorted photos) and linked folders */
+.shelf { flex: none; border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); margin-bottom: 8px; }
+.shelf-head { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 12px; min-height: 32px; }
+.shelf-toggle { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; padding: 0; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; cursor: pointer; }
+.shelf-toggle .chip-count { text-transform: none; letter-spacing: 0; }
+.shelf.closed .shelf-toggle .icon { transform: rotate(-90deg); }
+.shelf-syncing { font-size: 10.5px; }
+.shelf-tools { margin-left: auto; gap: 0; }
+.shelf-tools .icon-btn { width: 24px; height: 24px; }
+.shelf-body { max-height: 34vh; overflow-y: auto; padding: 0 12px 10px; display: flex; flex-direction: column; gap: 6px; }
+.shelf-body .notice { margin: 0; }
+.shelf-path { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.shelf-path .link { display: inline-flex; align-items: center; gap: 2px; flex: none; text-decoration: none; }
+.shelf-note { margin: 0; }
+.shelf-empty { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 7px; }
+.shelf-empty p { margin: 0; }
+.shelf-empty code { font-size: 11px; color: var(--text); word-break: break-all; }
+.shelf-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.shelf-row { display: flex; align-items: center; gap: 6px; padding: 4px 4px 4px 4px; border-radius: 7px; background: var(--panel-2); border: 1px solid var(--line-soft); }
+.shelf-row-linked { border-color: rgba(231, 166, 95, 0.45); }
+.shelf-row-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; background: none; border: 0; padding: 0; color: var(--text); text-align: left; cursor: pointer; }
+.shelf-row-main:disabled { cursor: default; color: var(--text); }
+.shelf-row-main > .icon { color: var(--muted); flex: none; }
+.shelf-thumbs { flex: none; display: flex; align-items: center; justify-content: center; width: 52px; height: 36px; color: var(--muted); }
+.shelf-thumbs img { width: 26px; height: 34px; object-fit: cover; border-radius: 3px; background: #fff; outline: 1px solid rgba(0, 0, 0, 0.25); margin-left: -12px; box-shadow: 2px 0 4px rgba(0, 0, 0, 0.35); }
+.shelf-thumbs img:first-child { margin-left: 0; }
+.shelf-row-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.shelf-row-text strong { font-weight: 600; font-size: 12px; }
+.shelf-row .btn-small { flex: none; height: 26px; padding: 0 8px; gap: 3px; }
+.shelf-linked { flex: none; display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--accent); padding-left: 4px; }
+.shelf-linked .icon-btn, .shelf-tag .icon-btn { width: 20px; height: 20px; }
+.shelf-elsewhere { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.shelf-tag { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; padding: 0 0 0 8px; border: 1px solid var(--line); border-radius: 999px; }
+.shelf-tag-missing, .chip-missing { border-style: dashed; color: var(--warn); }
+.filters-links { align-items: center; padding-top: 0; }
+.folder-link { align-self: stretch; height: auto; padding: 8px 2px 0; }
+/* A narrow library: one preview per folder, so the name has room. */
+@container (max-width: 240px) {
+  .shelf-thumbs { width: 28px; }
+  .shelf-thumbs img:nth-child(n + 2) { display: none; }
+  .shelf-row .btn-small { padding: 0 6px; }
+}

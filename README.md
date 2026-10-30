@@ -128,6 +128,19 @@ In the export dialog, **Web flipbook** turns a book into one web page you can se
 - **Standard** makes pages 1400 px on the long edge; **Sharp** makes them 2200 px. Expect roughly 0.3 MB (Standard) or 0.5 MB (Sharp) per page with real photos.
 - Send the file by AirDrop, email or a shared drive, or put it on any static web host for a link. Nothing is uploaded from the app.
 
+## The Shelf and linked folders
+
+The **Shelf** is one folder shared with your other tools, offered in every book's library. By default it is `~/Pictures/Studio Shelf`. Point Background Studio's **Save results to** and **Sorted copies go to** at it, and cutouts and sorted pictures land somewhere every book can reach. Folders by trip or by kind work well (`Receipts/`, `Stamps/`, `Okinawa/Tickets/`).
+
+- **Shelf** (top of the library) lists the shelf's folders, each with its newest photos, how many it holds, and its subfolders. Click a folder with subfolders to open it. **Create it** makes the shelf folder if it isn't there yet. The folder button chooses a different shelf.
+- **Link** adds a folder's photos to this book and keeps the folder in sync. Each time you open the book, come back to the window from another app, or click the refresh button, new photos in linked folders join the library. Renamed or moved photos are followed, so they keep their place on the pages. Photos deleted from the folder leave the library, unless they're on a page (then they stay and show as **Missing**).
+- If a linked folder can't be found (renamed, deleted, or on a drive that isn't plugged in), nothing is removed. Its chip shows a dashed outline until it's back.
+- **From** chips under the library filters show just one linked folder's photos.
+- The ✕ beside **Linked** stops syncing. The photos stay in the library.
+- Any folder can be linked, not just ones on the shelf: tick **Keep linked** when you import. Folders linked from elsewhere are listed under the shelf as **Also linked**.
+
+Photobook Studio only reads the shelf. Apart from **Create it**, it never writes, moves or deletes anything there.
+
 ## The side panel
 
 - **Edit tab** (named after what is selected: Poster, Spread, Cover, Photo, Text, Shape, Calendar or Selection) changes things already on the page. Each kind of item has small sub-tabs:
@@ -197,6 +210,7 @@ npm run test:e2e
 | `tests/fonts.test.ts` | Every bundled font weight and italic embeds in a PDF; editor stylesheet matches the exporter; every type pack uses bundled fonts |
 | `tests/arrange.test.ts` | Pinned photos stay exactly put through Arrange, Shuffle and re-flow in every style, with nothing overlapping them; Keep crop survives shuffles; All / On sheet photo sources; hero shuffles cycle through many sharp photos |
 | `tests/cutouts.test.ts` | Transparency detected (not just an alpha channel), WebP previews keep it, older imports re-detected; cutouts laid out whole with no border in every style; colour-aware near-duplicates; background image covers the bleed, survives Arrange/Shuffle and isn't repeated; PDF keeps the cutout's transparency over a faded background |
+| `tests/shelf.test.ts` | Shelf listing and creation, previews only served from inside the shelf; linking imports a folder; syncs add new photos, follow renamed ones (same photo, same id), drop deleted unused ones and keep ones on a page; a missing linked folder removes nothing; unlinking keeps the photos |
 | `tests/projects.test.ts` | Recently deleted → restore → delete for good, with unused photos (and only those) removed and originals untouched; element opacity; every calendar mark style in its cell and in the PDF |
 | `tests/extras.test.ts` | Trip calendars show only their weeks (across months too), months only their days, photo days marked; calendar page designs and the 12-month poster; equal-gap, midway and size snapping; clean-up keepers, blurry and duplicate photos; map outlines (main area only, undistorted), GPS place suggestions, and calendars and map stickers in the PDF |
 | `tests/editing.test.ts` | Grouping, aligning (to each other, to the page, groups as one unit), distributing, moving, duplicating and reordering several items; box selection; banners grouped with text; per-photo adjustments chained with the grade, auto-enhance, adjustments following photos through Arrange and swaps; back-cover blurb and spine text; restart endpoint guards; poster JPEG/PNG export size, format and DPI |

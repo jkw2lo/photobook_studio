@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { CommandError, expandGroups, findSurface, reconcileCover, refreshContents, type BookDocument, type DraftReport, type PhotoAsset } from '../core';
-import { api, ApiError, type ImportJob } from './api';
+import { api, ApiError, type ImportJob, type LinkedFolder } from './api';
 
 // Editor state. The document is immutable; every committed edit pushes the previous document onto
 // a bounded undo stack (structural sharing keeps this cheap). Drags update the document
@@ -50,6 +50,10 @@ interface EditorState {
   saveError: string | null;
   lastSavedAt: number | null;
   importJob: ImportJob | null;
+  /** Folders this project keeps in sync with its library. */
+  links: LinkedFolder[];
+  /** A quiet re-read of the linked folders is running. */
+  syncing: boolean;
   /** Bumped to bring the poster's Auto collage controls into view. */
   collageFocus: number;
   /** Bumped to open the book's Draft tab. */
@@ -85,12 +89,32 @@ interface EditorState {
   setSwapSource(sel: Selection | null): void;
   refreshAssets(): Promise<void>;
   patchAsset(assetId: string, patch: { rating?: number; favorite?: boolean; excluded?: boolean }): Promise<void>;
-  startImport(folder: string): Promise<void>;
+  /** Import a folder; `link` also keeps it in sync from now on. */
+  startImport(folder: string, opts?: { link?: boolean }): Promise<void>;
+  refreshLinks(): Promise<void>;
+  /** Re-read the linked folders (at most every 20 s unless `force`), quietly unless something changed. */
+  syncLinks(opts?: { force?: boolean }): Promise<void>;
+  unlinkFolder(folder: string): Promise<void>;
   toast(kind: Toast['kind'], text: string): void;
   dismissToast(id: number): void;
 }
 
 let toastId = 0;
+let lastSyncAt = 0;
+const SYNC_INTERVAL_MS = 20_000;
+
+/** Photos placed anywhere in the document (kept in the library even if their file disappears). */
+function inUseIds(doc: BookDocument | null): string[] {
+  if (!doc) return [];
+  const ids = new Set<string>();
+  for (const s of doc.cover ? [doc.cover, ...doc.spreads] : doc.spreads) {
+    for (const e of s.elements) if (e.type === 'image' && e.assetId) ids.add(e.assetId);
+    if (s.backgroundImage) ids.add(s.backgroundImage.assetId);
+  }
+  return [...ids];
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 export const useEditor = create<EditorState>((set, get) => ({
   projectId: null,
@@ -113,6 +137,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   saveError: null,
   lastSavedAt: null,
   importJob: null,
+  links: [],
+  syncing: false,
   collageFocus: 0,
   draftFocus: 0,
   draftReport: null,
@@ -128,13 +154,15 @@ export const useEditor = create<EditorState>((set, get) => ({
         doc, revision, assets, assetMap: new Map(assets.map((a) => [a.id, a])),
         saveState: 'saved', lastSavedAt: Date.now(), currentSpread: doc.settings.product === 'poster' ? 0 : Math.min(1, doc.spreads.length - 1),
       });
+      await get().refreshLinks();
+      void get().syncLinks({ force: true });
     } catch (e) {
       set({ loadError: e instanceof Error ? e.message : String(e) });
     }
   },
 
   unload() {
-    set({ projectId: null, doc: null, assets: [], assetMap: new Map(), past: [], future: [], importJob: null, draftReport: null });
+    set({ projectId: null, doc: null, assets: [], assetMap: new Map(), past: [], future: [], importJob: null, links: [], syncing: false, draftReport: null });
   },
 
   run(label, fn) {
@@ -266,10 +294,10 @@ export const useEditor = create<EditorState>((set, get) => ({
     });
   },
 
-  async startImport(folder) {
+  async startImport(folder, opts) {
     const { projectId } = get();
     if (!projectId) return;
-    let job = await api.startImport(projectId, folder);
+    let job = opts?.link ? await api.linkFolder(projectId, folder) : await api.startImport(projectId, folder);
     set({ importJob: job });
     let lastRefresh = 0;
     while (job.status === 'scanning' || job.status === 'running') {
@@ -282,15 +310,63 @@ export const useEditor = create<EditorState>((set, get) => ({
       }
     }
     await get().refreshAssets();
+    if (opts?.link) await get().refreshLinks();
     if (job.status === 'failed') get().toast('error', job.errors[0]?.error ?? 'Import failed');
     else {
       const parts = [`Imported ${job.imported} photo${job.imported === 1 ? '' : 's'}`];
       if (job.alreadyInLibrary) parts.push(`${job.alreadyInLibrary} already in library`);
+      if (job.moved) parts.push(`${plural(job.moved, 'moved photo')} found`);
       if (job.exactDuplicates) parts.push(`${job.exactDuplicates} exact duplicate${job.exactDuplicates === 1 ? '' : 's'} flagged`);
       if (job.failed) parts.push(`${job.failed} could not be read`);
+      if (opts?.link) parts.push('linked: new photos are added when you open the book');
       get().toast(job.failed ? 'error' : 'success', parts.join(' · '));
     }
     setTimeout(() => set((s) => (s.importJob?.id === job.id ? { importJob: null } : {})), 2500);
+  },
+
+  async refreshLinks() {
+    const { projectId } = get();
+    if (!projectId) return;
+    const links = await api.links(projectId);
+    if (get().projectId === projectId) set({ links });
+  },
+
+  async syncLinks(opts) {
+    const { projectId, links, syncing, importJob } = get();
+    if (!projectId || !links.length || syncing) return;
+    // A visible import is already reading files; it will be picked up next time.
+    if (importJob && (importJob.status === 'scanning' || importJob.status === 'running')) return;
+    if (!opts?.force && Date.now() - lastSyncAt < SYNC_INTERVAL_MS) return;
+    lastSyncAt = Date.now();
+    set({ syncing: true });
+    try {
+      let { job } = await api.syncLinks(projectId, inUseIds(get().doc));
+      while (job && (job.status === 'scanning' || job.status === 'running')) {
+        await new Promise((r) => setTimeout(r, 500));
+        if (get().projectId !== projectId) return;
+        job = await api.job(job.id);
+      }
+      if (!job || get().projectId !== projectId) return;
+      if (job.imported || job.moved || job.removed) await get().refreshAssets();
+      await get().refreshLinks();
+      const parts: string[] = [];
+      if (job.imported) parts.push(`${plural(job.imported, 'new photo')} added`);
+      if (job.moved) parts.push(`${plural(job.moved, 'moved photo')} followed`);
+      if (job.removed) parts.push(`${plural(job.removed, 'deleted photo')} taken out of the library`);
+      if (parts.length) get().toast('success', `Linked folders: ${parts.join(' · ')}`);
+      if (job.failed) get().toast('error', `Linked folders: ${plural(job.failed, 'photo')} could not be read`);
+    } catch (e) {
+      get().toast('error', `Couldn't check linked folders: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      if (get().projectId === projectId) set({ syncing: false });
+    }
+  },
+
+  async unlinkFolder(folder) {
+    const { projectId } = get();
+    if (!projectId) return;
+    const links = await api.unlinkFolder(projectId, folder);
+    set({ links });
   },
 
   toast(kind, text) {

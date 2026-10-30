@@ -35,6 +35,7 @@ export interface ProjectSummary {
 
 export interface ImportJob {
   id: string;
+  kind: 'import' | 'sync';
   status: 'scanning' | 'running' | 'done' | 'failed';
   folder: string;
   total: number;
@@ -42,8 +43,38 @@ export interface ImportJob {
   imported: number;
   alreadyInLibrary: number;
   exactDuplicates: number;
+  moved: number;
+  removed: number;
+  missingFolders: string[];
   failed: number;
   errors: { file: string; error: string }[];
+}
+
+/** A folder this project keeps in sync with its library. */
+export interface LinkedFolder {
+  folder: string;
+  name: string;
+  exists: boolean;
+  onShelf: boolean;
+  syncedAt: string | null;
+  assetIds: string[];
+}
+
+export interface ShelfFolder {
+  name: string;
+  path: string;
+  photos: number;
+  subfolders: number;
+  previews: string[];
+}
+
+export interface ShelfListing {
+  root: string;
+  exists: boolean;
+  path: string;
+  parent: string | null;
+  folders: ShelfFolder[];
+  loosePhotos: number;
 }
 
 export interface FolderListing {
@@ -130,10 +161,19 @@ export const api = {
   startImport: (projectId: string, folder: string) => call<ImportJob>('POST', `/api/projects/${projectId}/import`, { folder }),
   job: (id: string) => call<ImportJob>('GET', `/api/jobs/${id}`),
   listFolder: (path?: string) => call<FolderListing>('GET', `/api/fs${path ? `?path=${encodeURIComponent(path)}` : ''}`),
+  links: (projectId: string) => call<LinkedFolder[]>('GET', `/api/projects/${projectId}/links`),
+  linkFolder: (projectId: string, folder: string) => call<ImportJob>('POST', `/api/projects/${projectId}/links`, { folder }),
+  unlinkFolder: (projectId: string, folder: string) => call<LinkedFolder[]>('DELETE', `/api/projects/${projectId}/links?folder=${encodeURIComponent(folder)}`),
+  syncLinks: (projectId: string, inUse: string[]) => call<{ job: ImportJob | null }>('POST', `/api/projects/${projectId}/links/sync`, { inUse }),
+  shelf: (path?: string) => call<ShelfListing>('GET', `/api/shelf${path ? `?path=${encodeURIComponent(path)}` : ''}`),
+  setShelfRoot: (root: string) => call<ShelfListing>('PUT', '/api/shelf', { root }),
+  createShelf: () => call<ShelfListing>('POST', '/api/shelf/create'),
   relink: (projectId: string, folder: string) => call<{ relinked: number; stillMissing: number }>('POST', `/api/projects/${projectId}/relink`, { folder }),
   exportPdf: (projectId: string, doc: BookDocument, bleedMode?: 'all' | 'outer') =>
     call<ExportResponse>('POST', `/api/projects/${projectId}/export`, { doc, bleedMode }),
 };
 
 // v=2: thumbnails of cutouts became WebP with transparency; the version skips older cached JPEGs.
+export const shelfPreviewUrl = (path: string) => `/api/shelf/preview?path=${encodeURIComponent(path)}`;
+
 export const thumbUrl = (assetId: string, size: 's' | 'm' = 's') => `/api/assets/${assetId}/thumb?size=${size}&v=2`;

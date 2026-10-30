@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
-import { basename, extname, join, resolve } from 'node:path';
+import { basename, extname, join, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Store } from './db';
 import { analyze, existingThumb, fileStat, hashFile, isSupported, makeThumbnails, orientedSize, readMetadata, workingFile } from './media';
@@ -11,13 +11,22 @@ import { analyze, existingThumb, fileStat, hashFile, isSupported, makeThumbnails
 export interface ImportJob {
   id: string;
   projectId: string;
+  /** 'import' reads one folder; 'sync' re-reads the project's linked folders. */
+  kind: 'import' | 'sync';
   folder: string;
+  folders: string[];
   status: 'scanning' | 'running' | 'done' | 'failed';
   total: number;
   processed: number;
   imported: number;
   alreadyInLibrary: number;
   exactDuplicates: number;
+  /** Photos found at a new path (moved or renamed): same photo, nothing re-imported. */
+  moved: number;
+  /** Photos whose file left a linked folder and that aren't on any page: taken out of the library. */
+  removed: number;
+  /** Linked folders that weren't there (renamed, deleted, or on a drive that isn't plugged in). */
+  missingFolders: string[];
   failed: number;
   errors: { file: string; error: string }[];
   startedAt: string;
@@ -41,8 +50,16 @@ export async function scanFolder(folder: string, recursive: boolean): Promise<st
   return out.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 }
 
+export const resolveFolder = (input: string) => resolve(input.replace(/^~(?=$|\/)/, process.env.HOME ?? '~'));
+
+/** Whether `path` is inside `folder` (or is it). */
+export const isInside = (path: string, folder: string) => path === folder || path.startsWith(folder.endsWith(sep) ? folder : folder + sep);
+
 export class Importer {
   private jobs = new Map<string, ImportJob>();
+  /** One job at a time per project, so an import and a sync never catalogue the same file twice. */
+  private queues = new Map<string, Promise<void>>();
+  private syncing = new Map<string, ImportJob>();
 
   constructor(private store: Store) {}
 
@@ -51,14 +68,45 @@ export class Importer {
   }
 
   start(projectId: string, folderInput: string, recursive = true): ImportJob {
-    const folder = resolve(folderInput.replace(/^~(?=$|\/)/, process.env.HOME ?? '~'));
+    const folder = resolveFolder(folderInput);
+    const job = this.newJob(projectId, 'import', [folder]);
+    this.enqueue(job, () => this.run(job, recursive));
+    return job;
+  }
+
+  /**
+   * Re-read the project's linked folders: add new photos, follow moved ones, and drop photos whose
+   * file is gone — unless they're on a page (`inUse`), where they stay and show as missing.
+   * A sync already queued or running for the project is returned instead of starting another.
+   */
+  sync(projectId: string, folders: string[], inUse: Set<string>): ImportJob {
+    const pending = this.syncing.get(projectId);
+    if (pending && pending.status !== 'done' && pending.status !== 'failed') return pending;
+    const job = this.newJob(projectId, 'sync', folders);
+    this.syncing.set(projectId, job);
+    this.enqueue(job, async () => {
+      job.missingFolders = folders.filter((f) => !existsSync(f));
+      await this.run(job, true, () => {
+        for (const f of folders) if (!job.missingFolders.includes(f)) this.store.markLinkSynced(projectId, f);
+        this.dropGone(job, inUse);
+      });
+    });
+    return job;
+  }
+
+  private newJob(projectId: string, kind: ImportJob['kind'], folders: string[]): ImportJob {
     const job: ImportJob = {
-      id: randomUUID(), projectId, folder, status: 'scanning', total: 0, processed: 0, imported: 0,
-      alreadyInLibrary: 0, exactDuplicates: 0, failed: 0, errors: [], startedAt: new Date().toISOString(),
+      id: randomUUID(), projectId, kind, folder: folders.length === 1 ? folders[0] : `${folders.length} linked folders`, folders,
+      status: 'scanning', total: 0, processed: 0, imported: 0, alreadyInLibrary: 0, exactDuplicates: 0, moved: 0, removed: 0,
+      missingFolders: [], failed: 0, errors: [], startedAt: new Date().toISOString(),
     };
     this.jobs.set(job.id, job);
-    void this.run(job, recursive);
     return job;
+  }
+
+  private enqueue(job: ImportJob, work: () => Promise<void>) {
+    const next = (this.queues.get(job.projectId) ?? Promise.resolve()).then(work, work);
+    this.queues.set(job.projectId, next.catch(() => undefined));
   }
 
   /** Resolves when the job finishes (used by tests and scripts). */
@@ -70,10 +118,17 @@ export class Importer {
     }
   }
 
-  private async run(job: ImportJob, recursive: boolean) {
+  /** `finish` runs after every file is read, before the job reports done. */
+  private async run(job: ImportJob, recursive: boolean, finish?: () => void) {
     try {
-      if (!existsSync(job.folder)) throw new Error(`Folder not found: ${job.folder}`);
-      const files = await scanFolder(job.folder, recursive);
+      const files: string[] = [];
+      for (const folder of job.folders) {
+        if (!existsSync(folder)) {
+          if (job.kind === 'sync') continue;
+          throw new Error(`Folder not found: ${folder}`);
+        }
+        files.push(...(await scanFolder(folder, recursive)));
+      }
       job.total = files.length;
       job.status = 'running';
       let next = 0;
@@ -90,6 +145,7 @@ export class Importer {
         }
       };
       await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+      finish?.();
       job.status = 'done';
     } catch (e) {
       job.status = 'failed';
@@ -109,6 +165,15 @@ export class Importer {
       return;
     }
     const contentHash = await hashFile(path);
+    if (!existing) {
+      // The same photo whose old file is gone: it was moved or renamed. Follow it, keeping its place on pages.
+      const moved = this.store.projectAssetsWithHash(job.projectId, contentHash).find((a) => !existsSync(a.original_path));
+      if (moved) {
+        this.store.relocateAsset(moved.id, path);
+        job.moved++;
+        return;
+      }
+    }
     const id = existing?.id ?? randomUUID();
     const work = await workingFile(path, dataDir, contentHash);
     const [size, meta, analysis] = await Promise.all([orientedSize(work.path), readMetadata(path), analyze(work.path)]);
@@ -140,5 +205,16 @@ export class Importer {
     });
     if (dup) job.exactDuplicates++;
     job.imported++;
+  }
+
+  private dropGone(job: ImportJob, inUse: Set<string>) {
+    const folders = job.folders.filter((f) => !job.missingFolders.includes(f));
+    this.store.tx(() => {
+      for (const r of this.store.projectAssetRows(job.projectId)) {
+        if (inUse.has(r.id) || !folders.some((f) => isInside(r.original_path, f)) || existsSync(r.original_path)) continue;
+        this.store.unlinkAsset(job.projectId, r.id);
+        job.removed++;
+      }
+    });
   }
 }

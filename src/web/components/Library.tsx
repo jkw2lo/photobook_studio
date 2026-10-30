@@ -6,8 +6,9 @@ import { ASSET_MIME } from './Canvas';
 import { FolderPicker } from './FolderPicker';
 import { Icon } from './Icon';
 import { CleanupDialog } from './CleanupDialog';
+import { Shelf, tildePath } from './Shelf';
 
-type Filter = 'all' | 'unused' | 'favorites' | 'hidden' | 'issues';
+type Filter = 'all' | 'unused' | 'favorites' | 'hidden' | 'issues' | `link:${string}`;
 
 export function Library() {
   const assets = useEditor((s) => s.assets);
@@ -15,6 +16,7 @@ export function Library() {
   const usageKey = useEditor((s) => (s.doc ? usageKeyOf(s.doc) : ''));
   const job = useEditor((s) => s.importJob);
   const projectId = useEditor((s) => s.projectId)!;
+  const links = useEditor((s) => s.links);
   const [filter, setFilter] = useState<Filter>('all');
   const [picker, setPicker] = useState<'import' | 'relink' | null>(null);
   const [cleanup, setCleanup] = useState(false);
@@ -32,7 +34,10 @@ export function Library() {
 
   const missing = assets.filter((a) => a.missing).length;
   const ordered = useMemo(() => chronological(assets), [assets]);
+  const linkFilter = filter.startsWith('link:') ? links.find((l) => `link:${l.folder}` === filter) : undefined;
+  const fromLink = useMemo(() => new Set(linkFilter?.assetIds ?? []), [linkFilter]);
   const visible = ordered.filter((a) => {
+    if (filter.startsWith('link:')) return fromLink.has(a.id);
     if (filter === 'unused') return !usage.has(a.id) && !a.excluded;
     if (filter === 'favorites') return a.favorite;
     if (filter === 'hidden') return a.excluded;
@@ -75,6 +80,7 @@ export function Library() {
           </div>
         </div>
       )}
+      <Shelf />
       {missing > 0 && (
         <div className="notice notice-error">
           {missing} original{missing > 1 ? 's' : ''} missing.{' '}
@@ -82,16 +88,31 @@ export function Library() {
         </div>
       )}
       <div className="filters">
-        {(['all', 'unused', 'favorites', 'hidden', 'issues'] as Filter[]).map((f) => (
+        {(['all', 'unused', 'favorites', 'hidden', 'issues'] as const).map((f) => (
           <button key={f} className={`chip ${filter === f ? 'chip-on' : ''}`} onClick={() => setFilter(f)}>
             {f === 'favorites' ? '★' : f[0].toUpperCase() + f.slice(1)} <span className="chip-count">{counts[f]}</span>
           </button>
         ))}
       </div>
+      {links.length > 0 && (
+        <div className="filters filters-links">
+          <span className="muted small">From</span>
+          {links.map((l) => (
+            <button
+              key={l.folder}
+              className={`chip ${filter === `link:${l.folder}` ? 'chip-on' : ''} ${l.exists ? '' : 'chip-missing'}`}
+              title={l.exists ? `${tildePath(l.folder)} · kept in sync` : `Folder not found: ${tildePath(l.folder)}`}
+              onClick={() => setFilter(filter === `link:${l.folder}` ? 'all' : `link:${l.folder}`)}
+            >
+              {l.name} <span className="chip-count">{l.assetIds.length}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {assets.length === 0 && !running ? (
         <div className="empty">
           <p>No photos yet.</p>
-          <p className="muted">Import a folder. Originals stay where they are; only thumbnails are created, on this computer.</p>
+          <p className="muted">Link a folder from the Shelf above, or import any folder. Originals stay where they are; only thumbnails are created, on this computer.</p>
           <button className="btn" onClick={() => setPicker('import')}>Choose a folder…</button>
         </div>
       ) : (
@@ -108,10 +129,11 @@ export function Library() {
         <FolderPicker
           title={picker === 'import' ? 'Import photos from a folder' : 'Find missing originals'}
           action={picker === 'import' ? 'Import this folder' : 'Search this folder'}
+          offerLink={picker === 'import'}
           onCancel={() => setPicker(null)}
-          onChoose={async (folder) => {
+          onChoose={async (folder, link) => {
             setPicker(null);
-            if (picker === 'import') await useEditor.getState().startImport(folder);
+            if (picker === 'import') await useEditor.getState().startImport(folder, { link });
             else {
               const r = await api.relink(projectId, folder);
               await useEditor.getState().refreshAssets();
