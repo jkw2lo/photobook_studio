@@ -65,8 +65,10 @@ touch "$APP"
 echo "Built: $APP"
 
 if [ "$INSTALL" = 1 ]; then
-  mkdir -p "$HOME/Applications"
-  rm -rf "$HOME/Applications/$NAME.app"
-  cp -R "$APP" "$HOME/Applications/"
+  mkdir -p "$HOME/Applications/$NAME.app"
+  # Update the installed app in place rather than deleting and copying it: the Dock keeps track
+  # of the app's folder, and a deleted folder drops the app from the Dock.
+  rsync -a --delete "$APP/" "$HOME/Applications/$NAME.app/"
+  touch "$HOME/Applications/$NAME.app"
   echo "Installed: $HOME/Applications/$NAME.app"
 fi
