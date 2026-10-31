@@ -19,7 +19,9 @@ export interface Selection {
  * collage's photos go — a box (`rect`) or a freeform outline (`shape`), as fractions of the sheet. */
 export type CanvasTool =
   | { kind: 'background'; surfaceId: string }
-  | { kind: 'area'; surfaceId: string; mode: 'box' | 'free'; rect: Rect | null; shape: { x: number; y: number }[] | null };
+  | { kind: 'area'; surfaceId: string; mode: 'box' | 'free'; rect: Rect | null; shape: { x: number; y: number }[] | null }
+  /** Cutting a photo by hand: draw what to keep, or erase with a lasso or a round eraser. */
+  | { kind: 'cut'; surfaceId: string; elementId: string; mode: 'keep' | 'erase' | 'circle' };
 
 export interface Toast {
   id: number;

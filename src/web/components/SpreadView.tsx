@@ -1,6 +1,6 @@
 import { memo, useId, useMemo, type CSSProperties, type ReactNode } from 'react';
 import {
-  COVER_INDEX, archGeometry, backgroundFrame, elementPlacement, geometryFor, gradeChainSvg, gradeSvgMatrix, gradientLine, isNeutralGrade, maskPath, pageNumberRect,
+  COVER_INDEX, archGeometry, backgroundFrame, displayText, textLayers, type TextLayer, elementPlacement, geometryFor, gradeChainSvg, gradientLine, isNeutralChain, isNeutralGrade, maskPath, pageNumberRect,
   roleStyle, shapePath, type BookSettings, type BookStyle, type ColorGrade, type Element, type Gradient, type ImageElement, type PhotoAsset,
   type ShapeElement, type Spread, type TextElement, type CalendarElement, calendarLayout, calendarMark, mapPath, MM_PER_PT,
 } from '../../core';
@@ -29,7 +29,9 @@ interface Props {
 
 export const SpreadView = memo(function SpreadView({ settings, style, spreadCount, index, surface, scale, assets, thumbSize = 'm', children, hiddenElementId, grade }: Props) {
   const filterId = `grade${useId().replace(/:/g, '')}`;
-  const graded = !isNeutralGrade(grade);
+  // The page's own grade, then the document's.
+  const chain = [surface.grade, grade];
+  const graded = !isNeutralChain(chain);
   const g = useMemo(() => geometryFor(settings, spreadCount, index), [settings, spreadCount, index]);
   const b = g.bleed;
   const bg = surface.background ?? style.background;
@@ -42,7 +44,7 @@ export const SpreadView = memo(function SpreadView({ settings, style, spreadCoun
       {graded && (
         <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden>
           <filter id={filterId} colorInterpolationFilters="sRGB">
-            <feColorMatrix type="matrix" values={gradeSvgMatrix(grade!)} />
+            <feColorMatrix type="matrix" values={gradeChainSvg(chain)} />
           </filter>
         </svg>
       )}
@@ -60,10 +62,10 @@ export const SpreadView = memo(function SpreadView({ settings, style, spreadCoun
             }}
           />
         ))}
-      {bgFrame && <ElementView el={bgFrame} scale={scale} offset={b} asset={assets.get(bgFrame.assetId!)} thumbSize={thumbSize} filter={graded ? `url(#${filterId})` : undefined} grade={grade} />}
+      {bgFrame && <ElementView el={bgFrame} scale={scale} offset={b} asset={assets.get(bgFrame.assetId!)} thumbSize={thumbSize} filter={graded ? `url(#${filterId})` : undefined} grade={grade} surfaceGrade={surface.grade} />}
       {surface.elements.map((el) =>
         el.id === hiddenElementId ? null : (
-          <ElementView key={el.id} el={el} scale={scale} offset={b} asset={el.type === 'image' && el.assetId ? assets.get(el.assetId) : undefined} thumbSize={thumbSize} filter={graded ? `url(#${filterId})` : undefined} grade={grade} />
+          <ElementView key={el.id} el={el} scale={scale} offset={b} asset={el.type === 'image' && el.assetId ? assets.get(el.assetId) : undefined} thumbSize={thumbSize} filter={graded ? `url(#${filterId})` : undefined} grade={grade} surfaceGrade={surface.grade} />
         ),
       )}
       {!isCover && settings.pageNumbers &&
@@ -90,7 +92,7 @@ export const SpreadView = memo(function SpreadView({ settings, style, spreadCoun
   );
 });
 
-export const ElementView = memo(function ElementView({ el, scale, offset, asset, thumbSize, filter, grade }: { el: Element; scale: number; offset: number; asset?: PhotoAsset; thumbSize: 's' | 'm'; filter?: string; grade?: ColorGrade }) {
+export const ElementView = memo(function ElementView({ el, scale, offset, asset, thumbSize, filter, grade, surfaceGrade }: { el: Element; scale: number; offset: number; asset?: PhotoAsset; thumbSize: 's' | 'm'; filter?: string; grade?: ColorGrade; surfaceGrade?: ColorGrade }) {
   const style: CSSProperties = {
     left: (el.xMm + offset) * scale,
     top: (el.yMm + offset) * scale,
@@ -98,7 +100,7 @@ export const ElementView = memo(function ElementView({ el, scale, offset, asset,
     height: el.heightMm * scale,
     transform: el.rotationDeg ? `rotate(${el.rotationDeg}deg)` : undefined,
   };
-  if (el.type === 'image') return <ImageView el={el} scale={scale} style={style} asset={asset} thumbSize={thumbSize} filter={filter} grade={grade} />;
+  if (el.type === 'image') return <ImageView el={el} scale={scale} style={style} asset={asset} thumbSize={thumbSize} filter={filter} grade={grade} surfaceGrade={surfaceGrade} />;
   if (el.type === 'shape') return <ShapeView el={el} scale={scale} style={style} />;
   if (el.type === 'calendar') return <CalendarView el={el} scale={scale} style={style} />;
   return <TextView el={el} scale={scale} style={style} />;
@@ -134,7 +136,7 @@ function CalendarView({ el, scale, style }: { el: CalendarElement; scale: number
   );
 }
 
-function ImageView({ el, scale, style, asset, thumbSize, filter, grade }: { el: ImageElement; scale: number; style: CSSProperties; asset?: PhotoAsset; thumbSize: 's' | 'm'; filter?: string; grade?: ColorGrade }) {
+function ImageView({ el, scale, style, asset, thumbSize, filter, grade, surfaceGrade }: { el: ImageElement; scale: number; style: CSSProperties; asset?: PhotoAsset; thumbSize: 's' | 'm'; filter?: string; grade?: ColorGrade; surfaceGrade?: ColorGrade }) {
   // A photo with its own adjustments gets its own filter: its adjustment, then the document's grade.
   const ownId = `adj${useId().replace(/:/g, '')}`;
   const own = !isNeutralGrade(el.adjust);
@@ -161,7 +163,7 @@ function ImageView({ el, scale, style, asset, thumbSize, filter, grade }: { el: 
       {own && (
         <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden>
           <filter id={ownId} colorInterpolationFilters="sRGB">
-            <feColorMatrix type="matrix" values={gradeChainSvg([el.adjust, grade])} />
+            <feColorMatrix type="matrix" values={gradeChainSvg([el.adjust, surfaceGrade, grade])} />
           </filter>
         </svg>
       )}
@@ -250,17 +252,33 @@ function letterCss(el: TextElement, scale: number): CSSProperties {
     css.WebkitTextStroke = `${el.strokeWidthMm * scale}px ${el.strokeColor ?? '#000000'}`;
     css.paintOrder = 'stroke fill';
   }
-  if (el.shadow) css.filter = `drop-shadow(${el.shadow.dxMm * scale}px ${el.shadow.dyMm * scale}px 0 ${hexToRgba(el.shadow.color, el.shadow.opacity)})`;
   return css;
+}
+
+/** One effect layer (glow, shadow, extrusion, outer outline) as a copy of the letters behind them. */
+function layerCss(layer: TextLayer, scale: number, pad: number): CSSProperties {
+  return {
+    position: 'absolute', left: pad, top: pad, right: pad, bottom: pad,
+    color: layer.color, opacity: layer.opacity,
+    transform: layer.dxMm || layer.dyMm ? `translate(${layer.dxMm * scale}px, ${layer.dyMm * scale}px)` : undefined,
+    WebkitTextStroke: layer.strokeMm ? `${layer.strokeMm * scale}px ${layer.color}` : undefined,
+    paintOrder: 'stroke fill',
+    filter: layer.blurMm ? `blur(${layer.blurMm * scale * 0.5}px)` : undefined,
+    pointerEvents: 'none',
+  };
 }
 
 function TextView({ el, scale, style }: { el: TextElement; scale: number; style: CSSProperties }) {
   const css = textCss(el, scale);
   const arch = archGeometry(el.widthMm, el.heightMm, el.arch ?? 0, el.fontSizePt * MM_PER_PT);
   if (arch) return <ArchedText el={el} scale={scale} style={{ ...style, ...css, padding: 0 }} />;
+  const text = displayText(el);
+  const pad = (el.paddingMm ?? 0) * scale;
+  const skew = el.skewDeg ? `skewX(${-el.skewDeg}deg)` : undefined;
   return (
-    <div className="el el-text" style={{ ...style, ...css, opacity: el.opacity }}>
-      <span style={letterCss(el, scale)}>{el.text}</span>
+    <div className="el el-text" style={{ ...style, ...css, textAlign: el.vertical ? 'center' : css.textAlign, opacity: el.opacity }}>
+      {textLayers(el).map((layer, i) => <span key={i} aria-hidden style={{ ...layerCss(layer, scale, pad), transform: [skew, layerCss(layer, scale, pad).transform].filter(Boolean).join(' ') || undefined }}>{text}</span>)}
+      <span style={{ ...letterCss(el, scale), position: 'relative', transform: skew }}>{text}</span>
     </div>
   );
 }
@@ -271,7 +289,7 @@ function ArchedText({ el, scale, style }: { el: TextElement; scale: number; styl
   const w = el.widthMm * scale;
   const h = el.heightMm * scale;
   const arch = archGeometry(w, h, el.arch ?? 0, el.fontSizePt * MM_PER_PT * scale)!;
-  const text = (el.uppercase ? el.text.toUpperCase() : el.text).replace(/\n/g, ' ');
+  const text = displayText({ ...el, vertical: false }).replace(/\n/g, ' ');
   const common = {
     fontFamily: `'${el.fontFamily}'`, fontWeight: el.fontWeight, fontStyle: el.italic ? 'italic' : undefined,
     fontSize: el.fontSizePt * MM_PER_PT * scale, letterSpacing: el.letterSpacingEm ? `${el.letterSpacingEm}em` : undefined,
@@ -284,12 +302,12 @@ function ArchedText({ el, scale, style }: { el: TextElement; scale: number; styl
           <path id={`p${uid}`} d={arch.path} />
           {el.gradient && <GradientDef id={`g${uid}`} gradient={el.gradient} w={w} h={h} />}
         </defs>
-        {el.shadow && (
-          <text style={common} fill={el.shadow.color} fillOpacity={el.shadow.opacity} transform={`translate(${el.shadow.dxMm * scale} ${el.shadow.dyMm * scale})`}
-            stroke={el.strokeWidthMm ? el.shadow.color : undefined} strokeWidth={el.strokeWidthMm ? el.strokeWidthMm * scale : undefined} strokeOpacity={el.shadow.opacity}>
+        {textLayers(el).map((layer, i) => (
+          <text key={i} style={{ ...common, filter: layer.blurMm ? `blur(${layer.blurMm * scale * 0.5}px)` : undefined }} fill={layer.color} fillOpacity={layer.opacity} transform={`translate(${layer.dxMm * scale} ${layer.dyMm * scale})`}
+            stroke={layer.strokeMm ? layer.color : undefined} strokeWidth={layer.strokeMm ? layer.strokeMm * scale : undefined} strokeOpacity={layer.opacity} strokeLinejoin="round" paintOrder="stroke fill">
             {path}
           </text>
-        )}
+        ))}
         <text style={common} fill={el.gradient ? `url(#g${uid})` : el.color} stroke={el.strokeWidthMm ? el.strokeColor ?? '#000000' : undefined}
           strokeWidth={el.strokeWidthMm ? el.strokeWidthMm * scale : undefined} paintOrder="stroke fill" strokeLinejoin="round">
           {path}

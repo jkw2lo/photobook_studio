@@ -1,5 +1,5 @@
 import { produce, type Draft } from 'immer';
-import type { BindingId, BookDocument, BookSettings, BookStyle, Element, ImageElement, PhotoAsset, PrinterId, Spread, TextRole } from './model';
+import type { BindingId, BookDocument, BookSettings, BookStyle, ColorGrade, Element, ImageElement, PhotoAsset, PrinterId, Spread, TextRole } from './model';
 import { blankSpread, pageContentRect, pageTrimRect, type PageSide } from './book';
 import { aspectOf, dateRangeOf } from './curation';
 import { defaultCrop } from './geometry';
@@ -455,6 +455,15 @@ export function setCoverLocked(doc: BookDocument, locked: boolean): BookDocument
 export function setSurfaceBackground(doc: BookDocument, spreadId: string, background: string | undefined): BookDocument {
   return produce(doc, (d) => {
     findSpread(d, spreadId).background = background;
+  });
+}
+
+/** A page's (spread's, cover's) own colour grade; undefined removes it. */
+export function setSurfaceGrade(doc: BookDocument, spreadId: string, grade: ColorGrade | undefined): BookDocument {
+  return produce(doc, (d) => {
+    const sp = findSpread(d, spreadId);
+    if (grade) sp.grade = grade;
+    else delete sp.grade;
   });
 }
 

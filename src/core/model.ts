@@ -172,6 +172,9 @@ export interface ImageElement extends ElementBase {
  */
 export type PhotoMask =
   | { kind: 'shape'; shape: string }
+  /** Cut by hand: an outline to keep (missing = the whole frame) minus erased areas. Points are
+   * fractions of the frame (0–1), so the cut follows the frame when it moves or resizes. */
+  | { kind: 'cut'; keep?: { x: number; y: number }[]; erase: { x: number; y: number }[][] }
   | { kind: 'text'; text: string; fontFamily: string; fontWeight: number; italic?: boolean; uppercase?: boolean; letterSpacingEm?: number; d: string; aspect: number }
   | ({ kind: 'outline' } & PlaceOutline);
 
@@ -222,6 +225,16 @@ export interface TextElement extends ElementBase {
   shadow?: { color: string; dxMm: number; dyMm: number; opacity: number };
   /** Bend the text along an arc: −100 (a frown) … 100 (a smile). Single line only. */
   arch?: number;
+  /** Letters stacked top to bottom, each upright (each line becomes a column). */
+  vertical?: boolean;
+  /** 3D block letters: copies stepping back `depthMm` in direction `angleDeg` (0 = right, 90 = down). */
+  extrude?: { color: string; depthMm: number; angleDeg: number };
+  /** A soft halo around the letters (neon). */
+  glow?: { color: string; sizeMm: number };
+  /** A second outline outside the first. */
+  outline2?: { color: string; widthMm: number };
+  /** Slant the letters (degrees; positive leans right, like italics). */
+  skewDeg?: number;
   /** Filled in automatically: the table of contents' chapter titles or their page numbers. */
   auto?: 'toc' | 'toc-pages';
   /** 0–1, the whole box (text, background, outline, shadow). Missing = 1. */
@@ -304,6 +317,9 @@ export interface Spread {
   /** A photo filling the whole surface (out to the bleed), behind every element. Auto layouts
    * never touch it. */
   backgroundImage?: BackgroundImage;
+  /** Colour grade for the photos on this page / spread / cover, after each photo's own adjustment
+   * and before the whole document's grade. */
+  grade?: ColorGrade;
   layout?: SpreadLayout;
   /** Where an auto layout came from. `generatedIds`: elements the generator made besides photos
    * (e.g. a collage title band) — replaced on re-layout, unlike text the user added. */
@@ -349,6 +365,15 @@ export interface BookDocument {
   template?: string;
   /** Elements the poster template added (its type, banners, icons), so it can be removed again. */
   templateElementIds?: ID[];
+  /** Text looks saved from this document's own text boxes, to reuse on any page. */
+  textLooks?: SavedTextLook[];
+}
+
+/** A text look saved from a text box: everything about how the letters look, none of the words. */
+export interface SavedTextLook {
+  id: ID;
+  name: string;
+  fields: Partial<TextElement>;
 }
 
 /** A whole-document colour grade. Sliders are −100…100 (fade 0…100); 0 = unchanged. */

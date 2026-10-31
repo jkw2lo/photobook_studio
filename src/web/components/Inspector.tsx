@@ -3,7 +3,7 @@ import {
   COVER_INDEX, TEXT_ROLES, addChapter, applyMosaicLayout, nearestWeight, resetTextToStyle, roleLabel, saveTextAsRoleStyle, setTextRole, weightName, addTextAt, applyTemplate, defaultCrop, duplicateElement, duplicateSpread, effectiveDpi,
   fitFrameToPhoto, fontFamily, insertSpreadAfter, isPrintable, removeElements, removeSpread, reorderElement, setFramePhoto,
   setSpreadChapter, setSpreadLocked, setSurfaceBackground, shuffleSpreadLayout, spreadPagesLabel, templateName, updateElement,
-  MM_PER_PT, TEXT_QUICK_STYLES, useAsBackground, applyQuickStyle, estimateTextHeightMm, boldWeight, isBold, type BookDocument, type ImageElement, type TextElement, type TextRole,
+  MM_PER_PT, TEXT_QUICK_STYLES, textBoxForDirection, findSurface, useAsBackground, applyQuickStyle, estimateTextHeightMm, boldWeight, isBold, type BookDocument, type ImageElement, type TextElement, type TextRole,
 } from '../../core';
 import { thumbUrl } from '../api';
 import { duplicate, remove, togglePin, toggleKeepCrop, toggleKeepRotation, toggleLock } from '../elementActions';
@@ -18,11 +18,12 @@ import { FontPicker } from './FontPicker';
 import { PosterBackgroundPanel, PosterCollagePanel, PosterSheetPanel } from './PosterUI';
 import { DraftPanel } from './DraftPanel';
 import { CalendarControls } from './CalendarControls';
-import { GradeControls, OpacitySlider, PhotoAdjustControls, PhotoShapeControls, ShapeControls, TextEffects } from './DesignPanel';
+import { GradeControls, MultiPhotoAdjust, OpacitySlider, PhotoAdjustControls, PhotoShapeControls, ShapeControls, TextEffects } from './DesignPanel';
 import { AddPanel, addSections, type AddSection } from './AddPanel';
 import { AlignTools, LayersPanel, MultiPanel } from './SelectionPanel';
 import { Icon } from './Icon';
 import { PreflightPanel } from './PreflightPanel';
+import { TextLooksPanel } from './TextLooks';
 import { TemplatePicker } from './TemplatePicker';
 
 // The right-hand panel: four tabs that never change name — Layout (the poster or page itself),
@@ -31,10 +32,10 @@ import { TemplatePicker } from './TemplatePicker';
 // whose height you drag.
 
 type Top = 'layout' | 'photo' | 'elements' | 'preflight';
-type PosterSide = 'collage' | 'templates' | 'background' | 'sheet';
-type BookSide = 'page' | 'draft' | 'templates' | 'book';
-type PhotoSide = 'photo' | 'adjust' | 'cutout' | 'position' | 'all';
-type ElementsSide = 'selected' | AddSection | 'type';
+type PosterSide = 'collage' | 'templates' | 'background' | 'colour' | 'sheet';
+type BookSide = 'page' | 'draft' | 'templates' | 'colour' | 'book';
+type PhotoSide = 'photo' | 'adjust' | 'cutout' | 'position';
+type ElementsSide = 'selected' | AddSection | 'looks' | 'type';
 
 /** Sub-tabs inside the text, shape and calendar panels (remembered per kind while you work). */
 type Sub = { image: 'photo' | 'adjust' | 'cutout' | 'position'; text: 'text' | 'effects' | 'position'; shape: 'shape' | 'position'; calendar: 'calendar' | 'position' };
@@ -64,7 +65,7 @@ export function Inspector({ issueCount }: { issueCount: { error: number; warning
   const [top, setTop] = useState<Top>('layout');
   const [posterSide, setPosterSide] = useState<PosterSide>('collage');
   const [bookSide, setBookSide] = useState<BookSide>('page');
-  const [photoSide, setPhotoSide] = useState<PhotoSide>('all');
+  const [photoSide, setPhotoSide] = useState<PhotoSide>('photo');
   const [elementsSide, setElementsSide] = useState<ElementsSide>('text');
   const [sub, setSub] = useState<Sub>(DEFAULT_SUB);
   const selected = useEditor(selectedElement);
@@ -76,6 +77,12 @@ export function Inspector({ issueCount }: { issueCount: { error: number; warning
   const collageFocus = useEditor((s) => s.collageFocus);
   const draftFocus = useEditor((s) => s.draftFocus);
   const photoSelected = multiCount <= 1 && selected?.type === 'image';
+  // Several photos (and nothing else) selected: adjust them together in Photo › Adjust.
+  const photosSelected = useEditor((s) => {
+    if (s.multi.length < 2 || !s.doc || !s.selection) return false;
+    const els = findSurface(s.doc, s.selection.spreadId)?.surface.elements ?? [];
+    return s.multi.every((id) => els.find((e) => e.id === id)?.type === 'image');
+  });
   const otherSelected = !!selected && (multiCount > 1 || selected.type !== 'image');
 
   useEffect(() => {
@@ -98,9 +105,9 @@ export function Inspector({ issueCount }: { issueCount: { error: number; warning
       if (r) setTop((t) => (t === r.to ? r.from : t));
       return;
     }
-    const to: Top = photoSelected ? 'photo' : 'elements';
-    if (photoSelected) setPhotoSide((p) => (p === 'all' ? 'photo' : p));
-    else setElementsSide('selected');
+    const to: Top = photoSelected || photosSelected ? 'photo' : 'elements';
+    if (photosSelected) setPhotoSide('adjust');
+    else if (!photoSelected) setElementsSide('selected');
     setTop((t) => {
       if (t !== to) returnTo.current = { from: returnTo.current?.from ?? t, to };
       return to;
@@ -111,18 +118,20 @@ export function Inspector({ issueCount }: { issueCount: { error: number; warning
   }, [otherSelected]);
 
   const layoutItems: RailItem<string>[] = poster
-    ? [{ id: 'collage', label: 'Collage', icon: 'grid' }, { id: 'templates', label: 'Templates', icon: 'sparkle' }, { id: 'background', label: 'Background', icon: 'image' }, { id: 'sheet', label: 'Sheet', icon: 'fit' }]
-    : [{ id: 'page', label: onCover ? 'Cover' : 'Page', icon: 'spread' }, { id: 'draft', label: 'Draft', icon: 'shuffle' }, { id: 'templates', label: 'Templates', icon: 'sparkle' }, { id: 'book', label: 'Book', icon: 'page' }];
+    ? [{ id: 'collage', label: 'Collage', icon: 'grid' }, { id: 'templates', label: 'Templates', icon: 'sparkle' }, { id: 'background', label: 'Background', icon: 'image' }, { id: 'colour', label: 'Colour', icon: 'palette' }, { id: 'sheet', label: 'Sheet', icon: 'fit' }]
+    : [{ id: 'page', label: onCover ? 'Cover' : 'Page', icon: 'spread' }, { id: 'draft', label: 'Draft', icon: 'shuffle' }, { id: 'templates', label: 'Templates', icon: 'sparkle' }, { id: 'colour', label: 'Colour', icon: 'palette' }, { id: 'book', label: 'Book', icon: 'page' }];
   const photoItems: RailItem<PhotoSide>[] = [
     { id: 'photo', label: 'Photo', icon: 'crop', dim: !photoSelected },
-    { id: 'adjust', label: 'Adjust', icon: 'sliders', dim: !photoSelected },
-    { id: 'cutout', label: 'Shape', icon: 'shape', dim: !photoSelected },
+    { id: 'adjust', label: 'Adjust', icon: 'sliders', dim: !photoSelected && !photosSelected },
+    { id: 'cutout', label: 'Cut-out', icon: 'shape', dim: !photoSelected },
     { id: 'position', label: 'Position', icon: 'move', dim: !photoSelected },
-    { id: 'all', label: 'All photos', icon: 'palette' },
   ];
   const elementItems: RailItem<ElementsSide>[] = [
     ...(otherSelected ? [{ id: 'selected' as const, label: 'Selected', icon: 'select' }] : []),
-    ...addSections(doc, index).map((x) => ({ id: x.id, label: x.label, icon: ({ text: 'text', shapes: 'star', calendar: 'calendar', map: 'map', pages: 'page' } as const)[x.id] })),
+    ...addSections(doc, index).flatMap((x) => {
+      const item = { id: x.id as ElementsSide, label: x.label, icon: ({ text: 'text', shapes: 'star', calendar: 'calendar', map: 'map', pages: 'page' } as const)[x.id] };
+      return x.id === 'text' ? [item, { id: 'looks' as const, label: 'Looks', icon: 'sparkle' }] : [item];
+    }),
     { id: 'type', label: 'Type', icon: 'type' },
   ];
 
@@ -146,23 +155,31 @@ export function Inspector({ issueCount }: { issueCount: { error: number; warning
           {top === 'layout' && poster && posterSide === 'collage' && <PosterCollagePanel />}
           {top === 'layout' && poster && posterSide === 'templates' && <div className="stack"><TitleFields /><div className="section-title">Templates</div><PosterTemplates /></div>}
           {top === 'layout' && poster && posterSide === 'background' && <PosterBackgroundPanel />}
+          {top === 'layout' && posterSide === 'colour' && poster && <div className="stack"><div className="section-title">Whole poster</div><GradeControls /><p className="muted small">To grade just some photos, select them (Shift-click for several) and use Photo › Adjust.</p></div>}
+          {top === 'layout' && bookSide === 'colour' && !poster && <BookColourPanel />}
           {top === 'layout' && poster && posterSide === 'sheet' && <div className="stack"><PosterSheetPanel /><PrintSettings /><VersionHistory /></div>}
           {top === 'layout' && !poster && bookSide === 'page' && (onCover ? <CoverPanel /> : <SpreadPanel />)}
           {top === 'layout' && !poster && bookSide === 'draft' && <DraftPanel />}
           {top === 'layout' && !poster && bookSide === 'templates' && <div className="stack"><TitleFields /><div className="section-title">Book templates</div><BookTemplatesSection /></div>}
           {top === 'layout' && !poster && bookSide === 'book' && <div className="stack"><PrintSettings /><BookStyleSettings /><VersionHistory /></div>}
 
-          {top === 'photo' && photoSide === 'all' && <div className="stack"><div className="section-title">Colour grade</div><GradeControls /></div>}
-          {top === 'photo' && photoSide !== 'all' && (photoSelected ? <ElementPanel sub={{ ...sub, image: photoSide }} setSub={setSub} railDriven /> : (
+          {top === 'photo' && photosSelected && (photoSide === 'adjust' ? <MultiSelectionAdjust /> : (
             <div className="panel-empty">
               <Icon name="image" size={22} />
-              <p>Click a photo on the {poster ? 'sheet' : 'page'} to crop, adjust or shape it.</p>
-              <p className="muted small">Double-click a photo to crop it straight away. All photos has the colour grade for every photo.</p>
+              <p>{multiCount} photos selected. Adjust them together in Adjust, or click one photo to crop, cut or move it.</p>
+            </div>
+          ))}
+          {top === 'photo' && !photosSelected && (photoSelected ? <ElementPanel sub={{ ...sub, image: photoSide }} setSub={setSub} railDriven /> : (
+            <div className="panel-empty">
+              <Icon name="image" size={22} />
+              <p>Click a photo on the {poster ? 'sheet' : 'page'} to crop, adjust or cut it out.</p>
+              <p className="muted small">Shift-click several photos to adjust them together. Colour for a whole {poster ? 'poster' : 'page or book'} is in Layout › Colour.</p>
             </div>
           ))}
 
           {top === 'elements' && elementsSide === 'selected' && otherSelected && (multiCount > 1 ? <MultiPanel /> : <ElementPanel sub={sub} setSub={setSub} />)}
-          {top === 'elements' && elementsSide !== 'selected' && elementsSide !== 'type' && <AddPanel section={elementsSide} />}
+          {top === 'elements' && elementsSide === 'looks' && <TextLooksPanel />}
+          {top === 'elements' && elementsSide !== 'selected' && elementsSide !== 'type' && elementsSide !== 'looks' && <AddPanel section={elementsSide} />}
           {top === 'elements' && (elementsSide === 'type' || (elementsSide === 'selected' && !otherSelected)) && (
             <div className="stack"><TextColorField /><TypeSection /></div>
           )}
@@ -172,6 +189,32 @@ export function Inspector({ issueCount }: { issueCount: { error: number; warning
       </div>
       <LayersDock />
     </aside>
+  );
+}
+
+/** Several photos selected: one set of adjustments for all of them. */
+function MultiSelectionAdjust() {
+  const sel = useEditor((s) => s.selection)!;
+  const ids = useEditor((s) => s.multi);
+  return <MultiPhotoAdjust spreadId={sel.spreadId} ids={ids} />;
+}
+
+/** Books: grade this spread (or the cover) on its own, or every photo in the book. */
+function BookColourPanel() {
+  const doc = useEditor((s) => s.doc)!;
+  const index = useEditor((s) => s.currentSpread);
+  const [scope, setScope] = useState<'page' | 'book'>('page');
+  const surface = index === COVER_INDEX ? doc.cover : doc.spreads[index];
+  const label = index === COVER_INDEX ? 'This cover' : 'This spread';
+  return (
+    <div className="stack">
+      <div className="seg seg-wide" role="radiogroup" aria-label="Grade what">
+        <button role="radio" aria-checked={scope === 'page'} className={scope === 'page' ? 'on' : ''} disabled={!surface} onClick={() => setScope('page')}>{label}{surface?.grade ? ' ●' : ''}</button>
+        <button role="radio" aria-checked={scope === 'book'} className={scope === 'book' ? 'on' : ''} onClick={() => setScope('book')}>Whole book{doc.grade ? ' ●' : ''}</button>
+      </div>
+      {scope === 'page' && surface ? <GradeControls key={surface.id} surfaceId={surface.id} /> : <GradeControls />}
+      <p className="muted small">A spread's grade goes on top of the whole book's. To grade just some photos, select them (Shift-click for several) and use Photo › Adjust.</p>
+    </div>
   );
 }
 
@@ -334,6 +377,18 @@ function ElementPanel({ sub, setSub, railDriven }: { sub: Sub; setSub: (s: Sub) 
       )}
       {el.type === 'image' && sub.image === 'cutout' && (
         <>
+          <div className="section-title">Cut by hand</div>
+          <div className="btn-grid">
+            {(['keep', 'erase', 'circle'] as const).map((mode) => (
+              <button key={mode} className="btn btn-small" disabled={!el.assetId || el.locked} onClick={() => useEditor.getState().setCanvasTool({ kind: 'cut', surfaceId: sel.spreadId, elementId: el.id, mode })}
+                title={{ keep: 'Draw around the part to keep — e.g. along a mountain ridge', erase: 'Draw around parts to remove', circle: 'Drag out circles to remove' }[mode]}>
+                <Icon name={mode === 'keep' ? 'crop' : mode === 'erase' ? 'x' : 'shape'} /> {{ keep: 'Keep an outline', erase: 'Erase', circle: 'Circle eraser' }[mode]}
+              </button>
+            ))}
+            {el.mask?.kind === 'cut' && <button className="btn btn-small" onClick={() => upd('Undo cut-out', { mask: undefined } as Partial<ImageElement>)}>Clear cut</button>}
+          </div>
+          <p className="muted small">Cut a photo along any line so it overlaps the next one naturally — the cut moves and resizes with the frame.</p>
+          <div className="section-title">Shapes</div>
           <PhotoShapeControls el={el} spreadId={sel.spreadId} />
           <div className="section-title">Border</div>
           <div className="field-row">
@@ -444,8 +499,8 @@ function ElementPanel({ sub, setSub, railDriven }: { sub: Sub; setSub: (s: Sub) 
         <NumField label="W" value={el.widthMm} min={2} suffix="mm" apply={(d, v) => updateElement(d, sel.spreadId, el.id, { widthMm: v })} undoLabel="Resize" />
         <NumField label="H" value={el.heightMm} min={2} suffix="mm" apply={(d, v) => updateElement(d, sel.spreadId, el.id, { heightMm: v })} undoLabel="Resize" />
       </div>
+      <RotationField spreadId={sel.spreadId} el={el} />
       <div className="field-row">
-        <NumField label="Rotate" value={el.rotationDeg} step={1} min={-180} max={180} suffix="°" apply={(d, v) => updateElement(d, sel.spreadId, el.id, { rotationDeg: v })} undoLabel="Rotate" />
         <div className="field">
           <span>Arrange</span>
           <div className="row">
@@ -462,6 +517,27 @@ function ElementPanel({ sub, setSub, railDriven }: { sub: Sub; setSub: (s: Sub) 
 }
 
 const isPositionTab = (type: keyof Sub, sub: Sub) => sub[type] === 'position';
+
+/** Rotation: a dial-like slider, quarter turns, straighten, and the exact angle. */
+function RotationField({ spreadId, el }: { spreadId: string; el: { id: string; rotationDeg: number; locked: boolean } }) {
+  const { run, gesture, endGesture } = useEditor.getState();
+  const norm = (deg: number) => ((((deg % 360) + 540) % 360) - 180);
+  const turn = (by: number) => run(by ? 'Rotate' : 'Straighten', (d) => updateElement(d, spreadId, el.id, { rotationDeg: by ? norm(el.rotationDeg + by) : 0 }));
+  return (
+    <div className="field rotation-field">
+      <span>Rotation — {Math.round(el.rotationDeg * 10) / 10}°</span>
+      <div className="row">
+        <input type="range" min={-180} max={180} step={1} value={el.rotationDeg} aria-label="Rotation" disabled={el.locked}
+          onChange={(e) => gesture((d) => updateElement(d, spreadId, el.id, { rotationDeg: Number(e.target.value) }))}
+          onPointerUp={() => endGesture('Rotate')} onKeyUp={() => endGesture('Rotate')} onDoubleClick={() => turn(0)} />
+        <button className="icon-btn" title="Turn left 90°" disabled={el.locked} onClick={() => turn(-90)}>⟲</button>
+        <button className="icon-btn" title="Turn right 90°" disabled={el.locked} onClick={() => turn(90)}>⟳</button>
+        <button className="icon-btn" title="Straighten" disabled={el.locked || !el.rotationDeg} onClick={() => turn(0)}>0°</button>
+      </div>
+      <p className="muted small">Or drag just outside any corner of the selection.</p>
+    </div>
+  );
+}
 
 // ---- text ------------------------------------------------------------------------------------
 
@@ -577,8 +653,41 @@ function TextControls({ el, spreadId, part }: { el: TextElement; spreadId: strin
           </div>
         </div>
       </div>
+      <TextDirection el={el} spreadId={spreadId} />
 
     </>
+  );
+}
+
+/**
+ * Which way the text runs: across, letters stacked down the page, or turned sideways (reading up or
+ * down). Stacking resizes the box around its centre to fit a column of letters.
+ */
+function TextDirection({ el, spreadId }: { el: TextElement; spreadId: string }) {
+  const { run } = useEditor.getState();
+  const rot = Math.round(el.rotationDeg);
+  const current = el.vertical ? 'stacked' : rot === -90 ? 'up' : rot === 90 ? 'down' : rot === 0 ? 'across' : null;
+  const set = (dir: 'across' | 'stacked' | 'up' | 'down') => run(`Text: ${dir}`, (d) => {
+    const vertical = dir === 'stacked';
+    const size = vertical !== !!el.vertical ? textBoxForDirection(el, vertical) : { widthMm: el.widthMm, heightMm: el.heightMm };
+    const cx = el.xMm + el.widthMm / 2;
+    const cy = el.yMm + el.heightMm / 2;
+    return updateElement(d, spreadId, el.id, {
+      vertical: vertical || undefined, arch: vertical ? undefined : el.arch,
+      rotationDeg: dir === 'up' ? -90 : dir === 'down' ? 90 : 0,
+      ...size, xMm: cx - size.widthMm / 2, yMm: cy - size.heightMm / 2,
+    });
+  });
+  return (
+    <div className="field">
+      <span>Direction</span>
+      <div className="seg seg-wide text-direction">
+        <button className={current === 'across' ? 'on' : ''} onClick={() => set('across')} title="Left to right">Across</button>
+        <button className={current === 'stacked' ? 'on' : ''} onClick={() => set('stacked')} title="Letters stacked top to bottom">Stacked</button>
+        <button className={current === 'up' ? 'on' : ''} onClick={() => set('up')} title="Turned sideways, reading upwards">Up ↑</button>
+        <button className={current === 'down' ? 'on' : ''} onClick={() => set('down')} title="Turned sideways, reading downwards">Down ↓</button>
+      </div>
+    </div>
   );
 }
 

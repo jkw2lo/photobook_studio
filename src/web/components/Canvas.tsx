@@ -3,14 +3,14 @@ import {
   COVER_INDEX, addPhotoAt, defaultCrop, effectiveDpi, elementBounds, elementPlacement, geometryFor, innerBox, panCrop, toInnerBox, zoomCropAt,
   elementsInRect, expandGroups, sizeSnap, spacingSnap, type SpacingMark, pageContentRect, pointInElement, setFramePhoto, unionBounds, surfaceAt, swapFramePhotos, updateElement, type BookDocument,
   type Element, type ImageElement, type PhotoAsset, type SurfaceGeometry, MM_PER_PT,
-  backgroundArea, backgroundBox, imagePlacement, moveBackground, polygonArea, reframeCrop, scaleBackground, simplifyOutline, updateBackgroundImage, type BackgroundImage, type CropHandle, type Rect,
+  backgroundArea, backgroundBox, circleOutline, imagePlacement, moveBackground, polygonArea, reframeCrop, scaleBackground, simplifyOutline, updateBackgroundImage, type BackgroundImage, type CropHandle, type Rect,
 } from '../../core';
 import { thumbUrl } from '../api';
 import { applyAreaTool, setPhotoArea } from '../elementActions';
 import { selectedIds, useEditor, type CanvasTool } from '../store';
 import { ContextMenu, type MenuTarget } from './ContextMenu';
 import { Icon } from './Icon';
-import { SpreadView, textCss } from './SpreadView';
+import { ElementView, SpreadView, textCss } from './SpreadView';
 
 // The interactive editor surface (a spread or the cover). All pointer input lands on one overlay;
 // hit-testing uses the same rotated-rectangle geometry as core, so clicks, drags and drops agree
@@ -22,7 +22,7 @@ type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 type Gesture =
   | { kind: 'move'; start: Pt; orig: Element; moved: boolean }
   | { kind: 'resize'; start: Pt; orig: Element; handle: Handle }
-  | { kind: 'rotate'; orig: Element }
+  | { kind: 'rotate'; orig: Element; start: Pt }
   | { kind: 'crop'; start: Pt; orig: ImageElement }
   /** Drag a corner of the whole photo: scale it about the opposite corner (inner-box mm). */
   | { kind: 'cropzoom'; anchor: Pt; startDist: number; orig: ImageElement }
@@ -33,6 +33,9 @@ type Gesture =
   | { kind: 'area'; start: Pt; orig: Rect; handle: Handle | 'move' | 'draw'; before: Rect | null }
   /** Freeform photo area: the outline being drawn (mm). */
   | { kind: 'lasso'; points: Pt[]; before: Pt[] | null }
+  /** Cutting a photo: an outline (frame-local mm) or a round eraser (centre and radius, frame-local mm). */
+  | { kind: 'cutlasso'; el: ImageElement; points: Pt[] }
+  | { kind: 'cutcircle'; el: ImageElement; centre: Pt; r: number }
   | { kind: 'swap'; orig: ImageElement; at: Pt; client: Pt; target: string | null }
   | { kind: 'multimove'; start: Pt; origs: Element[]; moved: boolean; clickedId: string; wasSelected: boolean }
   | { kind: 'marquee'; start: Pt; additive: boolean; base: string[] };
@@ -59,6 +62,8 @@ export function Canvas() {
   const showGuides = useEditor((s) => s.showGuides);
   const zoom = useEditor((s) => s.zoom);
   const canvasTool = useEditor((s) => s.canvasTool);
+  /** The cut being drawn on a photo (frame-local mm), shown live. */
+  const [cutDraft, setCutDraft] = useState<{ points?: Pt[]; circle?: { centre: Pt; r: number } } | null>(null);
   /** Width ÷ height the crop box keeps (null = free). */
   const [cropRatio, setCropRatio] = useState<number | null>(null);
   useEffect(() => setCropRatio(null), [cropId]);
@@ -124,6 +129,13 @@ export function Canvas() {
   const b = g.bleed;
   const fit = Math.min((size.w - 120) / (g.width + 2 * b), (size.h - 72) / (g.height + 2 * b));
   const scale = Math.max(0.3, fit * zoom);
+  // The pasteboard: room around the page where items can sit (they don't print) and still be
+  // clicked and dragged — the free space around the page at this zoom (zoom out for more). The
+  // pointer overlay reaches this far beyond the page edge.
+  const free = Math.min((size.w - (g.width + 2 * b) * scale) / 2 - 8, (size.h - (g.height + 2 * b) * scale) / 2 - 24);
+  const pad = Math.round(Math.min(800, Math.max(24, free - 2)));
+  /** Offset for things drawn in the overlay, whose origin is `pad` beyond the bleed corner. */
+  const ob = b + pad / scale;
   const selected = selection && selection.spreadId === surface.id ? surface.elements.find((e) => e.id === selection.elementId) : undefined;
   const tool = canvasTool && canvasTool.surfaceId === surface.id ? canvasTool : null;
   const bg = surface.backgroundImage;
@@ -135,7 +147,7 @@ export function Canvas() {
 
   const toMm = (clientX: number, clientY: number): Pt => {
     const r = overlayRef.current!.getBoundingClientRect();
-    return { x: (clientX - r.left) / scale - b, y: (clientY - r.top) / scale - b };
+    return { x: (clientX - r.left - pad) / scale - b, y: (clientY - r.top - pad) / scale - b };
   };
 
   const hitTest = (p: Pt, filter: (e: Element) => boolean = () => true) => {
@@ -227,6 +239,16 @@ export function Canvas() {
       } else gestureRef.current = { kind: 'bgmove', start: p, orig: bg };
       return;
     }
+    // Cutting a photo by hand: everything happens in the frame's own (unrotated) coordinates.
+    if (tool?.kind === 'cut') {
+      const el = surface.elements.find((x) => x.id === tool.elementId);
+      if (!el || el.type !== 'image') return;
+      capture(e.pointerId);
+      const at = frameLocal(el, p);
+      gestureRef.current = tool.mode === 'circle' ? { kind: 'cutcircle', el, centre: at, r: 0 } : { kind: 'cutlasso', el, points: [at] };
+      setCutDraft(tool.mode === 'circle' ? { circle: { centre: at, r: 0 } } : { points: [at] });
+      return;
+    }
     // Marking the photo area: drag its edges, move it, or draw a new one.
     if (tool?.kind === 'area' && tool.mode === 'free') {
       capture(e.pointerId);
@@ -280,7 +302,7 @@ export function Canvas() {
         gestureRef.current = { kind: 'swap', orig: selected, at: p, client: { x: e.clientX, y: e.clientY }, target: null };
         setSwapDrag({ client: { x: e.clientX, y: e.clientY }, target: null });
       } else {
-        gestureRef.current = handle === 'rotate' ? { kind: 'rotate', orig: selected } : { kind: 'resize', start: p, orig: selected, handle: handle as Handle };
+        gestureRef.current = handle === 'rotate' ? { kind: 'rotate', orig: selected, start: p } : { kind: 'resize', start: p, orig: selected, handle: handle as Handle };
       }
       return;
     }
@@ -337,6 +359,20 @@ export function Canvas() {
         ? moveBackground(gst.orig, g, bgAsset, p.x - gst.start.x, p.y - gst.start.y)
         : scaleBackground(gst.orig, g, bgAsset, Math.hypot(p.x - gst.anchor.x, p.y - gst.anchor.y) / gst.startDist, gst.anchor);
       gesture((d) => updateBackgroundImage(d, sid, patch));
+      return;
+    }
+    if (gst.kind === 'cutlasso') {
+      const at = frameLocal(gst.el, p);
+      const last = gst.points[gst.points.length - 1];
+      if (Math.hypot(at.x - last.x, at.y - last.y) * scale < 2) return;
+      gst.points.push(at);
+      setCutDraft({ points: [...gst.points] });
+      return;
+    }
+    if (gst.kind === 'cutcircle') {
+      const at = frameLocal(gst.el, p);
+      gst.r = Math.hypot(at.x - gst.centre.x, at.y - gst.centre.y);
+      setCutDraft({ circle: { centre: gst.centre, r: gst.r } });
       return;
     }
     if (gst.kind === 'lasso') {
@@ -486,10 +522,15 @@ export function Canvas() {
       const o = gst.orig;
       const cx = o.xMm + o.widthMm / 2;
       const cy = o.yMm + o.heightMm / 2;
-      let deg = (Math.atan2(p.y - cy, p.x - cx) * 180) / Math.PI + 90;
-      if (deg > 180) deg -= 360;
+      // Turn by how far the pointer has gone round the centre since grabbing (any handle or corner).
+      const turned = (Math.atan2(p.y - cy, p.x - cx) - Math.atan2(gst.start.y - cy, gst.start.x - cx)) * 180 / Math.PI;
+      let deg = ((((o.rotationDeg + turned) % 360) + 540) % 360) - 180;
       if (shiftKey) deg = Math.round(deg / 15) * 15;
-      else if (Math.abs(deg) < 2) deg = 0;
+      else {
+        // Settle on straight and right angles when close.
+        const right = Math.round(deg / 90) * 90;
+        if (Math.abs(deg - right) < 2) deg = right === -180 ? 180 : right;
+      }
       gesture((d) => updateElement(d, sid, id, { rotationDeg: Math.round(deg * 10) / 10 }));
     } else if (gst.kind === 'crop') {
       const o = gst.orig;
@@ -599,6 +640,26 @@ export function Canvas() {
       useEditor.setState({ canvasTool: { ...t, shape: big ? pts.map((q) => ({ x: q.x / W, y: q.y / H })) : gst.before } });
       return;
     }
+    if (gst.kind === 'cutlasso' || gst.kind === 'cutcircle') {
+      setCutDraft(null);
+      const t = useEditor.getState().canvasTool;
+      if (t?.kind !== 'cut') return;
+      const el = gst.el;
+      const w = el.widthMm;
+      const h = el.heightMm;
+      let shape: Pt[] | null = null;
+      if (gst.kind === 'cutcircle') shape = gst.r * scale > 3 ? circleOutline(gst.centre.x, gst.centre.y, gst.r, w, h) : null;
+      else {
+        const pts = simplifyOutline(gst.points, 2 / scale, 1 / scale);
+        shape = pts.length >= 3 && Math.abs(polygonArea(pts)) > 4 ? pts.map((q) => ({ x: q.x / w, y: q.y / h })) : null;
+      }
+      if (!shape) return;
+      const prev = el.mask?.kind === 'cut' ? el.mask : { kind: 'cut' as const, erase: [] };
+      const mask = t.mode === 'keep' ? { ...prev, keep: shape } : { ...prev, erase: [...prev.erase, shape] };
+      // On a poster a hand-cut photo is pinned, so Arrange and Shuffle don't lay it out again (and lose the cut).
+      run(t.mode === 'keep' ? 'Cut out photo' : 'Erase from photo', (d) => updateElement(d, surface.id, el.id, { mask, borderMm: 0, ...(isPosterDoc ? { pinned: true } : {}) }));
+      return;
+    }
     if (gst.kind === 'cropbox') return endGesture('Crop photo');
     const labels = { move: 'Move', resize: 'Resize', rotate: 'Rotate', crop: 'Adjust crop', cropzoom: 'Zoom photo' } as const;
     endGesture(`${labels[gst.kind]} ${gst.orig.type === 'image' ? 'photo' : gst.orig.type === 'text' ? 'text' : 'shape'}`);
@@ -693,14 +754,14 @@ export function Canvas() {
   const hovered = !tool && hoverId && hoverId !== selected?.id ? surface.elements.find((x) => x.id === hoverId) : undefined;
   const swapTarget = swapDrag?.target ? surface.elements.find((x) => x.id === swapDrag.target) : undefined;
   const totalW = (g.width + 2 * b) * scale;
-  const cursor = tool?.kind === 'background' ? 'move' : tool?.kind === 'area' ? 'crosshair' : hovered && !hovered.locked ? 'move' : undefined;
+  const cursor = tool?.kind === 'background' ? 'move' : tool?.kind === 'area' || tool?.kind === 'cut' ? 'crosshair' : hovered && !hovered.locked ? 'move' : undefined;
   const isPosterDoc = doc.settings.product === 'poster';
   const canPrev = !isPosterDoc && index > COVER_INDEX;
   const canNext = index < doc.spreads.length - 1;
 
   return (
     <div className="canvas" ref={wrapRef}>
-      <div className="canvas-inner" style={{ minWidth: totalW + 120, minHeight: (g.height + 2 * b) * scale + 72 }}>
+      <div className="canvas-inner" style={{ minWidth: Math.max(totalW + 120, totalW + 2 * pad), minHeight: Math.max((g.height + 2 * b) * scale + 72, (g.height + 2 * b) * scale + 2 * pad) }}>
         {!isPosterDoc && (
           <button className="nav-arrow" disabled={!canPrev} onClick={() => useEditor.getState().goToSpread(index - 1)} title="Previous (←)">
             <Icon name="left" size={20} />
@@ -708,9 +769,14 @@ export function Canvas() {
         )}
         <div className="canvas-spread">
           <SpreadView settings={doc.settings} style={doc.style} spreadCount={spreadCount} index={index} surface={surface} scale={scale} assets={assets} grade={doc.grade} hiddenElementId={editingText}>
+            <Pasteboard pad={pad} />
             {showGuides && <Guides g={g} scale={scale} />}
             {cropEl && cropAsset && <CropGhost el={cropEl} scale={scale} offset={b} assetId={cropAsset.id} asset={cropAsset} />}
             {tool?.kind === 'background' && bg && bgAsset && <BgGhost bg={bg} g={g} asset={bgAsset} scale={scale} />}
+            {tool?.kind === 'cut' && (() => {
+              const el = surface.elements.find((x) => x.id === tool.elementId);
+              return el?.type === 'image' ? <CutOverlay el={el} asset={el.assetId ? assets.get(el.assetId) : undefined} scale={scale} offset={b} draft={cutDraft} mode={tool.mode} /> : null;
+            })()}
             {tool?.kind === 'area' && tool.mode === 'box' && <AreaShade rect={tool.rect ? areaMm(tool.rect) : null} scale={scale} offset={b} />}
             {tool?.kind === 'area' && tool.mode === 'free' && <OutlineShade shape={tool.shape?.map((q) => ({ x: q.x * W, y: q.y * H })) ?? null} scale={scale} offset={b} />}
             {guides.map((gl, i) =>
@@ -736,7 +802,7 @@ export function Canvas() {
             <div
               ref={overlayRef}
               className={`overlay ${swapSource ? 'overlay-swap' : ''} ${cropId ? 'overlay-crop' : ''}`}
-              style={{ pointerEvents: editingText ? 'none' : undefined, cursor }}
+              style={{ pointerEvents: editingText ? 'none' : undefined, cursor, inset: -pad }}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
@@ -754,10 +820,10 @@ export function Canvas() {
               onDragLeave={() => setDropTarget(null)}
               onDrop={onDrop}
             >
-              {selected && !selected.locked && !editingText && !cropId && multiEls.length <= 1 && <HandleLayer el={selected} scale={scale} offset={b} />}
-              {cropEl && cropAsset && <CropHandles el={cropEl} asset={cropAsset} scale={scale} offset={b} />}
-              {tool?.kind === 'background' && bg && bgAsset && <CornerHandles rect={bgExtents(bg, g, bgAsset)} scale={scale} offset={b} prefix="bg-" title="Drag to resize the photo" />}
-              {tool?.kind === 'area' && tool.mode === 'box' && tool.rect && <AreaHandles rect={areaMm(tool.rect)} scale={scale} offset={b} />}
+              {selected && !selected.locked && !editingText && !cropId && multiEls.length <= 1 && <HandleLayer el={selected} scale={scale} offset={ob} />}
+              {cropEl && cropAsset && <CropHandles el={cropEl} asset={cropAsset} scale={scale} offset={ob} />}
+              {tool?.kind === 'background' && bg && bgAsset && <CornerHandles rect={bgExtents(bg, g, bgAsset)} scale={scale} offset={ob} prefix="bg-" title="Drag to resize the photo" />}
+              {tool?.kind === 'area' && tool.mode === 'box' && tool.rect && <AreaHandles rect={areaMm(tool.rect)} scale={scale} offset={ob} />}
             </div>
           </SpreadView>
           <div className="page-labels" style={{ width: totalW }}>
@@ -782,6 +848,44 @@ export function Canvas() {
       {tool && <ToolBar tool={tool} />}
       {menu && <ContextMenu target={menu} onClose={() => setMenu(null)} onEditText={(id) => setEditingText(id)} />}
     </div>
+  );
+}
+
+/** A point in a frame's own coordinates (mm from its top-left corner, rotation undone). */
+function frameLocal(el: Element, p: Pt): Pt {
+  const cx = el.xMm + el.widthMm / 2;
+  const cy = el.yMm + el.heightMm / 2;
+  const rad = (-el.rotationDeg * Math.PI) / 180;
+  const dx = p.x - cx;
+  const dy = p.y - cy;
+  return { x: dx * Math.cos(rad) - dy * Math.sin(rad) + el.widthMm / 2, y: dx * Math.sin(rad) + dy * Math.cos(rad) + el.heightMm / 2 };
+}
+
+/** While cutting: the whole photo faintly (so you can see what's been cut away), and the cut being drawn. */
+function CutOverlay({ el, asset, scale, offset, draft, mode }: { el: ImageElement; asset?: PhotoAsset; scale: number; offset: number; draft: { points?: Pt[]; circle?: { centre: Pt; r: number } } | null; mode: 'keep' | 'erase' | 'circle' }) {
+  const d = draft?.points && draft.points.length > 1 ? draft.points.map((q, i) => `${i ? 'L' : 'M'}${(q.x * scale).toFixed(1)} ${(q.y * scale).toFixed(1)}`).join(' ') : null;
+  return (
+    <>
+      <div className="cut-ghost"><ElementView el={{ ...el, mask: undefined, borderMm: 0, opacity: 1 }} scale={scale} offset={offset} asset={asset} thumbSize="m" /></div>
+      <div className="cut-frame" style={frameStyle(el, scale, offset)}>
+        <svg width="100%" height="100%" style={{ overflow: 'visible' }}>
+          {d && <path d={d + (mode === 'keep' ? '' : ' Z')} className={`cut-draft cut-${mode}`} />}
+          {draft?.circle && <circle cx={draft.circle.centre.x * scale} cy={draft.circle.centre.y * scale} r={draft.circle.r * scale} className="cut-draft cut-erase" />}
+        </svg>
+      </div>
+    </>
+  );
+}
+
+/** The area around the page: dimmed, so it's clear what's off the page (it isn't printed). */
+function Pasteboard({ pad }: { pad: number }) {
+  return (
+    <>
+      <div className="pasteboard" style={{ left: -pad, right: -pad, top: -pad, height: pad }} />
+      <div className="pasteboard" style={{ left: -pad, right: -pad, bottom: -pad, height: pad }} />
+      <div className="pasteboard" style={{ left: -pad, width: pad, top: 0, bottom: 0 }} />
+      <div className="pasteboard" style={{ right: -pad, width: pad, top: 0, bottom: 0 }} />
+    </>
   );
 }
 
@@ -958,6 +1062,25 @@ function AreaHandles({ rect, scale, offset }: { rect: Rect; scale: number; offse
 /** Floating controls for the background and photo-area tools. */
 function ToolBar({ tool }: { tool: CanvasTool }) {
   const st = useEditor.getState();
+  if (tool.kind === 'cut') {
+    const set = (mode: 'keep' | 'erase' | 'circle') => useEditor.setState({ canvasTool: { ...tool, mode } });
+    return (
+      <div className="crop-toolbar" onPointerDown={(e) => e.stopPropagation()}>
+        <strong className="small">Cut out</strong>
+        <div className="seg seg-compact" role="radiogroup" aria-label="Cut tool">
+          <button role="radio" aria-checked={tool.mode === 'keep'} className={tool.mode === 'keep' ? 'on' : ''} onClick={() => set('keep')} title="Draw around the part of the photo to keep">Keep</button>
+          <button role="radio" aria-checked={tool.mode === 'erase'} className={tool.mode === 'erase' ? 'on' : ''} onClick={() => set('erase')} title="Draw around a part to remove">Erase</button>
+          <button role="radio" aria-checked={tool.mode === 'circle'} className={tool.mode === 'circle' ? 'on' : ''} onClick={() => set('circle')} title="Drag out a circle to remove">Circle eraser</button>
+        </div>
+        <button className="btn btn-small btn-ghost" onClick={() => st.run('Undo cut-out', (d) => updateElement(d, tool.surfaceId, tool.elementId, { mask: undefined }))}>Clear</button>
+        <button className="btn btn-small btn-primary" onClick={() => {
+          st.setCanvasTool(null);
+          st.select({ spreadId: tool.surfaceId, elementId: tool.elementId });
+        }}>Done</button>
+        <span className="crop-tip muted">{tool.mode === 'keep' ? 'Draw around what to keep — a mountain ridge, a person…' : tool.mode === 'erase' ? 'Draw around what to remove; each stroke adds to the cut' : 'Drag from the centre outwards to remove a circle'} · ⌘Z undoes a stroke</span>
+      </div>
+    );
+  }
   if (tool.kind === 'background') {
     return (
       <div className="crop-toolbar" onPointerDown={(e) => e.stopPropagation()}>
@@ -1088,7 +1211,9 @@ function HandleLayer({ el, scale, offset }: { el: Element; scale: number; offset
       {HANDLES.map((h) => (
         <div key={h} className={`handle handle-${h}`} data-handle={h} />
       ))}
-      <div className="handle handle-rotate" data-handle="rotate" title="Rotate (Shift: 15° steps)" />
+      <div className="handle handle-rotate" data-handle="rotate" title="Rotate (Shift: 15° steps)"><Icon name="rotate" size={10} /></div>
+      {/* Just outside each corner: grab there to rotate, as in most design apps. */}
+      {(['nw', 'ne', 'se', 'sw'] as const).map((c) => <div key={c} className={`rotate-zone rz-${c}`} data-handle="rotate" title="Drag to rotate (Shift: 15° steps)" />)}
       {el.type === 'image' && el.assetId && short >= 26 && (
         <div className="handle-swap" data-handle="swap" title="Drag onto another photo to swap them" style={{ width: swapPx, height: swapPx, margin: -swapPx / 2 }}>
           <Icon name="swap" size={Math.round(swapPx * 0.47)} />

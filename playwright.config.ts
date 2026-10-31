@@ -6,6 +6,9 @@ const PORT = 5185;
 
 export default defineConfig({
   testDir: 'tests/e2e',
+  // Its own folder: Playwright empties its output folder on every run, and test-results/ also holds
+  // the dev preview's data.
+  outputDir: 'test-results/playwright',
   timeout: 120_000,
   // One at a time: the tests share one server, and the performance test's 500-photo import would
   // otherwise compete with the other tests' imports (and make their timings flaky).

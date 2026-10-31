@@ -1,3 +1,4 @@
+import polygonClipping, { type MultiPolygon, type Pair, type Polygon, type Ring } from 'polygon-clipping';
 import type { ImageElement, PhotoMask, Rect } from './model';
 
 // Freeform photo areas: a collage that fills an outline drawn on the sheet. The photos are laid out
@@ -139,4 +140,28 @@ export function simplifyOutline(points: Pt[], minStep: number, tolerance: number
   let out = spaced.filter((_, i) => keep[i]);
   while (out.length > max) out = out.filter((_, i) => i % 2 === 0);
   return out;
+}
+
+/**
+ * The outline left by a hand cut, in a w × h frame: the area kept (or the whole frame) minus every
+ * erased area, as one path (even-odd, so islands and holes come out right). Self-crossing lassos
+ * and overlapping erasers are merged first.
+ */
+export function cutPath(mask: { keep?: Pt[]; erase: Pt[][] }, w: number, h: number): string {
+  const ring = (pts: Pt[]): Ring => pts.map((p) => [p.x * w, p.y * h] as Pair);
+  const frame: Ring = [[0, 0], [w, 0], [w, h], [0, h]];
+  let kept: MultiPolygon = mask.keep && mask.keep.length >= 3 ? polygonClipping.intersection([ring(mask.keep)], [frame]) : [[frame]];
+  const erase = mask.erase.filter((e) => e.length >= 3).map((e) => [ring(e)] as Polygon);
+  if (erase.length && kept.length) kept = polygonClipping.difference(kept, ...erase);
+  const f = (n: number) => Math.round(n * 100) / 100;
+  const d = kept.flatMap((poly) => poly.map((r) => r.map(([x, y], i) => `${i ? 'L' : 'M'}${f(x)} ${f(y)}`).join(' ') + ' Z')).join(' ');
+  return d || 'M0 0 Z';
+}
+
+/** A circle (centre and radius in mm) as an outline in frame fractions, for the eraser. */
+export function circleOutline(cx: number, cy: number, r: number, frameW: number, frameH: number, steps = 40): Pt[] {
+  return Array.from({ length: steps }, (_, i) => {
+    const a = (i / steps) * 2 * Math.PI;
+    return { x: (cx + r * Math.cos(a)) / frameW, y: (cy + r * Math.sin(a)) / frameH };
+  });
 }

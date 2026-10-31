@@ -6,7 +6,7 @@ import PDFDocument from 'pdfkit';
 import { PDFDocument as PdfLibDocument, PDFName, PDFArray, PDFNumber } from 'pdf-lib';
 import sharp from 'sharp';
 import {
-  COVER_INDEX, archGeometry, calendarLayout, calendarMark, elementOpacity, mapPath, backgroundFrame, coverGeometry, geometryFor, gradeChainKey, gradeChainMatrix, gradientLine, isNeutralChain, maskPath, pointOnArch, shapePath, posterGeometry, elementBounds, elementPlacement, fontFilePath, intersects, mmToInch, mmToPt, nearestWeight,
+  COVER_INDEX, archGeometry, displayText, textLayers, calendarLayout, calendarMark, elementOpacity, mapPath, backgroundFrame, coverGeometry, geometryFor, gradeChainKey, gradeChainMatrix, gradientLine, isNeutralChain, maskPath, pointOnArch, shapePath, posterGeometry, elementBounds, elementPlacement, fontFilePath, intersects, mmToInch, mmToPt, nearestWeight,
   pageNumberRect, preflight, printablePages, roleStyle, type BleedMode, type BookDocument, type Element, type ImageElement,
   type CalendarElement, type ColorGrade, type Gradient, type PhotoAsset, type PreflightIssue, type Rect, type ShapeElement, type Spread, type TextElement,
 } from '../core';
@@ -65,6 +65,8 @@ class PdfWriter {
   readonly overflow: { elementId: string; label: string; spreadIndex: number }[] = [];
   /** Opacity of the element being drawn. */
   private alpha = 1;
+  /** Grade of the page / spread / cover being drawn (between each photo's own and the document's). */
+  private surfaceGrade?: ColorGrade;
 
   constructor(readonly outPath: string, title: string, private readonly assets: Map<string, ExportAsset>, private readonly grade?: ColorGrade) {
     this.pdf = new PDFDocument({ autoFirstPage: false, compress: true, info: { Title: title, Creator: 'Photobook Studio', Producer: 'Photobook Studio (PDFKit)' } });
@@ -101,8 +103,9 @@ class PdfWriter {
   }
 
   /** Draw the elements of a surface that touch `area` (surface coordinates), offset by its origin. */
-  async elements(elements: Element[], area: Rect, spreadIndex: number, label: string) {
+  async elements(elements: Element[], area: Rect, spreadIndex: number, label: string, surfaceGrade?: ColorGrade) {
     const { pdf } = this;
+    this.surfaceGrade = surfaceGrade;
     for (const el of elements) {
       if (!intersects(elementBounds(el), area)) continue;
       pdf.save();
@@ -190,8 +193,8 @@ class PdfWriter {
     // Never upsample; downsample to 300 DPI at the printed size.
     const tw = Math.max(1, Math.min(width, Math.round(mmToInch(visible.dest.w) * TARGET_DPI)));
     const th = Math.max(1, Math.min(height, Math.round(mmToInch(visible.dest.h) * TARGET_DPI)));
-    // The photo's own adjustment, then the document's grade — as in the editor.
-    const chain = [el.adjust, this.grade];
+    // The photo's own adjustment, the page's grade, then the document's — as in the editor.
+    const chain = [el.adjust, this.surfaceGrade, this.grade];
     const grade = isNeutralChain(chain) ? null : gradeChainMatrix(chain);
     const key = `${asset.id}|${left},${top},${width},${height}|${tw}x${th}|${gradeChainKey(chain)}`;
     let buf = this.imageCache.get(key);
@@ -232,23 +235,35 @@ class PdfWriter {
     const pad = mmToPt(el.paddingMm ?? 0);
     this.useFont(el.fontFamily, el.fontWeight, !!el.italic);
     pdf.fontSize(el.fontSizePt);
-    // Same transforms as the editor's CSS (text-transform: uppercase, letter-spacing in em).
-    const text = el.uppercase ? el.text.toUpperCase() : el.text;
+    // Slanted letters: the same skew as the editor's CSS, about the box centre.
+    if (el.skewDeg) pdf.translate(W / 2, H / 2).transform(1, 0, -Math.tan((el.skewDeg * Math.PI) / 180), 1, 0, 0).translate(-W / 2, -H / 2);
+    // Same transforms as the editor's CSS (upper case, letter-spacing in em); vertical text is one letter per line.
+    const text = displayText(el);
     const characterSpacing = (el.letterSpacingEm ?? 0) * el.fontSizePt;
     const fill = el.gradient ? this.gradient(el.gradient, W, H) : el.color;
     const stroke = el.strokeWidthMm ? { width: mmToPt(el.strokeWidthMm), color: el.strokeColor ?? '#000000' } : null;
 
-    // Each pass draws the same glyphs: shadow (offset, faded), outline (under), then the fill.
+    // Each pass draws the same glyphs: the effect layers behind (glow, shadow, 3D extrusion, second
+    // outline — core's textLayers, as in the editor), the outline (under), then the fill.
     const passes = (draw: (mode: 'fill' | 'stroke') => void) => {
-      if (el.shadow) {
+      for (const layer of textLayers(el)) {
         pdf.save();
-        pdf.translate(mmToPt(el.shadow.dxMm), mmToPt(el.shadow.dyMm));
-        pdf.fillColor(el.shadow.color).fillOpacity(el.shadow.opacity * this.alpha).strokeColor(el.shadow.color).strokeOpacity(el.shadow.opacity * this.alpha);
-        if (stroke) {
-          pdf.lineWidth(stroke.width).lineJoin('round');
-          draw('stroke');
+        pdf.translate(mmToPt(layer.dxMm), mmToPt(layer.dyMm));
+        const a = layer.opacity * this.alpha;
+        pdf.fillColor(layer.color).fillOpacity(a).strokeColor(layer.color).strokeOpacity(a).lineJoin('round');
+        if (layer.blurMm > 0) {
+          // PDF has no blur: a soft halo from widening, fading outlines.
+          for (const k of [1, 0.75, 0.5, 0.3]) {
+            pdf.lineWidth(mmToPt(Math.max(0.05, layer.strokeMm * k))).strokeOpacity(a * 0.22);
+            draw('stroke');
+          }
+        } else {
+          if (layer.strokeMm > 0) {
+            pdf.lineWidth(mmToPt(layer.strokeMm));
+            draw('stroke');
+          }
+          draw('fill');
         }
-        draw('fill');
         pdf.restore();
       }
       if (stroke) {
@@ -290,7 +305,7 @@ class PdfWriter {
     const natural = pdf.currentLineHeight(false);
     const lineBox = el.lineHeight * el.fontSizePt;
     const lineGap = lineBox - natural;
-    const opts = { width: Math.max(1, W - 2 * pad), align: el.align, lineGap, characterSpacing } as const;
+    const opts = { width: Math.max(1, W - 2 * pad), align: el.vertical ? 'center' : el.align, lineGap, characterSpacing } as const;
     const boxH = H - 2 * pad;
     const overflow = pdf.heightOfString(text, opts) > boxH + 1;
     // A bounded height also stops PDFKit from ever starting a new page for long text.
@@ -333,7 +348,7 @@ export async function exportPdf(doc: BookDocument, assets: Map<string, ExportAss
     const spec: PageSpec = { pageW, pageH, trim: { x: page.side === 'left' ? b : spineBleed, y: b, w: W, h: H } };
     specs.push(spec);
     w.page(spec, spread.background ?? doc.style.background);
-    await w.elements(withBackground(spread, geometryFor(s, doc.spreads.length, page.spreadIndex)), { x: originX, y: -b, w: pageW, h: pageH }, page.spreadIndex, `Page ${page.pageNumber}`);
+    await w.elements(withBackground(spread, geometryFor(s, doc.spreads.length, page.spreadIndex)), { x: originX, y: -b, w: pageW, h: pageH }, page.spreadIndex, `Page ${page.pageNumber}`, spread.grade);
     if (s.pageNumbers && page.pageNumber > 1) {
       const r = pageNumberRect(page.side, s);
       w.useFont(roleStyle(doc.style, 'caption').family, 400);
@@ -354,7 +369,7 @@ export async function exportCoverPdf(doc: BookDocument, assets: Map<string, Expo
   const spec: PageSpec = { pageW: g.width + 2 * g.bleed, pageH: g.height + 2 * g.bleed, trim: { x: g.bleed, y: g.bleed, w: g.width, h: g.height } };
   const w = new PdfWriter(outPath, `${doc.title} — cover`, assets, doc.grade);
   w.page(spec, doc.cover.background ?? doc.style.background);
-  await w.elements(withBackground(doc.cover, g), { x: -g.bleed, y: -g.bleed, w: spec.pageW, h: spec.pageH }, COVER_INDEX, 'Cover');
+  await w.elements(withBackground(doc.cover, g), { x: -g.bleed, y: -g.bleed, w: spec.pageW, h: spec.pageH }, COVER_INDEX, 'Cover', doc.cover.grade);
   const bytes = await w.finish();
   return { path: outPath, bytes, verification: await verifyPdf(outPath, [spec]), textOverflow: overflowIssues(w), spineMm: g.spine?.mm ?? 0 };
 }
@@ -369,7 +384,7 @@ export async function exportPosterPdf(doc: BookDocument, assets: Map<string, Exp
   const spec: PageSpec = { pageW: g.width + 2 * g.bleed, pageH: g.height + 2 * g.bleed, trim: { x: g.bleed, y: g.bleed, w: g.width, h: g.height } };
   const w = new PdfWriter(outPath, doc.title, assets, doc.grade);
   w.page(spec, sheet.background ?? doc.style.background);
-  await w.elements(withBackground(sheet, g), { x: -g.bleed, y: -g.bleed, w: spec.pageW, h: spec.pageH }, 0, 'Poster');
+  await w.elements(withBackground(sheet, g), { x: -g.bleed, y: -g.bleed, w: spec.pageW, h: spec.pageH }, 0, 'Poster', sheet.grade);
   const bytes = await w.finish();
   return { path: outPath, bytes, issues, textOverflow: overflowIssues(w), verification: await verifyPdf(outPath, [spec]), durationMs: Date.now() - started, bleedMode: 'all' };
 }

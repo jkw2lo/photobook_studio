@@ -24,6 +24,8 @@ export const FONT_FAMILIES: FontFamilyDef[] = [
   { family: 'Josefin Sans', pkg: 'josefin-sans', weights: [300, 400, 500, 600, 700], italic: true, category: 'sans', note: 'Elegant, vintage geometric' },
   { family: 'Raleway', pkg: 'raleway', weights: [300, 400, 500, 600, 700, 800, 900], italic: true, category: 'sans', note: 'Light and airy, minimalist' },
   { family: 'Work Sans', pkg: 'work-sans', weights: [300, 400, 500, 600, 700, 800, 900], italic: true, category: 'sans', note: 'Friendly, slightly wide' },
+  { family: 'Oswald', pkg: 'oswald', weights: [200, 300, 400, 500, 600, 700], italic: false, category: 'sans', note: 'Condensed, newspaper and sports headlines' },
+  { family: 'Syne', pkg: 'syne', weights: [400, 500, 600, 700, 800], italic: false, category: 'sans', note: 'Wide, arty, contemporary editorial' },
   // Serif
   { family: 'Source Serif 4', pkg: 'source-serif-4', weights: [300, 400, 500, 600, 700, 800, 900], italic: true, category: 'serif', note: 'Calm, readable body text' },
   { family: 'Lora', pkg: 'lora', weights: [400, 500, 600, 700], italic: true, category: 'serif', note: 'Warm, storybook feel' },
@@ -36,11 +38,23 @@ export const FONT_FAMILIES: FontFamilyDef[] = [
   { family: 'DM Serif Display', pkg: 'dm-serif-display', weights: [400], italic: true, category: 'display', note: 'Soft, bold display serif' },
   { family: 'Abril Fatface', pkg: 'abril-fatface', weights: [400], italic: false, category: 'display', note: 'Heavy poster headlines' },
   { family: 'Fraunces', pkg: 'fraunces', weights: [300, 400, 500, 600, 700, 800, 900], italic: true, category: 'display', note: 'Quirky, characterful old-style' },
+  { family: 'Bebas Neue', pkg: 'bebas-neue', weights: [400], italic: false, category: 'display', note: 'Tall condensed capitals, gig posters' },
+  { family: 'Anton', pkg: 'anton', weights: [400], italic: false, category: 'display', note: 'Heavy condensed, loud headlines' },
+  { family: 'Archivo Black', pkg: 'archivo-black', weights: [400], italic: false, category: 'display', note: 'Chunky grotesque, bold statements' },
+  { family: 'Italiana', pkg: 'italiana', weights: [400], italic: false, category: 'display', note: 'Thin fashion-magazine elegance' },
+  { family: 'Cinzel', pkg: 'cinzel', weights: [400, 500, 600, 700, 800, 900], italic: false, category: 'display', note: 'Roman inscription capitals, classic luxe' },
+  { family: 'Limelight', pkg: 'limelight', weights: [400], italic: false, category: 'display', note: 'Art deco, old Hollywood' },
+  { family: 'Shrikhand', pkg: 'shrikhand', weights: [400], italic: false, category: 'display', note: 'Fat 70s retro italic' },
+  { family: 'Righteous', pkg: 'righteous', weights: [400], italic: false, category: 'display', note: 'Rounded retro, diner signs' },
+  { family: 'Bungee', pkg: 'bungee', weights: [400], italic: false, category: 'display', note: 'Street signage, blocky' },
+  { family: 'Monoton', pkg: 'monoton', weights: [400], italic: false, category: 'display', note: 'Retro neon in-line, big sizes only' },
   // Handwriting
   { family: 'Caveat', pkg: 'caveat', weights: [400, 500, 600, 700], italic: false, category: 'handwriting', note: 'Casual handwritten notes' },
   { family: 'Dancing Script', pkg: 'dancing-script', weights: [400, 500, 600, 700], italic: false, category: 'handwriting', note: 'Flowing script, celebrations' },
   { family: 'Amatic SC', pkg: 'amatic-sc', weights: [400, 700], italic: false, category: 'handwriting', note: 'Tall hand-drawn capitals' },
   { family: 'Permanent Marker', pkg: 'permanent-marker', weights: [400], italic: false, category: 'handwriting', note: 'Bold marker, scrapbook labels' },
+  { family: 'Pacifico', pkg: 'pacifico', weights: [400], italic: false, category: 'handwriting', note: 'Retro surf script' },
+  { family: 'Lobster', pkg: 'lobster', weights: [400], italic: false, category: 'handwriting', note: 'Bold retro script, vintage signs' },
   // Mono
   { family: 'Courier Prime', pkg: 'courier-prime', weights: [400, 700], italic: true, category: 'mono', note: 'Typewriter, documentary captions' },
 ];

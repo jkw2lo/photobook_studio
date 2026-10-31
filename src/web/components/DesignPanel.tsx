@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   GRADE_PRESETS, MM_PER_PT, PHOTO_SHAPES, addCalendarAt, addElement, reorderElements, fitPath, makeShapeElement, type PlaceOutline, autoAdjust, photoDays, SHAPES, SHAPE_CATEGORIES, addShapeAt, fontFamily, gradeColor, gradeFromPreset, isNeutralGrade, nearestWeight, scalePath,
-  updateElement, weightName, NO_GRADE, type BookDocument, type ColorGrade, type Gradient, type ImageElement, type ShapeCategory, type ShapeElement,
+  updateElement, weightName, NO_GRADE, findSurface, setSurfaceGrade, type BookDocument, type ColorGrade, type Gradient, type ImageElement, type ShapeCategory, type ShapeElement,
   type TextElement,
 } from '../../core';
 import { api } from '../api';
@@ -426,8 +426,73 @@ export function TextEffects({ el, spreadId }: { el: TextElement; spreadId: strin
           </label>
         </>
       )}
+
+      <div className="field">
+        <span>3D letters</span>
+        <div className="seg seg-wide">
+          <button className={!el.extrude ? 'on' : ''} onClick={() => upd('Flat letters', { extrude: undefined })}>Flat</button>
+          <button className={el.extrude ? 'on' : ''} onClick={() => !el.extrude && upd('3D letters', { extrude: { color: darker(el.color), depthMm: Math.max(0.8, el.fontSizePt * 0.035), angleDeg: 45 } })}>Block</button>
+        </div>
+      </div>
+      {el.extrude && (
+        <>
+          <div className="field-row">
+            <label className="field">
+              <span>Side colour</span>
+              <ColorInput value={el.extrude.color} label="3D side colour" apply={(d, c) => updateElement(d, spreadId, el.id, { extrude: { ...el.extrude!, color: c } })} />
+            </label>
+            <NumField label="Depth" value={el.extrude.depthMm} min={0.2} max={30} step={0.1} suffix="mm" apply={live((v) => ({ extrude: { ...el.extrude!, depthMm: v } }))} undoLabel="3D depth" />
+          </div>
+          <label className="field">
+            <span>Direction — {Math.round(el.extrude.angleDeg)}°</span>
+            <input type="range" min={0} max={359} step={1} value={el.extrude.angleDeg} aria-label="3D direction"
+              onChange={(e) => gesture((d) => updateElement(d, spreadId, el.id, { extrude: { ...el.extrude!, angleDeg: Number(e.target.value) } }))}
+              onPointerUp={() => endGesture('3D direction')} onKeyUp={() => endGesture('3D direction')} />
+          </label>
+        </>
+      )}
+
+      <div className="field">
+        <span>Glow</span>
+        <div className="seg seg-wide">
+          <button className={!el.glow ? 'on' : ''} onClick={() => upd('No glow', { glow: undefined })}>None</button>
+          <button className={el.glow ? 'on' : ''} onClick={() => !el.glow && upd('Neon glow', { glow: { color: el.color, sizeMm: Math.max(0.8, el.fontSizePt * 0.05) } })}>Neon</button>
+        </div>
+      </div>
+      {el.glow && (
+        <div className="field-row">
+          <label className="field">
+            <span>Glow colour</span>
+            <ColorInput value={el.glow.color} label="Glow colour" apply={(d, c) => updateElement(d, spreadId, el.id, { glow: { ...el.glow!, color: c } })} />
+          </label>
+          <NumField label="Size" value={el.glow.sizeMm} min={0.2} max={20} step={0.1} suffix="mm" apply={live((v) => ({ glow: { ...el.glow!, sizeMm: v } }))} undoLabel="Glow size" />
+        </div>
+      )}
+
+      <div className="field-row">
+        <label className="field">
+          <span>Outer outline</span>
+          <ColorInput value={el.outline2?.color ?? '#000000'} label="Outer outline" apply={(d, c) => updateElement(d, spreadId, el.id, { outline2: { color: c, widthMm: el.outline2?.widthMm || Math.max(0.3, el.fontSizePt * 0.02) }, styleLinked: false })} />
+        </label>
+        <NumField label="Width" value={el.outline2?.widthMm ?? 0} min={0} max={10} step={0.1} suffix="mm" apply={live((v) => ({ outline2: v ? { color: el.outline2?.color ?? '#000000', widthMm: v } : undefined }))} undoLabel="Outer outline" />
+      </div>
+
+      <label className="field">
+        <span>Slant — {el.skewDeg ? `${Math.round(el.skewDeg)}°` : 'upright'}</span>
+        <input type="range" min={-30} max={30} step={1} value={el.skewDeg ?? 0} aria-label="Slant"
+          onChange={(e) => gesture((d) => updateElement(d, spreadId, el.id, { skewDeg: Number(e.target.value) || undefined }))}
+          onPointerUp={() => endGesture('Slant text')} onKeyUp={() => endGesture('Slant text')} onDoubleClick={() => upd('Upright text', { skewDeg: undefined })} />
+      </label>
     </div>
   );
+}
+
+/** A darker shade of a colour, for 3D sides. */
+function darker(hex: string): string {
+  const x = hex.replace('#', '').padEnd(6, '0');
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(x.slice(i, i + 2), 16) || 0);
+  const f = (v: number) => Math.round(v * 0.45).toString(16).padStart(2, '0');
+  return `#${f(r)}${f(g)}${f(b)}`;
 }
 
 // ---- colour grade ----------------------------------------------------------------------------------
@@ -459,11 +524,19 @@ export function GradeSliders({ value, apply, label }: { value: ColorGrade; apply
   );
 }
 
-export function GradeControls() {
-  const grade = useEditor((s) => s.doc?.grade) ?? NO_GRADE;
+/**
+ * A colour grade for every photo in a scope: the whole document (`surfaceId` missing) or one page,
+ * spread or cover. Page grades apply on top of each photo's own adjustment, under the document's.
+ */
+export function GradeControls({ surfaceId }: { surfaceId?: string } = {}) {
+  const grade = useEditor((s) => (surfaceId ? (s.doc ? findSurface(s.doc, surfaceId)?.surface.grade : undefined) : s.doc?.grade)) ?? NO_GRADE;
   const poster = useEditor((s) => s.doc?.settings.product === 'poster');
   const { run } = useEditor.getState();
-  const apply = (d: BookDocument, next: ColorGrade | undefined) => ({ ...d, grade: next && !isNeutralGrade(next) ? next : undefined });
+  const apply = (d: BookDocument, next: ColorGrade | undefined) => {
+    const g = next && !isNeutralGrade(next) ? next : undefined;
+    return surfaceId ? setSurfaceGrade(d, surfaceId, g) : { ...d, grade: g };
+  };
+  const where = surfaceId ? 'on this page' : poster ? 'on the poster (and the background image)' : 'in the book';
   return (
     <div className="stack">
       <div className="grade-presets">
@@ -480,7 +553,31 @@ export function GradeControls() {
         })}
       </div>
       <GradeSliders value={grade} apply={apply} label="Grade" />
-      <p className="muted small">Applies to every photo {poster ? 'on the poster (and the background image)' : 'in the book'}, on screen and in the PDF. Text and shapes keep their colours. Double-click a slider to reset it.</p>
+      <p className="muted small">Applies to every photo {where}, on screen and in the PDF. Text and shapes keep their colours. Double-click a slider to reset it.</p>
+    </div>
+  );
+}
+
+/** Adjust several selected photos together: the same settings go on each (starting from the first's). */
+export function MultiPhotoAdjust({ spreadId, ids }: { spreadId: string; ids: string[] }) {
+  const doc = useEditor((s) => s.doc)!;
+  const assets = useEditor((s) => s.assetMap);
+  const { run } = useEditor.getState();
+  const photos = (findSurface(doc, spreadId)?.surface.elements ?? []).filter((e): e is ImageElement => e.type === 'image' && ids.includes(e.id));
+  const value = photos[0]?.adjust ?? NO_GRADE;
+  const apply = (d: BookDocument, next: ColorGrade | undefined) =>
+    photos.reduce((acc, e) => updateElement(acc, spreadId, e.id, { adjust: next && !isNeutralGrade(next) ? next : undefined }), d);
+  return (
+    <div className="stack">
+      <p className="small"><strong>{photos.length} photos</strong> selected — these settings go on each of them.</p>
+      <div className="btn-grid">
+        <button className="btn btn-small" onClick={() => run(`Auto-enhance ${photos.length} photos`, (d) => photos.reduce((acc, e) => updateElement(acc, spreadId, e.id, { adjust: autoAdjust(e.assetId ? assets.get(e.assetId)?.analysis ?? null : null) }), d))} title="Each photo gets its own fix for exposure and colour cast">
+          <Icon name="sparkle" /> Auto-enhance each
+        </button>
+        <button className="btn btn-small" onClick={() => run(`Black & white ${photos.length} photos`, (d) => apply(d, { ...value, mono: value.mono === 'bw' ? undefined : 'bw', preset: 'custom' }))}>Black & white</button>
+      </div>
+      <GradeSliders value={value} apply={apply} label="Photos" />
+      <button className="link small" onClick={() => run('Reset photo adjustments', (d) => apply(d, undefined))}>Reset all {photos.length}</button>
     </div>
   );
 }

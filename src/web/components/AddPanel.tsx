@@ -11,7 +11,7 @@ import { TextChoices } from './TypePanel';
 export type AddSection = 'text' | 'shapes' | 'calendar' | 'map' | 'pages';
 
 /** Where new items go: the poster's centre, the front cover's centre, or the right page's centre. */
-function addPoint(doc: BookDocument, index: number): { x: number; y: number } {
+export function addPoint(doc: BookDocument, index: number): { x: number; y: number } {
   const s = doc.settings;
   if (s.product === 'poster') return { x: s.trimWidthMm / 2, y: s.trimHeightMm / 2 };
   if (index === COVER_INDEX) {
