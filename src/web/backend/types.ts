@@ -205,4 +205,6 @@ export interface WebExtras {
   storage(): Promise<StorageInfo>;
   /** Ask the browser to keep this site's data (no prompt in Chrome; Firefox may ask). */
   persist(): Promise<boolean>;
+  /** Delete every book, photo and setting stored in this browser (the demo's Start fresh). */
+  eraseEverything(): Promise<void>;
 }

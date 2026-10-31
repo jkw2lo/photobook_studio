@@ -10,6 +10,7 @@ A local-first photobook editor: import a folder of photos, get an automatic firs
 - **Safari and Firefox:** imported photos are copied into the browser's storage. Linked folders and the Shelf need Chrome or Edge. Safari opens HEIC photos; other browsers need them converted to JPEG first.
 - **Back up your books.** Browsers can clear site data (low disk space, "clear browsing data"). The download button on each book saves one `.photobook` file with its pages and photos; **Restore from backup…** on the home page brings it back, in any browser.
 - Print PDFs (interior + cover, verified), poster images and the web flipbook are all made in the browser.
+- **Demo:** visitors arriving from the portfolio (`?from=portfolio`, with nothing saved yet) can open a sample trip with a short walk-through, or start fresh. The sample photos are made-up illustrations (`npm run demo-photos` regenerates them).
 
 The home page lists what differs from the local app, and [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md#web-version) has the details. To build it yourself: `npm run build:pages` (output in `dist/pages`); `npm run preview:pages` serves it at http://localhost:5190/photobook_studio/. Pushes to `main` deploy it with GitHub Actions (`.github/workflows/pages.yml`). How it works: [docs/WEB_VERSION.md](docs/WEB_VERSION.md).
 

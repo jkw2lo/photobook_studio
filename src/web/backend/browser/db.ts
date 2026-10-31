@@ -324,9 +324,14 @@ export class BrowserStore {
     return this.tx(['assets'], 'readonly', (t) => request(t.objectStore('assets').index('sourceKey').get(key)));
   }
 
-  async firstAssetWithHash(hash: string, notId?: string): Promise<AssetRecord | undefined> {
+  /** Every photo in the catalogue with these contents, oldest import first. */
+  async assetsWithHash(hash: string): Promise<AssetRecord[]> {
     const rows = (await this.tx(['assets'], 'readonly', (t) => request(t.objectStore('assets').index('contentHash').getAll(IDBKeyRange.only(hash))))) as AssetRecord[];
-    return rows.filter((r) => r.id !== notId).sort((a, b) => (a.importedAt < b.importedAt ? -1 : 1))[0];
+    return rows.sort((a, b) => (a.importedAt < b.importedAt ? -1 : 1));
+  }
+
+  async firstAssetWithHash(hash: string, notId?: string): Promise<AssetRecord | undefined> {
+    return (await this.assetsWithHash(hash)).find((r) => r.id !== notId);
   }
 
   /** Add or update a photo and add it to the project, in one transaction. */

@@ -19,10 +19,12 @@ interface Context {
   exporter: BrowserExporter;
 }
 
+const DB_NAME = 'photobook-studio';
+
 let ctxPromise: Promise<Context> | null = null;
 const ctx = () =>
   (ctxPromise ??= (async () => {
-    const store = await BrowserStore.open();
+    const store = await BrowserStore.open(DB_NAME);
     const folders = new Folders(store);
     const importer = new BrowserImporter(store, folders);
     // Recently deleted: kept for 30 days, then purged (as the server does on start-up).
@@ -229,6 +231,19 @@ const web: WebExtras = {
   },
   storage: storageInfo,
   persist,
+  async eraseEverything() {
+    const open = ctxPromise;
+    ctxPromise = null;
+    if (open) (await open.catch(() => null))?.store.close();
+    forgetThumbs([...new Set([...thumbUrls.keys()].map((k) => k.replace(/_[sm]$/, '')))]);
+    await new Promise<void>((resolve, reject) => {
+      const r = indexedDB.deleteDatabase(DB_NAME);
+      r.onsuccess = () => resolve();
+      r.onerror = () => reject(r.error);
+      // Another tab still has it open: it is deleted once that tab closes.
+      r.onblocked = () => resolve();
+    });
+  },
 };
 
 export const browserBackend: Backend = {
