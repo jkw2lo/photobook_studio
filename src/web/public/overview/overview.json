@@ -1,0 +1,39 @@
+{
+  "version": 3,
+  "name": "Photobook Studio",
+  "tagline": "A whole photobook, drafted for you",
+  "pitch": "Point it at a folder of photos and it drafts the whole book, then exports PDFs a printer will take as they are.",
+  "accent": "#e7a65f",
+  "status": "In progress",
+
+  "problem": "Photobook sites want every photo uploaded, then placed by hand.",
+  "stats": [
+    { "value": "7", "label": "book templates that restyle the whole book" },
+    { "value": "11", "label": "Lulu and Blurb sizes, covers worked out" },
+    { "value": "0", "label": "photos uploaded: it all stays on your device" }
+  ],
+
+  "features": [
+    { "title": "A first draft for you", "text": "Import a folder and it lays out the whole book, a chapter per day.",
+      "details": ["Picks the best of each burst and skips duplicates", "Keeps favourites; panoramas run across a spread", "Regenerate, or try another variation"],
+      "screen": { "src": "book.png", "alt": "The whole book at a glance: cover, title page, a contents page listing Day 1 to 3 with page numbers, a Day 1 opener with a map pin, then photo spreads" } },
+    { "title": "Ready for the printer", "text": "Covers, spine and bleed are sized from the printer and the page count.",
+      "details": ["Lulu and Blurb presets, or your own numbers", "Preflight flags low DPI and text near the trim", "Interior and cover PDFs, checked after export"],
+      "screen": { "src": "cover.png", "alt": "The cover laid flat: back cover with a small sunset photo and the dates, a 6.3 mm spine, and a front cover with a town photo and the title Amalfi, May 2026" } },
+    { "title": "Templates that restyle", "text": "One click sets the type, paper, cover and colour grade for the whole book.",
+      "details": ["A contents page that keeps its page numbers right", "Chapter openers and a closing page, added for you", "Posters and collages from the same photos"] },
+    { "title": "Share it as a flipbook", "text": "Export one web page that turns like the printed book.",
+      "details": ["Opens in any browser, offline", "Every page cut from the same print PDF"] }
+  ],
+
+  "screens": [
+    { "src": "desktop.png", "alt": "Photobook Studio editing a travel journal: the photo library on the left, a spread of tilted prints on warm paper in the middle, book templates on the right and every spread along the bottom", "caption": "A sample trip, drafted as a travel journal" }
+  ],
+
+  "facts": {
+    "worksOn": "Any desktop browser, or a Mac",
+    "data": "In your browser, not uploaded",
+    "builtWith": "TypeScript and React",
+    "started": "Oct 2026"
+  }
+}

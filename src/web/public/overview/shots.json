@@ -1,0 +1,44 @@
+{
+  "url": "http://127.0.0.1:5273/#/book/05fa602b-9826-4552-a591-f1f1101785eb",
+  "note": "Photobook Studio runs on the Mac. Shot from `npm run dev` with PHOTOBOOK_DATA_DIR and PHOTOBOOK_SHELF_DIR pointed at scratch folders, PHOTOBOOK_WEB_PORT=5273, and an illustrated sample trip (22 made-up photos over three days) linked from the Shelf, auto-drafted, with the Travel journal template. The Shelf path is shown as the default.",
+  "shots": [
+    {
+      "file": "desktop.png",
+      "settle": 3000,
+      "steps": [
+        "wait:2500",
+        "eval:document.querySelectorAll('.shelf-path span.ellipsis').forEach(s => s.textContent = '~/Pictures/Studio Shelf')",
+        "eval:document.querySelectorAll('.navigator .nav-item')[4].click()",
+        "eval:const by = (t) => [...document.querySelectorAll('button')].find(b => (b.getAttribute('aria-label') || b.title || b.textContent.trim()) === t); by('Draft').click()",
+        "wait:3000",
+        "eval:document.querySelectorAll('.shelf-path span.ellipsis').forEach(s => s.textContent = '~/Pictures/Studio Shelf')"
+      ]
+    },
+    {
+      "file": "book.png",
+      "scale": 1.5,
+      "settle": 3000,
+      "steps": [
+        "wait:2500",
+        "eval:const by = (t) => [...document.querySelectorAll('button')].find(b => (b.getAttribute('aria-label') || b.title || b.textContent.trim()) === t); by('Whole book').click()",
+        "wait:3500"
+      ],
+      "clip": "main.stage .overview",
+      "pad": 0,
+      "maxHeight": 620
+    },
+    {
+      "file": "cover.png",
+      "scale": 1.5,
+      "settle": 3000,
+      "steps": [
+        "wait:2500",
+        "eval:document.querySelectorAll('.navigator .nav-item')[0].click()",
+        "wait:4000"
+      ],
+      "clip": "main.stage .canvas",
+      "pad": 0,
+      "maxHeight": 470
+    }
+  ]
+}
