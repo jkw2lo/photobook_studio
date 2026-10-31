@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { setBackgroundImage, updateBackgroundImage } from '../../core';
+import { NO_GRADE, backgroundBox, isNeutralGrade, posterGeometry, scaleBackground, setBackgroundImage, updateBackgroundImage, type BookDocument, type ColorGrade } from '../../core';
 import { thumbUrl } from '../api';
 import { useEditor } from '../store';
 import { ASSET_MIME } from './Canvas';
+import { GradeSliders } from './DesignPanel';
 import { Icon } from './Icon';
 
 /**
@@ -14,7 +15,9 @@ export function BackgroundImageField({ surfaceId }: { surfaceId: string }) {
   const asset = useEditor((s) => (bg ? s.assetMap.get(bg.assetId) : undefined));
   const preview = useEditor((s) => (s.previewAssetId ? s.assetMap.get(s.previewAssetId) : undefined));
   const [over, setOver] = useState(false);
-  const { run, gesture, endGesture } = useEditor.getState();
+  const editing = useEditor((s) => s.canvasTool?.kind === 'background' && s.canvasTool.surfaceId === surfaceId);
+  const settings = useEditor((s) => s.doc!.settings);
+  const { run, gesture, endGesture, setCanvasTool } = useEditor.getState();
 
   const use = (id: string) => {
     const a = useEditor.getState().assetMap.get(id);
@@ -64,6 +67,32 @@ export function BackgroundImageField({ surfaceId }: { surfaceId: string }) {
         <button className={bg.fit === 'cover' ? 'on' : ''} title="Fill the whole sheet (crops the photo)" onClick={() => run('Background: fill', (d) => updateBackgroundImage(d, surfaceId, { fit: 'cover' }))}>Fill</button>
         <button className={bg.fit === 'contain' ? 'on' : ''} title="Show the whole photo (the sheet colour shows around it)" onClick={() => run('Background: fit', (d) => updateBackgroundImage(d, surfaceId, { fit: 'contain' }))}>Fit</button>
       </div>
+      <div className="btn-grid">
+        <button className={`btn btn-small ${editing ? 'btn-on' : ''}`} disabled={!asset} onClick={() => setCanvasTool(editing ? null : { kind: 'background', surfaceId })} title="Drag the photo on the sheet; scroll or drag a corner to resize">
+          <Icon name="fit" /> {editing ? 'Done' : 'Move & resize'}
+        </button>
+        <button className="btn btn-small" disabled={!(bg.box || bg.crop.zoom > 1 || bg.crop.cx !== 0.5 || bg.crop.cy !== 0.5)} onClick={() => run('Reset background position', (d) => updateBackgroundImage(d, surfaceId, { box: undefined, crop: { cx: 0.5, cy: 0.5, zoom: 1 } }))}>
+          Reset position
+        </button>
+      </div>
+      {asset && (() => {
+        const g = posterGeometry({ settings });
+        const fitted = backgroundBox({ ...bg, box: undefined }, g, asset);
+        const now = backgroundBox(bg, g, asset);
+        const value = bg.fit === 'contain' ? now.w / fitted.w : bg.crop.zoom;
+        const centre = { x: now.x + now.w / 2, y: now.y + now.h / 2 };
+        return (
+          <label className="field">
+            <span>{bg.fit === 'contain' ? 'Size' : 'Zoom'} — {Math.round(value * 100)}%</span>
+            <input
+              type="range" min={bg.fit === 'contain' ? 0.1 : 1} max={bg.fit === 'contain' ? 3 : 5} step={0.01} value={value} aria-label="Background image size"
+              onChange={(e) => gesture((d) => updateBackgroundImage(d, surfaceId, scaleBackground(bg, g, asset, Number(e.target.value) / value, bg.fit === 'contain' ? centre : { x: g.width / 2, y: g.height / 2 })))}
+              onPointerUp={() => endGesture('Background size')}
+              onKeyUp={() => endGesture('Background size')}
+            />
+          </label>
+        );
+      })()}
       <label className="field">
         <span>Opacity — {Math.round(bg.opacity * 100)}%</span>
         <input
@@ -73,7 +102,27 @@ export function BackgroundImageField({ surfaceId }: { surfaceId: string }) {
           onKeyUp={() => endGesture('Background opacity')}
         />
       </label>
+      <BackgroundAdjust surfaceId={surfaceId} value={bg.adjust} />
       <p className="muted small">Fade it to let the photos stand out; the sheet colour shows through. Arrange and Shuffle leave it alone.</p>
+    </div>
+  );
+}
+
+/** Brightness, contrast… of the background photo alone (the poster's grade still applies on top). */
+function BackgroundAdjust({ surfaceId, value }: { surfaceId: string; value: ColorGrade | undefined }) {
+  const [open, setOpen] = useState(!isNeutralGrade(value));
+  const apply = (d: BookDocument, next: ColorGrade | undefined) => updateBackgroundImage(d, surfaceId, { adjust: next && !isNeutralGrade(next) ? next : undefined });
+  return (
+    <div className="stack">
+      <button className="link small bg-adjust-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <Icon name={open ? 'down' : 'right'} size={11} /> Brightness & contrast{isNeutralGrade(value) ? '' : ' · adjusted'}
+      </button>
+      {open && (
+        <>
+          <GradeSliders value={value ?? NO_GRADE} apply={apply} label="Background" />
+          {!isNeutralGrade(value) && <button className="link small" onClick={() => useEditor.getState().run('Reset background adjustments', (d) => apply(d, undefined))}>Reset adjustments</button>}
+        </>
+      )}
     </div>
   );
 }

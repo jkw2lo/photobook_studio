@@ -181,3 +181,72 @@ export function toInnerBox(el: Pick<ImageElement, 'xMm' | 'yMm' | 'widthMm' | 'h
   const box = innerBox(el);
   return { x: lx - box.x, y: ly - box.y };
 }
+
+export type CropHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+
+/** One side of the crop box: where it can go and how a new size is laid out. */
+function cropAxis(len: number, lo: number, hi: number, moveLo: boolean, moveHi: boolean, d: number) {
+  if (moveHi) {
+    const anchor = clamp(0, lo, hi);
+    return { want: len + d - anchor, max: hi - anchor, place: (s: number) => [anchor, anchor + s] as const };
+  }
+  if (moveLo) {
+    const anchor = clamp(len, lo, hi);
+    return { want: anchor - d, max: anchor - lo, place: (s: number) => [anchor - s, anchor] as const };
+  }
+  const a = Math.max(0, lo);
+  const b = Math.min(len, hi);
+  const c = clamp((a + b) / 2, lo, hi);
+  return { want: b - a, max: 2 * Math.min(c - lo, hi - c), place: (s: number) => [c - s / 2, c + s / 2] as const };
+}
+
+/**
+ * The crop tool's box: move a frame's edges (`handle` dragged by dx, dy in the frame's own mm) while
+ * its photo stays exactly where it is on the page. The box stays inside the photo, so the photo
+ * always fills it (a fitted photo becomes a filling one). `ratio` (width / height) keeps the box's
+ * shape; with no handle, the box takes that shape about its centre, as large as fits.
+ */
+export function reframeCrop(el: ImageElement, img: Size, handle: CropHandle | null, dx: number, dy: number, ratio?: number | null) {
+  const MIN = 5;
+  const box = innerBox(el);
+  const b = box.x;
+  const p = imagePlacement(box, img, el.crop, el.fit);
+  // Frame edges may go as far as the photo's edges (plus the border, which sits outside the photo).
+  const lim = { x0: p.x, y0: p.y, x1: p.x + p.w + 2 * b, y1: p.y + p.h + 2 * b };
+  const h = handle ?? '';
+  const ax = cropAxis(el.widthMm, lim.x0, lim.x1, h.includes('w'), h.includes('e'), dx);
+  const ay = cropAxis(el.heightMm, lim.y0, lim.y1, h.includes('n'), h.includes('s'), dy);
+  let W = ax.want;
+  let H = ay.want;
+  if (ratio && ratio > 0) {
+    const movesX = h.includes('w') || h.includes('e');
+    const movesY = h.includes('n') || h.includes('s');
+    if (movesX && !movesY) H = W / ratio;
+    else if (movesY && !movesX) W = H * ratio;
+    else if (W / H > ratio) H = W / ratio;
+    else W = H * ratio;
+    const k = Math.min(1, ax.max / W, ay.max / H);
+    W *= k;
+    H *= k;
+    const up = Math.max(1, MIN / W, MIN / H);
+    W *= up;
+    H *= up;
+  } else {
+    W = clamp(W, Math.min(MIN, ax.max), ax.max);
+    H = clamp(H, Math.min(MIN, ay.max), ay.max);
+  }
+  const [x0, x1] = ax.place(W);
+  const [y0, y1] = ay.place(H);
+  // Same photo scale and position; a new box around it.
+  const iw = x1 - x0 - 2 * b;
+  const ih = y1 - y0 - 2 * b;
+  const scale = p.w / img.w;
+  const base = Math.max(iw / img.w, ih / img.h);
+  const crop: Crop = { cx: clamp((x0 + x1) / 2 - b - p.x, 0, p.w) / p.w, cy: clamp((y0 + y1) / 2 - b - p.y, 0, p.h) / p.h, zoom: Math.max(1, scale / base) };
+  const rad = (el.rotationDeg * Math.PI) / 180;
+  const ox = (x0 + x1) / 2 - el.widthMm / 2;
+  const oy = (y0 + y1) / 2 - el.heightMm / 2;
+  const cx = el.xMm + el.widthMm / 2 + ox * Math.cos(rad) - oy * Math.sin(rad);
+  const cy = el.yMm + el.heightMm / 2 + ox * Math.sin(rad) + oy * Math.cos(rad);
+  return { xMm: cx - (x1 - x0) / 2, yMm: cy - (y1 - y0) / 2, widthMm: x1 - x0, heightMm: y1 - y0, crop, fit: 'cover' as FitMode };
+}

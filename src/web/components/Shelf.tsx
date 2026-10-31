@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, shelfPreviewUrl, type LinkedFolder, type ShelfFolder, type ShelfListing } from '../api';
 import { useEditor } from '../store';
 import { FolderPicker } from './FolderPicker';
@@ -16,7 +16,9 @@ const inside = (path: string, folder: string) => path === folder || path.startsW
  * offered in every book. Linking one imports it and keeps it in sync.
  */
 export function Shelf() {
-  const links = useEditor((s) => s.links);
+  const allLinks = useEditor((s) => s.links);
+  // Folders imported once (not kept in sync) are listed in the library, not here.
+  const links = useMemo(() => allLinks.filter((l) => l.auto), [allLinks]);
   const syncing = useEditor((s) => s.syncing);
   const job = useEditor((s) => s.importJob);
   const busy = !!job && (job.status === 'scanning' || job.status === 'running');

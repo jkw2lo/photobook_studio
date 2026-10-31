@@ -278,7 +278,13 @@ export interface BackgroundImage {
   fit: FitMode;
   /** 0–1. */
   opacity: number;
+  /** Where the photo sits when filling (pan and zoom). */
   crop: Crop;
+  /** 'contain' only: where the whole photo sits on the surface (mm, surface coordinates, the
+   * photo's own shape). Missing = as large as fits, centred. */
+  box?: Rect;
+  /** Brightness, contrast… of the background alone, applied before the document's grade. */
+  adjust?: ColorGrade;
 }
 
 export interface SpreadLayout {
@@ -339,6 +345,8 @@ export interface BookDocument {
   grade?: ColorGrade;
   /** Poster or book template it was last started from (highlighted in the picker). */
   template?: string;
+  /** Elements the poster template added (its type, banners, icons), so it can be removed again. */
+  templateElementIds?: ID[];
 }
 
 /** A whole-document colour grade. Sliders are −100…100 (fade 0…100); 0 = unchanged. */

@@ -7,7 +7,7 @@ import { migrateDocument } from '../core';
 // SQLite catalog + project store. All writes are synchronous transactions, so a crash
 // mid-save leaves the previous committed state intact (WAL journaling).
 
-const DB_SCHEMA_VERSION = 3;
+const DB_SCHEMA_VERSION = 4;
 
 export interface AssetRow {
   id: string;
@@ -135,6 +135,22 @@ export class Store {
         this.db.prepare(`INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '3')`).run();
       });
     }
+    if (current < 4) {
+      // v4: folders imported once are remembered too (auto = 0: refreshed only when asked), and
+      // photos taken out of a library are remembered so refreshing their folder doesn't bring them back.
+      this.tx(() => {
+        this.db.exec(`
+          ALTER TABLE project_links ADD COLUMN auto INTEGER NOT NULL DEFAULT 1;
+          CREATE TABLE project_dismissed (
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            original_path TEXT NOT NULL,
+            dismissed_at TEXT NOT NULL,
+            PRIMARY KEY (project_id, original_path)
+          );
+        `);
+        this.db.prepare(`INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '4')`).run();
+      });
+    }
   }
 
   tx<T>(fn: () => T): T {
@@ -225,15 +241,59 @@ export class Store {
       this.db.prepare(`DELETE FROM project_revisions WHERE project_id = ?`).run(id);
       this.db.prepare(`DELETE FROM project_assets WHERE project_id = ?`).run(id);
       this.db.prepare(`DELETE FROM project_links WHERE project_id = ?`).run(id);
+      this.db.prepare(`DELETE FROM project_dismissed WHERE project_id = ?`).run(id);
       this.db.prepare(`DELETE FROM projects WHERE id = ?`).run(id);
-      const orphans = this.db.prepare(`SELECT id, derived_path FROM assets WHERE id NOT IN (SELECT asset_id FROM project_assets)`).all() as { id: string; derived_path: string | null }[];
-      for (const o of orphans) {
-        this.db.prepare(`DELETE FROM assets WHERE id = ?`).run(o.id);
-        for (const f of ['s.jpg', 'm.jpg', 's.webp', 'm.webp']) rmSync(join(this.dataDir, 'thumbs', `${o.id}_${f}`), { force: true });
-        if (o.derived_path && o.derived_path.startsWith(join(this.dataDir, 'derived'))) rmSync(o.derived_path, { force: true });
-      }
-      return { removedPhotos: orphans.length };
+      return { removedPhotos: this.removeOrphans() };
     });
+  }
+
+  /** Photos no project uses any more leave the catalogue, with their thumbnails and converted copies. */
+  private removeOrphans(): number {
+    const orphans = this.db.prepare(`SELECT id, derived_path FROM assets WHERE id NOT IN (SELECT asset_id FROM project_assets)`).all() as { id: string; derived_path: string | null }[];
+    for (const o of orphans) {
+      this.db.prepare(`DELETE FROM assets WHERE id = ?`).run(o.id);
+      for (const f of ['s.jpg', 'm.jpg', 's.webp', 'm.webp']) rmSync(join(this.dataDir, 'thumbs', `${o.id}_${f}`), { force: true });
+      if (o.derived_path && o.derived_path.startsWith(join(this.dataDir, 'derived'))) rmSync(o.derived_path, { force: true });
+    }
+    return orphans.length;
+  }
+
+  /**
+   * Take photos out of a project's library (original files are never touched). Refreshing their
+   * folder won't bring them back; importing the folder again will.
+   */
+  removeFromProject(projectId: string, assetIds: string[]): number {
+    return this.tx(() => {
+      let removed = 0;
+      const now = new Date().toISOString();
+      for (const id of assetIds) {
+        const row = this.assetById(id);
+        if (!row) continue;
+        if (Number(this.db.prepare(`DELETE FROM project_assets WHERE project_id = ? AND asset_id = ?`).run(projectId, id).changes) === 0) continue;
+        this.db.prepare(`INSERT OR REPLACE INTO project_dismissed (project_id, original_path, dismissed_at) VALUES (?, ?, ?)`).run(projectId, row.original_path, now);
+        removed++;
+      }
+      this.removeOrphans();
+      return removed;
+    });
+  }
+
+  /** Exact copies an import added twice: out of the project (not remembered as removed). */
+  dropCopies(projectId: string, assetIds: string[]) {
+    this.tx(() => {
+      for (const id of assetIds) this.db.prepare(`DELETE FROM project_assets WHERE project_id = ? AND asset_id = ?`).run(projectId, id);
+      this.removeOrphans();
+    });
+  }
+
+  isDismissed(projectId: string, path: string): boolean {
+    return !!this.db.prepare(`SELECT 1 FROM project_dismissed WHERE project_id = ? AND original_path = ?`).get(projectId, path);
+  }
+
+  /** Importing a folder on purpose brings back photos taken out of the library from it. */
+  undismissFolder(projectId: string, folder: string) {
+    const prefix = folder.endsWith('/') ? folder : `${folder}/`;
+    this.db.prepare(`DELETE FROM project_dismissed WHERE project_id = ? AND (original_path = ? OR substr(original_path, 1, ?) = ?)`).run(projectId, folder, prefix.length, prefix);
   }
 
   /** Purge projects that have been in Recently deleted for more than `days` days. */
@@ -350,20 +410,29 @@ export class Store {
       .all(projectId, hash) as unknown as AssetRow[];
   }
 
+  inProject(projectId: string, assetId: string): boolean {
+    return !!this.db.prepare(`SELECT 1 FROM project_assets WHERE project_id = ? AND asset_id = ?`).get(projectId, assetId);
+  }
+
   unlinkAsset(projectId: string, assetId: string) {
     this.db.prepare(`DELETE FROM project_assets WHERE project_id = ? AND asset_id = ?`).run(projectId, assetId);
   }
 
   // ---- linked folders --------------------------------------------------------------------
 
-  listLinks(projectId: string): { folder: string; addedAt: string; syncedAt: string | null }[] {
-    return this.db
-      .prepare(`SELECT folder, added_at AS addedAt, synced_at AS syncedAt FROM project_links WHERE project_id = ? ORDER BY added_at`)
-      .all(projectId) as { folder: string; addedAt: string; syncedAt: string | null }[];
+  /** `auto`: kept in sync on its own (a linked folder). Otherwise imported once, refreshed when asked. */
+  listLinks(projectId: string): { folder: string; addedAt: string; syncedAt: string | null; auto: boolean }[] {
+    const rows = this.db
+      .prepare(`SELECT folder, added_at AS addedAt, synced_at AS syncedAt, auto FROM project_links WHERE project_id = ? ORDER BY added_at`)
+      .all(projectId) as { folder: string; addedAt: string; syncedAt: string | null; auto: number }[];
+    return rows.map((r) => ({ ...r, auto: !!r.auto }));
   }
 
-  addLink(projectId: string, folder: string) {
-    this.db.prepare(`INSERT OR IGNORE INTO project_links (project_id, folder, added_at) VALUES (?, ?, ?)`).run(projectId, folder, new Date().toISOString());
+  /** Remember a folder. Linking a folder that was only imported turns syncing on; importing never turns it off. */
+  addLink(projectId: string, folder: string, auto = true) {
+    this.db
+      .prepare(`INSERT INTO project_links (project_id, folder, added_at, auto) VALUES (?, ?, ?, ?) ON CONFLICT(project_id, folder) DO UPDATE SET auto = MAX(auto, excluded.auto)`)
+      .run(projectId, folder, new Date().toISOString(), auto ? 1 : 0);
   }
 
   removeLink(projectId: string, folder: string): boolean {
@@ -373,6 +442,29 @@ export class Store {
   markLinkSynced(projectId: string, folder: string) {
     this.db.prepare(`UPDATE project_links SET synced_at = ? WHERE project_id = ? AND folder = ?`).run(new Date().toISOString(), projectId, folder);
   }
+}
+
+/**
+ * Exact duplicates within one project: of each set of identical files, the copy on a page (else one
+ * whose file is there, else the first imported) is the original and the rest point at it. Decided
+ * per project, so a copy is never flagged against a photo this project doesn't have, and two copies
+ * never point at each other.
+ */
+export function projectDuplicates(rows: AssetRow[], inUse: Set<string>, isMissing: (r: AssetRow) => boolean): Map<string, string> {
+  const byHash = new Map<string, AssetRow[]>();
+  for (const r of rows) byHash.set(r.content_hash, [...(byHash.get(r.content_hash) ?? []), r]);
+  const dupOf = new Map<string, string>();
+  for (const group of byHash.values()) {
+    if (group.length < 2) continue;
+    const rank = (r: AssetRow) => [inUse.has(r.id) ? 0 : 1, isMissing(r) ? 1 : 0] as const;
+    const [original] = [...group].sort((a, b) => {
+      const [ua, ma] = rank(a);
+      const [ub, mb] = rank(b);
+      return ua - ub || ma - mb || a.imported_at.localeCompare(b.imported_at) || a.id.localeCompare(b.id);
+    });
+    for (const r of group) if (r.id !== original.id) dupOf.set(r.id, original.id);
+  }
+  return dupOf;
 }
 
 export function toPhotoAsset(r: AssetRow & { excluded?: number }, missing: boolean): PhotoAsset {

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { CommandError, expandGroups, findSurface, reconcileCover, refreshContents, type BookDocument, type DraftReport, type PhotoAsset } from '../core';
+import { CommandError, expandGroups, findSurface, reconcileCover, refreshContents, updateElement, type BookDocument, type DraftReport, type ImageElement, type PhotoAsset, type Rect } from '../core';
 import { api, ApiError, type ImportJob, type LinkedFolder } from './api';
 
 // Editor state. The document is immutable; every committed edit pushes the previous document onto
@@ -14,6 +14,10 @@ export interface Selection {
   spreadId: string;
   elementId: string;
 }
+
+/** An on-canvas tool that takes over the pointer: moving the background photo, or marking where a
+ * collage's photos go (`rect`: the area being drawn, as fractions of the sheet). */
+export type CanvasTool = { kind: 'background'; surfaceId: string } | { kind: 'area'; surfaceId: string; rect: Rect | null };
 
 export interface Toast {
   id: number;
@@ -42,6 +46,9 @@ interface EditorState {
   multi: string[];
   currentSpread: number;
   cropElementId: string | null;
+  /** The photo as it was when cropping began (Esc puts it back). */
+  cropOrig: ImageElement | null;
+  canvasTool: CanvasTool | null;
   swapSource: Selection | null;
   view: 'spread' | 'overview';
   showGuides: boolean;
@@ -86,15 +93,21 @@ interface EditorState {
   setZoom(z: number): void;
   toggleGuides(): void;
   setCrop(id: string | null): void;
+  /** Leave crop mode, undoing what changed since it began. */
+  cancelCrop(): void;
+  setCanvasTool(tool: CanvasTool | null): void;
   setSwapSource(sel: Selection | null): void;
   refreshAssets(): Promise<void>;
   patchAsset(assetId: string, patch: { rating?: number; favorite?: boolean; excluded?: boolean }): Promise<void>;
   /** Import a folder; `link` also keeps it in sync from now on. */
   startImport(folder: string, opts?: { link?: boolean }): Promise<void>;
   refreshLinks(): Promise<void>;
-  /** Re-read the linked folders (at most every 20 s unless `force`), quietly unless something changed. */
-  syncLinks(opts?: { force?: boolean }): Promise<void>;
+  /** Re-read the linked folders (at most every 20 s unless `force`), quietly unless something changed.
+   * `folders` re-reads just those (imported folders included) and always reports back. */
+  syncLinks(opts?: { force?: boolean; folders?: string[] }): Promise<void>;
   unlinkFolder(folder: string): Promise<void>;
+  /** Take photos out of the library (those on a page stay). */
+  removeAssets(ids: string[]): Promise<{ removed: number; keptOnPages: number }>;
   toast(kind: Toast['kind'], text: string): void;
   dismissToast(id: number): void;
 }
@@ -129,6 +142,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   multi: [],
   currentSpread: 1,
   cropElementId: null,
+  cropOrig: null,
+  canvasTool: null,
   swapSource: null,
   view: 'spread',
   showGuides: true,
@@ -147,7 +162,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   loadError: null,
 
   async load(projectId) {
-    set({ projectId, doc: null, loadError: null, past: [], future: [], selection: null, multi: [], cropElementId: null });
+    set({ projectId, doc: null, loadError: null, past: [], future: [], selection: null, multi: [], cropElementId: null, canvasTool: null });
     try {
       const [{ doc, revision }, assets] = await Promise.all([api.getProject(projectId), api.assets(projectId)]);
       set({
@@ -268,13 +283,31 @@ export const useEditor = create<EditorState>((set, get) => ({
     if (!doc) return;
     // -1 is the cover (books only); a poster has just its sheet.
     const min = doc.settings.product === 'poster' ? 0 : -1;
-    set({ currentSpread: Math.max(min, Math.min(doc.spreads.length - 1, i)), selection: null, multi: [], cropElementId: null, view: 'spread' });
+    set({ currentSpread: Math.max(min, Math.min(doc.spreads.length - 1, i)), selection: null, multi: [], cropElementId: null, canvasTool: null, view: 'spread' });
   },
 
-  setView: (view) => set({ view, selection: null, multi: [], cropElementId: null }),
+  setView: (view) => set({ view, selection: null, multi: [], cropElementId: null, canvasTool: null }),
   setZoom: (zoom) => set({ zoom: Math.max(0.5, Math.min(4, zoom)) }),
   toggleGuides: () => set((s) => ({ showGuides: !s.showGuides })),
-  setCrop: (cropElementId) => set({ cropElementId }),
+  setCrop(cropElementId) {
+    const { doc, selection, cropElementId: current } = get();
+    if (cropElementId === current) return;
+    const el = cropElementId && doc && selection ? findSurface(doc, selection.spreadId)?.surface.elements.find((e) => e.id === cropElementId) : undefined;
+    set({ cropElementId, cropOrig: el?.type === 'image' ? el : null, canvasTool: cropElementId ? null : get().canvasTool });
+  },
+
+  cancelCrop() {
+    const { doc, selection, cropElementId, cropOrig } = get();
+    set({ cropElementId: null, cropOrig: null });
+    if (!doc || !selection || !cropElementId || !cropOrig) return;
+    const el = findSurface(doc, selection.spreadId)?.surface.elements.find((e) => e.id === cropElementId);
+    if (!el || el.type !== 'image') return;
+    const { crop, fit, xMm, yMm, widthMm, heightMm } = cropOrig;
+    if (JSON.stringify([el.crop, el.fit, el.xMm, el.yMm, el.widthMm, el.heightMm]) === JSON.stringify([crop, fit, xMm, yMm, widthMm, heightMm])) return;
+    get().run('Cancel crop', (d) => updateElement(d, selection.spreadId, cropElementId, { crop, fit, xMm, yMm, widthMm, heightMm }));
+  },
+
+  setCanvasTool: (canvasTool) => set(canvasTool ? { canvasTool, cropElementId: null, cropOrig: null, selection: null, multi: [] } : { canvasTool: null }),
   setSwapSource: (swapSource) => set({ swapSource }),
 
   async refreshAssets() {
@@ -310,13 +343,13 @@ export const useEditor = create<EditorState>((set, get) => ({
       }
     }
     await get().refreshAssets();
-    if (opts?.link) await get().refreshLinks();
+    await get().refreshLinks();
     if (job.status === 'failed') get().toast('error', job.errors[0]?.error ?? 'Import failed');
     else {
       const parts = [`Imported ${job.imported} photo${job.imported === 1 ? '' : 's'}`];
       if (job.alreadyInLibrary) parts.push(`${job.alreadyInLibrary} already in library`);
       if (job.moved) parts.push(`${plural(job.moved, 'moved photo')} found`);
-      if (job.exactDuplicates) parts.push(`${job.exactDuplicates} exact duplicate${job.exactDuplicates === 1 ? '' : 's'} flagged`);
+      if (job.exactDuplicates) parts.push(`${plural(job.exactDuplicates, 'exact duplicate')} skipped`);
       if (job.failed) parts.push(`${job.failed} could not be read`);
       if (opts?.link) parts.push('linked: new photos are added when you open the book');
       get().toast(job.failed ? 'error' : 'success', parts.join(' · '));
@@ -333,14 +366,15 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   async syncLinks(opts) {
     const { projectId, links, syncing, importJob } = get();
-    if (!projectId || !links.length || syncing) return;
+    const asked = opts?.folders;
+    if (!projectId || syncing || !(asked ? asked.length : links.some((l) => l.auto))) return;
     // A visible import is already reading files; it will be picked up next time.
     if (importJob && (importJob.status === 'scanning' || importJob.status === 'running')) return;
-    if (!opts?.force && Date.now() - lastSyncAt < SYNC_INTERVAL_MS) return;
-    lastSyncAt = Date.now();
+    if (!asked && !opts?.force && Date.now() - lastSyncAt < SYNC_INTERVAL_MS) return;
+    if (!asked) lastSyncAt = Date.now();
     set({ syncing: true });
     try {
-      let { job } = await api.syncLinks(projectId, inUseIds(get().doc));
+      let { job } = await api.syncLinks(projectId, inUseIds(get().doc), asked);
       while (job && (job.status === 'scanning' || job.status === 'running')) {
         await new Promise((r) => setTimeout(r, 500));
         if (get().projectId !== projectId) return;
@@ -353,8 +387,11 @@ export const useEditor = create<EditorState>((set, get) => ({
       if (job.imported) parts.push(`${plural(job.imported, 'new photo')} added`);
       if (job.moved) parts.push(`${plural(job.moved, 'moved photo')} followed`);
       if (job.removed) parts.push(`${plural(job.removed, 'deleted photo')} taken out of the library`);
-      if (parts.length) get().toast('success', `Linked folders: ${parts.join(' · ')}`);
-      if (job.failed) get().toast('error', `Linked folders: ${plural(job.failed, 'photo')} could not be read`);
+      if (job.exactDuplicates && asked) parts.push(`${plural(job.exactDuplicates, 'duplicate')} skipped`);
+      const what = asked ? (asked.length === 1 ? (links.find((l) => l.folder === asked[0])?.name ?? 'Folder') : 'Folders') : 'Linked folders';
+      if (parts.length) get().toast('success', `${what}: ${parts.join(' · ')}`);
+      else if (asked) get().toast('info', `${what}: up to date — no new photos`);
+      if (job.failed) get().toast('error', `${what}: ${plural(job.failed, 'photo')} could not be read`);
     } catch (e) {
       get().toast('error', `Couldn't check linked folders: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -367,6 +404,16 @@ export const useEditor = create<EditorState>((set, get) => ({
     if (!projectId) return;
     const links = await api.unlinkFolder(projectId, folder);
     set({ links });
+  },
+
+  async removeAssets(ids) {
+    const { projectId } = get();
+    if (!projectId || !ids.length) return { removed: 0, keptOnPages: 0 };
+    const res = await api.removeAssets(projectId, ids, inUseIds(get().doc));
+    await get().refreshAssets();
+    await get().refreshLinks();
+    set((s) => (s.previewAssetId && !s.assetMap.has(s.previewAssetId) ? { previewAssetId: null } : {}));
+    return res;
   },
 
   toast(kind, text) {

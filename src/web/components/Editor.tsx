@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { findSurface, innerBox, issueCounts, moveElements, panCrop, updateElement, zoomCropAt } from '../../core';
-import { duplicate, group, remove, toggleLock, togglePin, ungroup } from '../elementActions';
+import { duplicate, group, remove, setPhotoArea, toggleLock, togglePin, ungroup } from '../elementActions';
 import { retrySave, selectedElement, selectedIds, useEditor } from '../store';
 import { Canvas } from './Canvas';
 import { ExportDialog } from './ExportDialog';
@@ -181,8 +181,18 @@ function useKeyboard(enabled: boolean) {
       }
       if (e.key === 'Escape') {
         if (st.swapSource) return st.setSwapSource(null);
-        if (st.cropElementId) return st.setCrop(null);
+        if (st.canvasTool) return st.setCanvasTool(null);
+        // Esc puts the photo back as it was; Enter (or Done) keeps the crop.
+        if (st.cropElementId) return st.cancelCrop();
         return st.select(null);
+      }
+      if (st.canvasTool) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          if (st.canvasTool.kind === 'area' && st.canvasTool.rect) return setPhotoArea(st.canvasTool.rect);
+          return st.setCanvasTool(null);
+        }
+        return;
       }
       if (key === 'g' && !mod) return st.toggleGuides();
       // Crop mode: arrows move the photo inside its frame, +/− zoom, Enter finishes.

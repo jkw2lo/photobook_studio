@@ -435,7 +435,7 @@ export function TextEffects({ el, spreadId }: { el: TextElement; spreadId: strin
 const SWATCH: [number, number, number][] = [[214, 98, 82], [236, 196, 112], [96, 160, 120], [84, 132, 196], [230, 216, 200]];
 
 /** Brightness / contrast / saturation / warmth / fade sliders for a grade, wherever it lives. */
-function GradeSliders({ value, apply, label }: { value: ColorGrade; apply: (d: BookDocument, next: ColorGrade | undefined) => BookDocument; label: string }) {
+export function GradeSliders({ value, apply, label }: { value: ColorGrade; apply: (d: BookDocument, next: ColorGrade | undefined) => BookDocument; label: string }) {
   const { run, gesture, endGesture } = useEditor.getState();
   const slider = (key: 'brightness' | 'contrast' | 'saturation' | 'warmth' | 'fade', name: string, min = -100) => (
     <label className="field" key={key}>

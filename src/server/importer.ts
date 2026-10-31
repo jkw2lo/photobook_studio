@@ -20,7 +20,10 @@ export interface ImportJob {
   processed: number;
   imported: number;
   alreadyInLibrary: number;
+  /** Exact copies of a photo already in the library (or met earlier in this job): skipped, not imported. */
   exactDuplicates: number;
+  /** Photos taken out of this library earlier: a refresh leaves them out. */
+  dismissed: number;
   /** Photos found at a new path (moved or renamed): same photo, nothing re-imported. */
   moved: number;
   /** Photos whose file left a linked folder and that aren't on any page: taken out of the library. */
@@ -60,6 +63,11 @@ export class Importer {
   /** One job at a time per project, so an import and a sync never catalogue the same file twice. */
   private queues = new Map<string, Promise<void>>();
   private syncing = new Map<string, ImportJob>();
+  /** Per running job: the project's photos when it began, and what it added by contents (copies
+   * inside one job are settled when it ends, so the choice doesn't depend on which file is read first). */
+  private jobState = new Map<string, { before: Set<string>; added: Map<string, { id: string; path: string; how: 'imported' | 'linked' }[]> }>();
+  /** Content hashes by path, so unchanged duplicates skipped on every refresh aren't re-read each time. */
+  private hashes = new Map<string, { size: number; mtimeMs: number; hash: string }>();
 
   constructor(private store: Store) {}
 
@@ -69,6 +77,8 @@ export class Importer {
 
   start(projectId: string, folderInput: string, recursive = true): ImportJob {
     const folder = resolveFolder(folderInput);
+    // Importing on purpose brings back photos taken out of the library from this folder.
+    this.store.undismissFolder(projectId, folder);
     const job = this.newJob(projectId, 'import', [folder]);
     this.enqueue(job, () => this.run(job, recursive));
     return job;
@@ -77,11 +87,12 @@ export class Importer {
   /**
    * Re-read the project's linked folders: add new photos, follow moved ones, and drop photos whose
    * file is gone — unless they're on a page (`inUse`), where they stay and show as missing.
-   * A sync already queued or running for the project is returned instead of starting another.
+   * A sync of the same folders already queued or running for the project is returned instead of
+   * starting another.
    */
   sync(projectId: string, folders: string[], inUse: Set<string>): ImportJob {
     const pending = this.syncing.get(projectId);
-    if (pending && pending.status !== 'done' && pending.status !== 'failed') return pending;
+    if (pending && pending.status !== 'done' && pending.status !== 'failed' && folders.every((f) => pending.folders.includes(f))) return pending;
     const job = this.newJob(projectId, 'sync', folders);
     this.syncing.set(projectId, job);
     this.enqueue(job, async () => {
@@ -97,7 +108,7 @@ export class Importer {
   private newJob(projectId: string, kind: ImportJob['kind'], folders: string[]): ImportJob {
     const job: ImportJob = {
       id: randomUUID(), projectId, kind, folder: folders.length === 1 ? folders[0] : `${folders.length} linked folders`, folders,
-      status: 'scanning', total: 0, processed: 0, imported: 0, alreadyInLibrary: 0, exactDuplicates: 0, moved: 0, removed: 0,
+      status: 'scanning', total: 0, processed: 0, imported: 0, alreadyInLibrary: 0, exactDuplicates: 0, dismissed: 0, moved: 0, removed: 0,
       missingFolders: [], failed: 0, errors: [], startedAt: new Date().toISOString(),
     };
     this.jobs.set(job.id, job);
@@ -120,6 +131,7 @@ export class Importer {
 
   /** `finish` runs after every file is read, before the job reports done. */
   private async run(job: ImportJob, recursive: boolean, finish?: () => void) {
+    this.jobState.set(job.id, { before: new Set(this.store.projectAssetRows(job.projectId).map((r) => r.id)), added: new Map() });
     try {
       const files: string[] = [];
       for (const folder of job.folders) {
@@ -145,26 +157,58 @@ export class Importer {
         }
       };
       await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+      this.settleCopies(job);
       finish?.();
       job.status = 'done';
     } catch (e) {
       job.status = 'failed';
       job.errors.push({ file: job.folder, error: e instanceof Error ? e.message : String(e) });
     }
+    this.jobState.delete(job.id);
     job.finishedAt = new Date().toISOString();
   }
 
+  private async hashOf(path: string, st: { size: number; mtimeMs: number }): Promise<string> {
+    const cached = this.hashes.get(path);
+    if (cached && cached.size === st.size && cached.mtimeMs === st.mtimeMs) return cached.hash;
+    const hash = await hashFile(path);
+    this.hashes.set(path, { size: st.size, mtimeMs: st.mtimeMs, hash });
+    return hash;
+  }
+
   private async importOne(job: ImportJob, path: string) {
+    if (job.kind === 'sync' && this.store.isDismissed(job.projectId, path)) {
+      job.dismissed++;
+      return;
+    }
     const st = await fileStat(path);
     const existing = this.store.assetByPath(path);
     const dataDir = this.store.dataDir;
-    // Unchanged file already catalogued: just add it to this project.
-    if (existing && existing.file_size === st.size && existing.mtime_ms === st.mtimeMs && existingThumb(dataDir, existing.id, 's')) {
-      this.store.linkAsset(job.projectId, existing.id);
+    const unchanged = !!existing && existing.file_size === st.size && existing.mtime_ms === st.mtimeMs && !!existingThumb(dataDir, existing.id, 's');
+    const inProject = !!existing && this.store.inProject(job.projectId, existing.id);
+    // Already in this library: nothing to do.
+    if (unchanged && inProject) {
       job.alreadyInLibrary++;
       return;
     }
-    const contentHash = await hashFile(path);
+    const contentHash = unchanged ? existing!.content_hash : await this.hashOf(path, st);
+    // The same picture was already in this library from another file (a copy): show it once, don't
+    // import it again.
+    const state = this.jobState.get(job.id)!;
+    const copyInProject = !inProject && this.store.projectAssetsWithHash(job.projectId, contentHash).some((a) => state.before.has(a.id) && a.original_path !== path && existsSync(a.original_path));
+    if (copyInProject) {
+      job.exactDuplicates++;
+      return;
+    }
+    const added = (id: string, how: 'imported' | 'linked') => {
+      if (!inProject) state.added.set(contentHash, [...(state.added.get(contentHash) ?? []), { id, path, how }]);
+    };
+    if (unchanged) {
+      this.store.linkAsset(job.projectId, existing!.id);
+      job.alreadyInLibrary++;
+      added(existing!.id, 'linked');
+      return;
+    }
     if (!existing) {
       // The same photo whose old file is gone: it was moved or renamed. Follow it, keeping its place on pages.
       const moved = this.store.projectAssetsWithHash(job.projectId, contentHash).find((a) => !existsSync(a.original_path));
@@ -203,8 +247,29 @@ export class Importer {
       });
       this.store.linkAsset(job.projectId, id);
     });
-    if (dup) job.exactDuplicates++;
     job.imported++;
+    added(id, existing ? 'linked' : 'imported');
+  }
+
+  /**
+   * Copies of one photo added by this job: keep one — already catalogued first, then the shorter
+   * name ("IMG_1.jpg" over "IMG_1 copy.jpg"), then by path — and drop the rest.
+   */
+  private settleCopies(job: ImportJob) {
+    const state = this.jobState.get(job.id);
+    if (!state) return;
+    const drop: string[] = [];
+    for (const group of state.added.values()) {
+      if (group.length < 2) continue;
+      const [, ...rest] = [...group].sort((a, b) => Number(a.how === 'imported') - Number(b.how === 'imported') || basename(a.path).length - basename(b.path).length || a.path.localeCompare(b.path));
+      for (const r of rest) {
+        drop.push(r.id);
+        job.exactDuplicates++;
+        if (r.how === 'imported') job.imported--;
+        else job.alreadyInLibrary--;
+      }
+    }
+    if (drop.length) this.store.dropCopies(job.projectId, drop);
   }
 
   private dropGone(job: ImportJob, inUse: Set<string>) {

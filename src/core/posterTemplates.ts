@@ -5,7 +5,7 @@ import { makeImageElement, makeShapeElement, makeTextElement } from './layout';
 import { MONTHS, makeCalendar, photoDays } from './calendar';
 import { scorePhotos } from './curation';
 import { curatePool, type CuratedPool } from './generator';
-import { generatePoster, type PosterReport } from './poster';
+import { generatePoster, relayoutPoster, type PosterReport } from './poster';
 import { estimateTextHeightMm, quickStyle, quickStyleFields } from './quickStyles';
 import { shapeDef } from './shapes';
 import { pageScale } from './typography';
@@ -331,7 +331,8 @@ export function applyPosterTemplate(
     grade: t.grade ? gradeFromPreset(t.grade) : undefined,
     spreads: [{ ...sheet, background: t.background, backgroundImage: undefined, provenance: undefined, elements: [] }],
   };
-  const withItems: BookDocument = { ...base, spreads: [{ ...base.spreads[0], elements: templateElements(base, t, assets) }] };
+  const items = templateElements(base, t, assets);
+  const withItems: BookDocument = { ...base, templateElementIds: items.map((e) => e.id), spreads: [{ ...base.spreads[0], elements: items }] };
   const prev = doc.collage;
   const settings: CollageSettings = {
     style: 'mosaic', gapMm: 3, marginMm: 0, titlePosition: 'none', ...t.collage,
@@ -346,4 +347,29 @@ export function applyPosterTemplate(
   }
   const res = generatePoster(withItems, assets, settings, curated);
   return { doc: { ...res.doc, template: t.id }, report: res.report };
+}
+
+/**
+ * Take a poster template off again: its type, banners and icons, its background colour and grade,
+ * and its photo area. Photos on the sheet stay and re-flow over the whole sheet. Posters started
+ * from a template before its elements were recorded lose every text, shape and calendar instead
+ * (one undo step brings them back).
+ */
+export function removePosterTemplate(doc: BookDocument, assets: Map<string, PhotoAsset>): BookDocument {
+  const sheet = doc.spreads[0];
+  if (!sheet || !doc.template) return doc;
+  const t = posterTemplate(doc.template);
+  const recorded = doc.templateElementIds ? new Set(doc.templateElementIds) : null;
+  const fromTemplate = (e: Element) => (recorded ? recorded.has(e.id) && !(e.type === 'image' && e.assetId && !t?.placesPhotos) : e.type !== 'image');
+  const { area: _area, ...collage } = doc.collage ?? ({} as CollageSettings);
+  const next: BookDocument = {
+    ...doc,
+    template: undefined,
+    templateElementIds: undefined,
+    grade: t?.grade ? undefined : doc.grade,
+    collage: doc.collage ? (collage as CollageSettings) : undefined,
+    spreads: [{ ...sheet, background: t && sheet.background === t.background ? undefined : sheet.background, elements: sheet.elements.filter((e) => !fromTemplate(e)) }, ...doc.spreads.slice(1)],
+  };
+  const photos = next.spreads[0].elements.some((e) => e.type === 'image' && e.assetId);
+  return photos && next.collage ? relayoutPoster(next, assets, next.collage) : next;
 }

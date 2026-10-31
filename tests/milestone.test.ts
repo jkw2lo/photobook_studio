@@ -98,14 +98,14 @@ describe('milestone 1: import → draft → edit → reopen → export', () => {
     }
     expect(status.errors).toEqual([]);
     expect(status.total).toBe(21);
-    expect(status.imported).toBe(21);
+    // The exact copy of a photo is skipped, not imported a second time.
+    expect(status.imported).toBe(20);
     expect(status.exactDuplicates).toBe(1);
 
     assets = (await api<PhotoAsset[]>('GET', `/api/projects/${projectId}/assets`)).body;
-    expect(assets).toHaveLength(21);
+    expect(assets).toHaveLength(20);
     const byName = (n: string) => assets.find((a) => a.fileName === n)!;
-    // Exact duplicate flagged, not deleted.
-    expect(byName('day1-03-market-copy.jpg').exactDuplicateOf ?? byName('day1-03-market.jpg').exactDuplicateOf).toBeTruthy();
+    expect(assets.filter((a) => a.fileName.startsWith('day1-03-market'))).toHaveLength(1);
     // EXIF orientation applied: stored 3000×2000, displayed portrait.
     expect([byName('day2-05-rotated.jpg').widthPx, byName('day2-05-rotated.jpg').heightPx]).toEqual([2000, 3000]);
     // HEIC decoded via sips.
@@ -139,7 +139,8 @@ describe('milestone 1: import → draft → edit → reopen → export', () => {
     let status = job.body;
     while (status.status !== 'done') status = (await api('GET', `/api/jobs/${job.body.id}`)).body;
     expect(status.imported).toBe(0);
-    expect(status.alreadyInLibrary).toBe(21);
+    expect(status.alreadyInLibrary).toBe(20);
+    expect(status.exactDuplicates).toBe(1);
   });
 
   it('generates a complete 16-page draft from the imported photos (AC-06)', async () => {
@@ -147,7 +148,7 @@ describe('milestone 1: import → draft → edit → reopen → export', () => {
     const result = generateDraft(doc, assets, { targetPages: 16, stylePresetId: 'editorial', ordering: 'chronological', includeCaptions: true, seed: 3 });
     doc = result.doc;
     expect(printablePages(doc)).toHaveLength(16);
-    expect(result.report.exactDuplicates).toBe(1);
+    expect(result.report.exactDuplicates).toBe(0);
     expect(result.report.nearDuplicatesSet).toBeGreaterThanOrEqual(2); // the summit burst
     const used = doc.spreads.flatMap((s) => s.elements).filter((e): e is ImageElement => e.type === 'image').map((e) => e.assetId);
     expect(used.length).toBeGreaterThanOrEqual(14);

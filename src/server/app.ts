@@ -3,7 +3,7 @@ import { existsSync, statSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { API_VERSION, SCHEMA_VERSION, UnknownSizeError, createBook, createPoster, posterSize, migrateDocument, type BookDocument, type PhotoAnalysis, type PhotoAsset } from '../core';
-import { Store, toPhotoAsset, type AssetRow } from './db';
+import { Store, projectDuplicates, toPhotoAsset, type AssetRow } from './db';
 import { Importer, isInside, resolveFolder, scanFolder } from './importer';
 import { createShelf, folderName, listShelf, setShelfRoot, shelfPreview, shelfRoot } from './shelf';
 import { textOutline } from './textOutline';
@@ -40,7 +40,12 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
     Promise.resolve(fn(req, res)).catch(next);
 
   const isMissing = (r: AssetRow) => !existsSync(r.original_path);
-  const projectAssets = (projectId: string): PhotoAsset[] => store.projectAssetRows(projectId).map((r) => toPhotoAsset(r, isMissing(r)));
+  const projectAssets = (projectId: string): PhotoAsset[] => {
+    const rows = store.projectAssetRows(projectId);
+    const saved = store.getProject(projectId);
+    const dupOf = projectDuplicates(rows, saved ? assetIdsInUse(saved.doc) : new Set(), isMissing);
+    return rows.map((r) => ({ ...toPhotoAsset(r, isMissing(r)), exactDuplicateOf: dupOf.get(r.id) ?? null }));
+  };
   const requireProject = (id: string) => {
     const p = store.getProject(id);
     if (!p) throw new HttpError(404, 'Project not found');
@@ -160,9 +165,23 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
     const { rating, favorite, tags, excluded } = req.body ?? {};
     store.updateAssetUserFields(P(req).assetId, { rating, favorite, tags });
     if (excluded !== undefined) store.setExcluded(P(req).id, P(req).assetId, !!excluded);
-    const row = store.projectAssetRows(P(req).id).find((r) => r.id === P(req).assetId);
-    if (!row) throw new HttpError(404, 'Photo not in project');
-    res.json(toPhotoAsset(row, isMissing(row)));
+    const asset = projectAssets(P(req).id).find((a) => a.id === P(req).assetId);
+    if (!asset) throw new HttpError(404, 'Photo not in project');
+    res.json(asset);
+  }));
+
+  /**
+   * Take photos out of this book's library. Photos on a page (saved, or `inUse` from edits not saved
+   * yet) stay. Original files are never touched.
+   */
+  app.post('/api/projects/:id/assets/remove', wrap((req, res) => {
+    const { doc } = requireProject(P(req).id);
+    const ids = Array.isArray(req.body?.ids) ? (req.body.ids as unknown[]).filter((x): x is string => typeof x === 'string') : [];
+    const inUse = assetIdsInUse(doc);
+    if (Array.isArray(req.body?.inUse)) for (const id of req.body.inUse) if (typeof id === 'string') inUse.add(id);
+    const removable = ids.filter((id) => !inUse.has(id));
+    const removed = store.removeFromProject(P(req).id, removable);
+    res.json({ removed, keptOnPages: ids.length - removable.length });
   }));
 
   app.get('/api/assets/:id/thumb', wrap((req, res) => {
@@ -204,7 +223,10 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
     requireProject(P(req).id);
     const { folder, recursive } = req.body ?? {};
     if (!folder || typeof folder !== 'string') throw new HttpError(400, 'Choose a folder to import');
-    const job = importer.start(P(req).id, folder, recursive !== false);
+    const resolved = resolveFolder(folder);
+    // Remembered (not synced on its own) so it can be refreshed later.
+    if (existsSync(resolved) && statSync(resolved).isDirectory()) store.addLink(P(req).id, resolved, false);
+    const job = importer.start(P(req).id, resolved, recursive !== false);
     res.status(202).json(job);
   }));
 
@@ -223,6 +245,7 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
       name: folderName(l.folder),
       exists: existsSync(l.folder),
       onShelf: isInside(l.folder, root),
+      auto: l.auto,
       syncedAt: l.syncedAt,
       assetIds: rows.filter((r) => isInside(r.original_path, l.folder)).map((r) => r.id),
     }));
@@ -243,7 +266,7 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
     res.status(202).json(importer.start(P(req).id, folder));
   }));
 
-  /** Stop syncing a folder. Its photos stay in the library. */
+  /** Stop syncing (or forget) a folder. Its photos stay in the library. */
   app.delete('/api/projects/:id/links', wrap((req, res) => {
     requireProject(P(req).id);
     const folder = resolveFolder(String(req.query.folder ?? ''));
@@ -251,10 +274,15 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
     res.json(linksOf(P(req).id));
   }));
 
-  /** Re-read every linked folder. `inUse` adds photos placed in edits not saved yet. */
+  /**
+   * Re-read every linked folder, or the given ones (refreshing a folder that was imported once).
+   * `inUse` adds photos placed in edits not saved yet.
+   */
   app.post('/api/projects/:id/links/sync', wrap((req, res) => {
     const { doc } = requireProject(P(req).id);
-    const folders = store.listLinks(P(req).id).map((l) => l.folder);
+    const known = store.listLinks(P(req).id);
+    const asked = Array.isArray(req.body?.folders) ? new Set((req.body.folders as unknown[]).filter((f): f is string => typeof f === 'string').map(resolveFolder)) : null;
+    const folders = known.filter((l) => (asked ? asked.has(l.folder) : l.auto)).map((l) => l.folder);
     if (!folders.length) return void res.json({ job: null });
     const inUse = assetIdsInUse(doc);
     if (Array.isArray(req.body?.inUse)) for (const id of req.body.inUse) if (typeof id === 'string') inUse.add(id);

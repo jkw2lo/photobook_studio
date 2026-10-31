@@ -42,7 +42,10 @@ export interface ImportJob {
   processed: number;
   imported: number;
   alreadyInLibrary: number;
+  /** Copies of photos already in the library: skipped. */
   exactDuplicates: number;
+  /** Photos taken out of the library earlier: left out by a refresh. */
+  dismissed: number;
   moved: number;
   removed: number;
   missingFolders: string[];
@@ -50,12 +53,14 @@ export interface ImportJob {
   errors: { file: string; error: string }[];
 }
 
-/** A folder this project keeps in sync with its library. */
+/** A folder this project's photos came from: linked (kept in sync) or imported once (refreshed on request). */
 export interface LinkedFolder {
   folder: string;
   name: string;
   exists: boolean;
   onShelf: boolean;
+  /** Linked: re-read on its own. Otherwise imported, and re-read only when refreshed. */
+  auto: boolean;
   syncedAt: string | null;
   assetIds: string[];
 }
@@ -164,7 +169,8 @@ export const api = {
   links: (projectId: string) => call<LinkedFolder[]>('GET', `/api/projects/${projectId}/links`),
   linkFolder: (projectId: string, folder: string) => call<ImportJob>('POST', `/api/projects/${projectId}/links`, { folder }),
   unlinkFolder: (projectId: string, folder: string) => call<LinkedFolder[]>('DELETE', `/api/projects/${projectId}/links?folder=${encodeURIComponent(folder)}`),
-  syncLinks: (projectId: string, inUse: string[]) => call<{ job: ImportJob | null }>('POST', `/api/projects/${projectId}/links/sync`, { inUse }),
+  syncLinks: (projectId: string, inUse: string[], folders?: string[]) => call<{ job: ImportJob | null }>('POST', `/api/projects/${projectId}/links/sync`, { inUse, folders }),
+  removeAssets: (projectId: string, ids: string[], inUse: string[]) => call<{ removed: number; keptOnPages: number }>('POST', `/api/projects/${projectId}/assets/remove`, { ids, inUse }),
   shelf: (path?: string) => call<ShelfListing>('GET', `/api/shelf${path ? `?path=${encodeURIComponent(path)}` : ''}`),
   setShelfRoot: (root: string) => call<ShelfListing>('PUT', '/api/shelf', { root }),
   createShelf: () => call<ShelfListing>('POST', '/api/shelf/create'),

@@ -66,7 +66,7 @@ describe('deleting projects (API)', () => {
 
     // Deleting the last project that uses the photos removes them from the catalogue and their thumbnails.
     await api('DELETE', `/api/projects/${a}`);
-    expect((await api('DELETE', `/api/projects/${a}?forever=1`)).body.removedPhotos).toBe(21);
+    expect((await api('DELETE', `/api/projects/${a}?forever=1`)).body.removedPhotos).toBe(20);
     expect(readdirSync(join(dataDir, 'thumbs'))).toEqual([]);
     expect(existsSync(join(FIXTURES, 'day1-01-arrival.jpg'))).toBe(true); // originals untouched
   }, 120_000);

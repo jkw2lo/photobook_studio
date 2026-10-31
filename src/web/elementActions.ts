@@ -1,4 +1,4 @@
-import { duplicateElement, duplicateElements, groupElements, removeElements, reorderElement, reorderElements, setLockedMany, ungroupElements, updateElement, type Element } from '../core';
+import { DEFAULT_COLLAGE, duplicateElement, duplicateElements, groupElements, relayoutPoster, removeElements, reorderElement, reorderElements, setLockedMany, ungroupElements, updateElement, type CollageSettings, type Element, type Rect } from '../core';
 import { selectedIds, useEditor, type Selection } from './store';
 
 // Element actions shared by the inspector, the right-click menu and keyboard shortcuts.
@@ -82,4 +82,18 @@ export function group(sel: Selection) {
 export function ungroup(sel: Selection) {
   const chosen = ids();
   if (st().run('Ungroup', (d) => ungroupElements(d, sel.spreadId, chosen))) st().selectMany(sel.spreadId, chosen, sel.elementId);
+}
+
+/**
+ * Where a poster's photos go (fractions of the sheet; undefined = the whole sheet), then re-flow
+ * the photos on it into that area.
+ */
+export function setPhotoArea(area: Rect | undefined) {
+  const s = st();
+  if (!s.doc) return;
+  const next: CollageSettings = { ...(s.doc.collage ?? DEFAULT_COLLAGE), area };
+  if (!area) delete next.area;
+  const hasPhotos = s.doc.spreads[0]?.elements.some((e) => e.type === 'image' && e.assetId);
+  s.run(area ? 'Set photo area' : 'Use the whole sheet for photos', (d) => (hasPhotos ? relayoutPoster(d, s.assetMap, next) : { ...d, collage: next }));
+  s.setCanvasTool(null);
 }

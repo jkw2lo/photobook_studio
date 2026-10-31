@@ -1,11 +1,12 @@
 import { memo, useMemo, useState } from 'react';
 import { chronological, groupSimilar, type BookDocument, type ImageElement, type PhotoAsset } from '../../core';
-import { api, thumbUrl } from '../api';
+import { api, thumbUrl, type LinkedFolder } from '../api';
 import { useEditor } from '../store';
 import { ASSET_MIME } from './Canvas';
 import { FolderPicker } from './FolderPicker';
 import { Icon } from './Icon';
 import { CleanupDialog } from './CleanupDialog';
+import { Modal } from './Modal';
 import { Shelf, tildePath } from './Shelf';
 
 type Filter = 'all' | 'unused' | 'favorites' | 'hidden' | 'issues' | `link:${string}`;
@@ -20,6 +21,8 @@ export function Library() {
   const [filter, setFilter] = useState<Filter>('all');
   const [picker, setPicker] = useState<'import' | 'relink' | null>(null);
   const [cleanup, setCleanup] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const syncing = useEditor((s) => s.syncing);
   const previewId = useEditor((s) => s.previewAssetId);
 
   const usage = useMemo(() => parseUsage(usageKey), [usageKey]);
@@ -36,24 +39,25 @@ export function Library() {
   const ordered = useMemo(() => chronological(assets), [assets]);
   const linkFilter = filter.startsWith('link:') ? links.find((l) => `link:${l.folder}` === filter) : undefined;
   const fromLink = useMemo(() => new Set(linkFilter?.assetIds ?? []), [linkFilter]);
-  const visible = ordered.filter((a) => {
-    if (filter.startsWith('link:')) return fromLink.has(a.id);
-    if (filter === 'unused') return !usage.has(a.id) && !a.excluded;
-    if (filter === 'favorites') return a.favorite;
-    if (filter === 'hidden') return a.excluded;
-    if (filter === 'issues') return a.missing || !!a.exactDuplicateOf;
+  // Exact copies of another photo are shown once (the original); Issues lists the copies.
+  const isCopy = (a: PhotoAsset) => !!a.exactDuplicateOf && !usage.has(a.id);
+  const matches = (a: PhotoAsset, f: Filter) => {
+    if (f === 'issues') return a.missing || !!a.exactDuplicateOf;
+    if (isCopy(a)) return false;
+    if (f.startsWith('link:')) return fromLink.has(a.id);
+    if (f === 'unused') return !usage.has(a.id) && !a.excluded;
+    if (f === 'favorites') return a.favorite;
+    if (f === 'hidden') return a.excluded;
     return true;
-  });
-
-  const counts = {
-    all: assets.length,
-    unused: assets.filter((a) => !usage.has(a.id) && !a.excluded).length,
-    favorites: assets.filter((a) => a.favorite).length,
-    hidden: assets.filter((a) => a.excluded).length,
-    issues: assets.filter((a) => a.missing || a.exactDuplicateOf).length,
   };
+  const visible = ordered.filter((a) => matches(a, filter));
+
+  const counts = Object.fromEntries((['all', 'unused', 'favorites', 'hidden', 'issues'] as const).map((f) => [f, assets.filter((a) => matches(a, f)).length])) as Record<'all' | 'unused' | 'favorites' | 'hidden' | 'issues', number>;
 
   const running = job && (job.status === 'scanning' || job.status === 'running');
+  // What "Remove" takes out: everything (copies included) for All or a folder, else what's shown.
+  const removeIds = filter === 'all' ? assets.map((a) => a.id) : linkFilter ? [...fromLink] : visible.map((a) => a.id);
+  const refreshAll = () => void useEditor.getState().syncLinks({ folders: links.filter((l) => l.exists).map((l) => l.folder) });
 
   return (
     <aside className="library">
@@ -65,6 +69,11 @@ export function Library() {
               <Icon name="sparkle" /> Clean up
             </button>
           )}
+          {links.length > 0 && (
+            <button className="icon-btn" onClick={refreshAll} disabled={!!running || syncing} title="Refresh: look for new or deleted photos in every folder this library came from">
+              <Icon name="rotate" size={14} />
+            </button>
+          )}
           <button className="btn btn-small" onClick={() => setPicker('import')} disabled={!!running}>
             <Icon name="plus" /> Import
           </button>
@@ -73,7 +82,7 @@ export function Library() {
       {job && (
         <div className="import-progress">
           <div className="import-progress-label">
-            {job.status === 'scanning' ? 'Scanning folder…' : job.status === 'running' ? `Importing ${job.processed} / ${job.total}` : `Done — ${job.imported} new`}
+            {job.status === 'scanning' ? 'Scanning folder…' : job.status === 'running' ? `Checking ${job.processed} / ${job.total}` : `Done — ${job.imported} new${job.alreadyInLibrary ? `, ${job.alreadyInLibrary} already here` : ''}${job.exactDuplicates ? `, ${job.exactDuplicates} duplicate${job.exactDuplicates === 1 ? '' : 's'} skipped` : ''}`}
           </div>
           <div className="bar">
             <div className="bar-fill" style={{ width: `${job.total ? (job.processed / job.total) * 100 : 5}%` }} />
@@ -101,12 +110,36 @@ export function Library() {
             <button
               key={l.folder}
               className={`chip ${filter === `link:${l.folder}` ? 'chip-on' : ''} ${l.exists ? '' : 'chip-missing'}`}
-              title={l.exists ? `${tildePath(l.folder)} · kept in sync` : `Folder not found: ${tildePath(l.folder)}`}
+              title={l.exists ? `${tildePath(l.folder)} · ${l.auto ? 'linked: kept in sync' : 'imported: refresh to pick up changes'}` : `Folder not found: ${tildePath(l.folder)}`}
               onClick={() => setFilter(filter === `link:${l.folder}` ? 'all' : `link:${l.folder}`)}
             >
               {l.name} <span className="chip-count">{l.assetIds.length}</span>
             </button>
           ))}
+        </div>
+      )}
+      {linkFilter && (
+        <div className="folder-bar">
+          <span className="muted small ellipsis" title={linkFilter.folder}>{tildePath(linkFilter.folder)} · {linkFilter.auto ? 'linked' : 'imported'}</span>
+          <div className="row">
+            <button className="link small" disabled={!linkFilter.exists || !!running || syncing} onClick={() => void useEditor.getState().syncLinks({ folders: [linkFilter.folder] })} title="Add new photos from this folder and drop deleted ones">
+              Refresh
+            </button>
+            <button className="link small" title={linkFilter.auto ? 'Stop syncing this folder (its photos stay)' : 'Forget this folder (its photos stay)'} onClick={async () => {
+              await useEditor.getState().unlinkFolder(linkFilter.folder);
+              setFilter('all');
+            }}>
+              {linkFilter.auto ? 'Unlink' : 'Forget'}
+            </button>
+          </div>
+        </div>
+      )}
+      {assets.length > 0 && (
+        <div className="library-actions">
+          <span className="muted small">{visible.length} shown</span>
+          <button className="link small danger" disabled={!removeIds.length || !!running} onClick={() => setRemoving(true)} title={filter === 'all' ? 'Take every photo out of this library' : 'Take these photos out of this library'}>
+            {filter === 'all' ? 'Clear library…' : linkFilter ? 'Remove this folder…' : `Remove ${visible.length}…`}
+          </button>
         </div>
       )}
       {assets.length === 0 && !running ? (
@@ -125,6 +158,19 @@ export function Library() {
       )}
       <PreviewPane usage={usage} />
       {cleanup && <CleanupDialog usage={usage} onClose={() => setCleanup(false)} />}
+      {removing && (
+        <RemoveDialog
+          ids={removeIds}
+          usage={usage}
+          scope={filter === 'all' ? 'all' : linkFilter ? 'folder' : 'shown'}
+          folders={filter === 'all' ? links : linkFilter ? [linkFilter] : []}
+          onClose={() => setRemoving(false)}
+          onDone={() => {
+            setRemoving(false);
+            setFilter('all');
+          }}
+        />
+      )}
       {picker && (
         <FolderPicker
           title={picker === 'import' ? 'Import photos from a folder' : 'Find missing originals'}
@@ -204,6 +250,11 @@ function PreviewPane({ usage }: { usage: Map<string, number> }) {
             <div className="row preview-actions">
               <button className={`icon-btn ${asset.favorite ? 'on' : ''}`} title={asset.favorite ? 'Unfavourite' : 'Favourite: always included in drafts'} onClick={() => patch(asset.id, { favorite: !asset.favorite })}><Icon name="star" /></button>
               <button className={`icon-btn ${asset.excluded ? 'on' : ''}`} title={asset.excluded ? 'Include in drafts' : 'Hide from drafts'} onClick={() => patch(asset.id, { excluded: !asset.excluded })}><Icon name={asset.excluded ? 'eye-off' : 'eye'} /></button>
+              <button className="icon-btn" disabled={used > 0} title={used > 0 ? 'On a page: take it off the page first' : 'Remove from this library (the original file stays)'} onClick={async () => {
+                const st = useEditor.getState();
+                const r = await st.removeAssets([asset.id]);
+                if (r.removed) st.toast('success', `Removed ${asset.fileName} from the library. Import its folder again to bring it back.`);
+              }}><Icon name="trash" /></button>
               {used > 0 ? <button className="link small" onClick={showInBook}>In book{used > 1 ? ` ×${used}` : ''} — show</button> : <span className="muted small">Not in book · drag onto a page</span>}
             </div>
           </div>
@@ -212,6 +263,56 @@ function PreviewPane({ usage }: { usage: Map<string, number> }) {
         )
       )}
     </div>
+  );
+}
+
+/** Confirm taking photos out of the library. Photos on pages stay; folders they came from can be forgotten too. */
+function RemoveDialog({ ids, usage, scope, folders, onClose, onDone }: {
+  ids: string[];
+  usage: Map<string, number>;
+  scope: 'all' | 'folder' | 'shown';
+  folders: LinkedFolder[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const onPages = ids.filter((id) => usage.has(id)).length;
+  const n = ids.length - onPages;
+  const title = scope === 'all' ? 'Clear the library' : scope === 'folder' ? `Remove ${folders[0]?.name ?? 'folder'}` : `Remove ${ids.length} photo${ids.length === 1 ? '' : 's'}`;
+  const go = async () => {
+    setBusy(true);
+    const st = useEditor.getState();
+    try {
+      const r = await st.removeAssets(ids);
+      for (const f of folders) await st.unlinkFolder(f.folder);
+      st.toast('success', `Removed ${r.removed} photo${r.removed === 1 ? '' : 's'}${r.keptOnPages ? ` · ${r.keptOnPages} on pages kept` : ''}. Original files are untouched.`);
+      onDone();
+    } catch (e) {
+      st.toast('error', e instanceof Error ? e.message : String(e));
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title={title} onClose={onClose}>
+      <div className="stack">
+        <p>
+          {n ? `${n} photo${n === 1 ? '' : 's'} will be taken out of this book's library.` : 'Every one of these photos is on a page, so nothing can be removed.'}
+          {onPages > 0 && n > 0 && ` ${onPages} on pages stay${onPages === 1 ? 's' : ''}.`}
+        </p>
+        {folders.length > 0 && (
+          <p className="muted small">
+            {folders.length === 1 ? `${folders[0].name} is` : `${folders.length} folders are`} forgotten too, so {folders.length === 1 ? 'it isn’t' : 'they aren’t'} read again.
+          </p>
+        )}
+        <p className="muted small">Your original files aren't touched. Import the folder again to bring photos back.</p>
+        <div className="row modal-actions">
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn danger-solid" disabled={busy || (!n && !folders.length)} onClick={() => void go()}>
+            {busy ? 'Removing…' : scope === 'all' ? 'Clear library' : 'Remove'}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

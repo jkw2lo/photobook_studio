@@ -1,9 +1,10 @@
 import { useMemo, type ReactElement } from 'react';
 import {
-  MM_PER_PT, POSTER_TEMPLATES, applyPosterTemplate, curatePool, gradeColor, gradeFromPreset, photoArea, scalePath, shapeDef, templateElements,
+  MM_PER_PT, POSTER_TEMPLATES, applyPosterTemplate, curatePool, gradeColor, gradeFromPreset, photoArea, posterTemplate, removePosterTemplate, scalePath, shapeDef, templateElements,
   type BookDocument, type PhotoAsset, type PosterTemplate,
 } from '../../core';
 import { useEditor } from '../store';
+import { Icon } from './Icon';
 
 // Poster templates: pick one to restyle the sheet (background, type, banners, icons) and fill its
 // photo area with Auto collage. Previews show the poster's own title.
@@ -16,7 +17,21 @@ export function PosterTemplates() {
     const ok = useEditor.getState().run(`Template: ${t.name}`, (d) => applyPosterTemplate(d, assets, t.id, curated).doc);
     if (ok) useEditor.getState().toast('success', `“${t.name}” applied — every word and shape is editable. ⌘Z to go back.`);
   };
+  const current = doc.template ? posterTemplate(doc.template) : undefined;
+  const remove = () => {
+    const ok = useEditor.getState().run('Remove template', (d) => removePosterTemplate(d, useEditor.getState().assetMap));
+    if (ok) useEditor.getState().toast('success', 'Template removed — your photos now use the whole sheet. ⌘Z to bring it back.');
+  };
   return (
+    <div className="stack">
+      {current && (
+        <div className="template-current">
+          <span className="small">Using <strong>{current.name}</strong></span>
+          <button className="btn btn-small" onClick={remove} title="Take off the template's background, type, banners and photo area; photos stay and use the whole sheet">
+            <Icon name="x" size={12} /> Remove template
+          </button>
+        </div>
+      )}
     <div className="template-cards">
       {POSTER_TEMPLATES.map((t) => (
         <button key={t.id} className={`template-card ${doc.template === t.id ? 'on' : ''}`} onClick={() => apply(t)} title={t.description} disabled={!assets.length}>
@@ -24,6 +39,7 @@ export function PosterTemplates() {
           <span className="small">{t.name}</span>
         </button>
       ))}
+    </div>
     </div>
   );
 }

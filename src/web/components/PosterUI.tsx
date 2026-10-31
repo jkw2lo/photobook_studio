@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  DEFAULT_COLLAGE, POSTER_SIZES, curatePool, generatePoster, relayoutPoster, setSurfaceBackground, updateSettings,
+  DEFAULT_COLLAGE, POSTER_SIZES, curatePool, generatePoster, photoArea, relayoutPoster, setSurfaceBackground, updateSettings,
   isPinned, type BookDocument, type CollageSettings, type CollageSource, type PhotoAsset, type PosterReport,
 } from '../../core';
+import { setPhotoArea } from '../elementActions';
 import { useEditor } from '../store';
 import { CollageControls, gapOptions, marginOptions } from './CollageControls';
 import { ColorInput } from './ColorInput';
@@ -175,6 +176,7 @@ export function PosterPanel() {
       <div className="section-title">Layout</div>
       {hasPhotos && <p className="muted small">Style, spacing, border and title re-flow the photos already on the sheet.</p>}
       <CollageControls doc={doc} value={settings} compact onChange={(next) => reflow(next.style !== settings.style ? 'Change collage style' : 'Adjust collage', next)} />
+      <PhotoAreaField doc={doc} settings={settings} />
 
         </>
       )}
@@ -214,6 +216,41 @@ export function PosterPanel() {
         </>
       )}
       <p className="muted small">Text, shapes, calendars and maps are in the <strong>Add</strong> tab.</p>
+    </div>
+  );
+}
+
+/**
+ * Where the photos go on the sheet: all of it, or a box you mark on the sheet (the sky of a
+ * background photo, say). Arrange, Shuffle and the photo count keep to it.
+ */
+function PhotoAreaField({ doc, settings }: { doc: BookDocument; settings: CollageSettings }) {
+  const sheet = doc.spreads[0];
+  const marking = useEditor((s) => s.canvasTool?.kind === 'area');
+  const W = doc.settings.trimWidthMm;
+  const H = doc.settings.trimHeightMm;
+  const start = () => {
+    // Start from the current area (a template's, or the sheet inside the margin).
+    const r = photoArea(doc, settings);
+    const clampF = (v: number) => Math.max(0, Math.min(1, v));
+    const x0 = clampF(r.x / W);
+    const y0 = clampF(r.y / H);
+    const rect = settings.area ? { x: x0, y: y0, w: clampF((r.x + r.w) / W) - x0, h: clampF((r.y + r.h) / H) - y0 } : null;
+    useEditor.getState().setCanvasTool({ kind: 'area', surfaceId: sheet.id, rect });
+  };
+  const a = settings.area;
+  return (
+    <div className="field photo-area-field">
+      <span>Photo area</span>
+      <div className="row">
+        <span className="small">{a ? `Custom — ${Math.round(a.w * 100)}% × ${Math.round(a.h * 100)}% of the sheet` : 'Whole sheet'}</span>
+      </div>
+      <div className="btn-grid">
+        <button className={`btn btn-small ${marking ? 'btn-on' : ''}`} onClick={() => (marking ? useEditor.getState().setCanvasTool(null) : start())} title="Drag a box on the sheet: photos are laid out only inside it">
+          <Icon name="crop" /> {marking ? 'Marking…' : a ? 'Change area' : 'Choose area'}
+        </button>
+        <button className="btn btn-small" disabled={!a} onClick={() => setPhotoArea(undefined)}>Whole sheet</button>
+      </div>
     </div>
   );
 }

@@ -3,9 +3,11 @@ import {
   COVER_INDEX, addPhotoAt, defaultCrop, effectiveDpi, elementBounds, elementPlacement, geometryFor, innerBox, panCrop, toInnerBox, zoomCropAt,
   elementsInRect, expandGroups, sizeSnap, spacingSnap, type SpacingMark, pageContentRect, pointInElement, setFramePhoto, unionBounds, surfaceAt, swapFramePhotos, updateElement, type BookDocument,
   type Element, type ImageElement, type PhotoAsset, type SurfaceGeometry, MM_PER_PT,
+  backgroundArea, backgroundBox, imagePlacement, moveBackground, reframeCrop, scaleBackground, updateBackgroundImage, type BackgroundImage, type CropHandle, type Rect,
 } from '../../core';
 import { thumbUrl } from '../api';
-import { selectedIds, useEditor } from '../store';
+import { setPhotoArea } from '../elementActions';
+import { selectedIds, useEditor, type CanvasTool } from '../store';
 import { ContextMenu, type MenuTarget } from './ContextMenu';
 import { Icon } from './Icon';
 import { SpreadView, textCss } from './SpreadView';
@@ -22,7 +24,13 @@ type Gesture =
   | { kind: 'resize'; start: Pt; orig: Element; handle: Handle }
   | { kind: 'rotate'; orig: Element }
   | { kind: 'crop'; start: Pt; orig: ImageElement }
-  | { kind: 'cropzoom'; startDist: number; orig: ImageElement }
+  /** Drag a corner of the whole photo: scale it about the opposite corner (inner-box mm). */
+  | { kind: 'cropzoom'; anchor: Pt; startDist: number; orig: ImageElement }
+  /** Drag an edge or corner of the crop box: the frame changes, the photo stays put. */
+  | { kind: 'cropbox'; start: Pt; orig: ImageElement; handle: CropHandle }
+  | { kind: 'bgmove'; start: Pt; orig: BackgroundImage }
+  | { kind: 'bgscale'; anchor: Pt; startDist: number; orig: BackgroundImage }
+  | { kind: 'area'; start: Pt; orig: Rect; handle: Handle | 'move' | 'draw'; before: Rect | null }
   | { kind: 'swap'; orig: ImageElement; at: Pt; client: Pt; target: string | null }
   | { kind: 'multimove'; start: Pt; origs: Element[]; moved: boolean; clickedId: string; wasSelected: boolean }
   | { kind: 'marquee'; start: Pt; additive: boolean; base: string[] };
@@ -48,6 +56,10 @@ export function Canvas() {
   const swapSource = useEditor((s) => s.swapSource);
   const showGuides = useEditor((s) => s.showGuides);
   const zoom = useEditor((s) => s.zoom);
+  const canvasTool = useEditor((s) => s.canvasTool);
+  /** Width ÷ height the crop box keeps (null = free). */
+  const [cropRatio, setCropRatio] = useState<number | null>(null);
+  useEffect(() => setCropRatio(null), [cropId]);
   const surface = surfaceAt(doc, index);
   const spreadCount = doc.spreads.length;
   const g = useMemo(() => geometryFor(doc.settings, spreadCount, index), [doc.settings, spreadCount, index]);
@@ -111,6 +123,13 @@ export function Canvas() {
   const fit = Math.min((size.w - 120) / (g.width + 2 * b), (size.h - 72) / (g.height + 2 * b));
   const scale = Math.max(0.3, fit * zoom);
   const selected = selection && selection.spreadId === surface.id ? surface.elements.find((e) => e.id === selection.elementId) : undefined;
+  const tool = canvasTool && canvasTool.surfaceId === surface.id ? canvasTool : null;
+  const bg = surface.backgroundImage;
+  const bgAsset = bg ? assets.get(bg.assetId) : undefined;
+  const W = g.width;
+  const H = g.height;
+  /** The tool's photo area in mm (from fractions of the sheet). */
+  const areaMm = (r: Rect): Rect => ({ x: r.x * W, y: r.y * H, w: r.w * W, h: r.h * H });
 
   const toMm = (clientX: number, clientY: number): Pt => {
     const r = overlayRef.current!.getBoundingClientRect();
@@ -194,15 +213,58 @@ export function Canvas() {
     const p = toMm(e.clientX, e.clientY);
     const handle = (e.target as HTMLElement).dataset.handle;
 
-    if (handle === 'cropzoom' && cropId) {
+    // Moving the background photo: drag anywhere moves it, a corner resizes it.
+    if (tool?.kind === 'background') {
+      if (!bg || !bgAsset) return;
+      capture(e.pointerId);
+      if (handle?.startsWith('bg-')) {
+        const r = bgExtents(bg, g, bgAsset);
+        const c = handle.slice(3);
+        const anchor = { x: c.includes('w') ? r.x + r.w : r.x, y: c.includes('n') ? r.y + r.h : r.y };
+        gestureRef.current = { kind: 'bgscale', anchor, startDist: Math.max(1, Math.hypot(p.x - anchor.x, p.y - anchor.y)), orig: bg };
+      } else gestureRef.current = { kind: 'bgmove', start: p, orig: bg };
+      return;
+    }
+    // Marking the photo area: drag its edges, move it, or draw a new one.
+    if (tool?.kind === 'area') {
+      capture(e.pointerId);
+      const r = tool.rect ? areaMm(tool.rect) : null;
+      const before = tool.rect;
+      if (handle?.startsWith('area-') && r) gestureRef.current = { kind: 'area', start: p, orig: r, handle: handle.slice(5) as Handle, before };
+      else if (r && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) gestureRef.current = { kind: 'area', start: p, orig: r, handle: 'move', before };
+      else gestureRef.current = { kind: 'area', start: p, orig: { x: p.x, y: p.y, w: 0, h: 0 }, handle: 'draw', before };
+      return;
+    }
+
+    if (cropId) {
       const el = surface.elements.find((x) => x.id === cropId) as ImageElement | undefined;
-      if (el) {
-        capture(e.pointerId);
-        const cx = el.xMm + el.widthMm / 2;
-        const cy = el.yMm + el.heightMm / 2;
-        gestureRef.current = { kind: 'cropzoom', startDist: Math.max(1, Math.hypot(p.x - cx, p.y - cy)), orig: el };
-        return;
+      const asset = el?.assetId ? assets.get(el.assetId) : undefined;
+      if (el && asset) {
+        if (handle?.startsWith('cropbox-')) {
+          capture(e.pointerId);
+          gestureRef.current = { kind: 'cropbox', start: p, orig: el, handle: handle.slice(8) as CropHandle };
+          return;
+        }
+        const { placement } = elementPlacement(el, asset);
+        if (handle?.startsWith('cropzoom-')) {
+          capture(e.pointerId);
+          const c = handle.slice(9);
+          const anchor = { x: c.includes('w') ? placement.x + placement.w : placement.x, y: c.includes('n') ? placement.y + placement.h : placement.y };
+          const at = toInnerBox(el, p.x, p.y);
+          gestureRef.current = { kind: 'cropzoom', anchor, startDist: Math.max(1, Math.hypot(at.x - anchor.x, at.y - anchor.y)), orig: el };
+          return;
+        }
+        // Drag anywhere on the photo — inside the frame or on the faint part outside it — to move it.
+        const at = toInnerBox(el, p.x, p.y);
+        const onPhoto = at.x >= placement.x && at.x <= placement.x + placement.w && at.y >= placement.y && at.y <= placement.y + placement.h;
+        if (onPhoto || pointInElement(el, p.x, p.y)) {
+          capture(e.pointerId);
+          gestureRef.current = { kind: 'crop', start: p, orig: el };
+          return;
+        }
       }
+      // Clicking away keeps the crop.
+      setCrop(null);
     }
 
     if (handle && selected && !selected.locked) {
@@ -214,16 +276,6 @@ export function Canvas() {
         gestureRef.current = handle === 'rotate' ? { kind: 'rotate', orig: selected } : { kind: 'resize', start: p, orig: selected, handle: handle as Handle };
       }
       return;
-    }
-
-    if (cropId) {
-      const el = surface.elements.find((x) => x.id === cropId) as ImageElement | undefined;
-      if (el && pointInElement(el, p.x, p.y)) {
-        capture(e.pointerId);
-        gestureRef.current = { kind: 'crop', start: p, orig: el };
-        return;
-      }
-      setCrop(null);
     }
 
     const hit = hitTest(p);
@@ -270,6 +322,42 @@ export function Canvas() {
     const sid = surface.id;
     if (gst.kind === 'marquee') {
       setMarquee({ x: Math.min(gst.start.x, p.x), y: Math.min(gst.start.y, p.y), w: Math.abs(p.x - gst.start.x), h: Math.abs(p.y - gst.start.y) });
+      return;
+    }
+    if (gst.kind === 'bgmove' || gst.kind === 'bgscale') {
+      if (!bgAsset) return;
+      const patch = gst.kind === 'bgmove'
+        ? moveBackground(gst.orig, g, bgAsset, p.x - gst.start.x, p.y - gst.start.y)
+        : scaleBackground(gst.orig, g, bgAsset, Math.hypot(p.x - gst.anchor.x, p.y - gst.anchor.y) / gst.startDist, gst.anchor);
+      gesture((d) => updateBackgroundImage(d, sid, patch));
+      return;
+    }
+    if (gst.kind === 'area') {
+      const t = useEditor.getState().canvasTool;
+      if (t?.kind !== 'area') return;
+      const o = gst.orig;
+      const dx = p.x - gst.start.x;
+      const dy = p.y - gst.start.y;
+      let x0 = o.x;
+      let y0 = o.y;
+      let x1 = o.x + o.w;
+      let y1 = o.y + o.h;
+      if (gst.handle === 'draw') [x0, y0, x1, y1] = [Math.min(gst.start.x, p.x), Math.min(gst.start.y, p.y), Math.max(gst.start.x, p.x), Math.max(gst.start.y, p.y)];
+      else if (gst.handle === 'move') {
+        const mx = Math.max(-x0, Math.min(W - x1, dx));
+        const my = Math.max(-y0, Math.min(H - y1, dy));
+        [x0, x1, y0, y1] = [x0 + mx, x1 + mx, y0 + my, y1 + my];
+      } else {
+        if (gst.handle.includes('w')) x0 = Math.min(x1 - 10, x0 + dx);
+        if (gst.handle.includes('e')) x1 = Math.max(x0 + 10, x1 + dx);
+        if (gst.handle.includes('n')) y0 = Math.min(y1 - 10, y0 + dy);
+        if (gst.handle.includes('s')) y1 = Math.max(y0 + 10, y1 + dy);
+      }
+      // Stay on the sheet; edges close to the sheet's edge snap to it (photos then run into the bleed).
+      const snap = altKey ? 0 : 8 / scale;
+      const edge = (v: number, max: number) => (v < snap ? 0 : v > max - snap ? max : Math.max(0, Math.min(max, v)));
+      [x0, x1, y0, y1] = [edge(x0, W), edge(x1, W), edge(y0, H), edge(y1, H)];
+      useEditor.setState({ canvasTool: { ...t, rect: { x: x0 / W, y: y0 / H, w: (x1 - x0) / W, h: (y1 - y0) / H } } });
       return;
     }
     if (gst.kind === 'multimove') {
@@ -396,16 +484,27 @@ export function Canvas() {
       const crop = panCrop(innerBox(o), { w: asset.widthPx, h: asset.heightPx }, o.crop, o.fit, b2.x - a.x, b2.y - a.y);
       gesture((d) => updateElement(d, sid, id, { crop }));
     } else if (gst.kind === 'cropzoom') {
-      // Dragging a corner of the photo outline scales the photo about the frame centre.
+      // Dragging a corner of the whole photo scales it about the opposite corner.
       const o = gst.orig;
       const asset = o.assetId ? assets.get(o.assetId) : undefined;
       if (!asset) return;
-      const cx = o.xMm + o.widthMm / 2;
-      const cy = o.yMm + o.heightMm / 2;
-      const factor = Math.hypot(p.x - cx, p.y - cy) / gst.startDist;
-      const box = innerBox(o);
-      const crop = zoomCropAt(box, { w: asset.widthPx, h: asset.heightPx }, o.crop, o.fit, factor, { x: box.w / 2, y: box.h / 2 });
+      const at = toInnerBox(o, p.x, p.y);
+      const factor = Math.hypot(at.x - gst.anchor.x, at.y - gst.anchor.y) / gst.startDist;
+      const crop = zoomCropAt(innerBox(o), { w: asset.widthPx, h: asset.heightPx }, o.crop, o.fit, factor, gst.anchor);
       gesture((d) => updateElement(d, sid, id, { crop }));
+    } else if (gst.kind === 'cropbox') {
+      const o = gst.orig;
+      const asset = o.assetId ? assets.get(o.assetId) : undefined;
+      if (!asset) return;
+      // Pointer movement in the frame's own (rotated) axes.
+      const rad = (o.rotationDeg * Math.PI) / 180;
+      const dxw = p.x - gst.start.x;
+      const dyw = p.y - gst.start.y;
+      const lx = dxw * Math.cos(rad) + dyw * Math.sin(rad);
+      const ly = -dxw * Math.sin(rad) + dyw * Math.cos(rad);
+      const ratio = cropRatio ?? (shiftKey ? o.widthMm / o.heightMm : null);
+      const patch = reframeCrop(o, { w: asset.widthPx, h: asset.heightPx }, gst.handle, lx, ly, ratio);
+      gesture((d) => updateElement(d, sid, id, patch));
     }
   };
 
@@ -466,12 +565,23 @@ export function Canvas() {
       }
       return;
     }
+    if (gst.kind === 'bgmove' || gst.kind === 'bgscale') return endGesture(gst.kind === 'bgmove' ? 'Move background' : 'Resize background');
+    if (gst.kind === 'area') {
+      // A click without a drag (or a tiny box) keeps the area as it was.
+      const t = useEditor.getState().canvasTool;
+      if (t?.kind === 'area' && gst.handle === 'draw' && (!t.rect || t.rect.w * W < 10 || t.rect.h * H < 10)) useEditor.setState({ canvasTool: { ...t, rect: gst.before } });
+      return;
+    }
+    if (gst.kind === 'cropbox') return endGesture('Crop photo');
     const labels = { move: 'Move', resize: 'Resize', rotate: 'Rotate', crop: 'Adjust crop', cropzoom: 'Zoom photo' } as const;
     endGesture(`${labels[gst.kind]} ${gst.orig.type === 'image' ? 'photo' : gst.orig.type === 'text' ? 'text' : 'shape'}`);
   };
 
   const onDoubleClick = (e: React.MouseEvent) => {
+    if (tool) return;
     const hit = hitTest(toMm(e.clientX, e.clientY));
+    // Double-click the background photo (where nothing else is) to move or resize it.
+    if (!hit && bg && bgAsset && !surface.locked) return useEditor.getState().setCanvasTool({ kind: 'background', surfaceId: surface.id });
     if (!hit || hit.locked) return;
     select({ spreadId: surface.id, elementId: hit.id });
     // Double-click a photo to crop it; double-click again to finish.
@@ -494,6 +604,14 @@ export function Canvas() {
   };
 
   const onWheel = (e: React.WheelEvent) => {
+    if (tool?.kind === 'background' && bg && bgAsset) {
+      const factor = Math.exp(-e.deltaY * (e.ctrlKey || e.metaKey ? 0.01 : 0.0015));
+      const patch = scaleBackground(bg, g, bgAsset, factor, toMm(e.clientX, e.clientY));
+      gesture((d) => updateBackgroundImage(d, surface.id, patch));
+      if (wheelTimer.current) clearTimeout(wheelTimer.current);
+      wheelTimer.current = setTimeout(() => endGesture('Resize background'), 300);
+      return;
+    }
     if (!cropId) return;
     const el = surface.elements.find((x) => x.id === cropId) as ImageElement | undefined;
     const asset = el?.assetId ? assets.get(el.assetId) : undefined;
@@ -545,10 +663,10 @@ export function Canvas() {
   const multiEls = selection?.spreadId === surface.id && multi.length > 1 ? surface.elements.filter((x) => multi.includes(x.id)) : [];
   const cropEl = cropId ? (surface.elements.find((x) => x.id === cropId) as ImageElement | undefined) : undefined;
   const cropAsset = cropEl?.assetId ? assets.get(cropEl.assetId) : undefined;
-  const hovered = hoverId && hoverId !== selected?.id ? surface.elements.find((x) => x.id === hoverId) : undefined;
+  const hovered = !tool && hoverId && hoverId !== selected?.id ? surface.elements.find((x) => x.id === hoverId) : undefined;
   const swapTarget = swapDrag?.target ? surface.elements.find((x) => x.id === swapDrag.target) : undefined;
   const totalW = (g.width + 2 * b) * scale;
-  const cursor = hovered && !hovered.locked ? 'move' : undefined;
+  const cursor = tool?.kind === 'background' ? 'move' : tool?.kind === 'area' ? 'crosshair' : hovered && !hovered.locked ? 'move' : undefined;
   const isPosterDoc = doc.settings.product === 'poster';
   const canPrev = !isPosterDoc && index > COVER_INDEX;
   const canNext = index < doc.spreads.length - 1;
@@ -565,6 +683,8 @@ export function Canvas() {
           <SpreadView settings={doc.settings} style={doc.style} spreadCount={spreadCount} index={index} surface={surface} scale={scale} assets={assets} grade={doc.grade} hiddenElementId={editingText}>
             {showGuides && <Guides g={g} scale={scale} />}
             {cropEl && cropAsset && <CropGhost el={cropEl} scale={scale} offset={b} assetId={cropAsset.id} asset={cropAsset} />}
+            {tool?.kind === 'background' && bg && bgAsset && <BgGhost bg={bg} g={g} asset={bgAsset} scale={scale} />}
+            {tool?.kind === 'area' && <AreaShade rect={tool.rect ? areaMm(tool.rect) : null} scale={scale} offset={b} />}
             {guides.map((gl, i) =>
               gl.axis === 'x' ? <div key={i} className="snap-line snap-x" style={{ left: (gl.at + b) * scale }} /> : <div key={i} className="snap-line snap-y" style={{ top: (gl.at + b) * scale }} />,
             )}
@@ -608,6 +728,8 @@ export function Canvas() {
             >
               {selected && !selected.locked && !editingText && !cropId && multiEls.length <= 1 && <HandleLayer el={selected} scale={scale} offset={b} />}
               {cropEl && cropAsset && <CropHandles el={cropEl} asset={cropAsset} scale={scale} offset={b} />}
+              {tool?.kind === 'background' && bg && bgAsset && <CornerHandles rect={bgExtents(bg, g, bgAsset)} scale={scale} offset={b} prefix="bg-" title="Drag to resize the photo" />}
+              {tool?.kind === 'area' && tool.rect && <AreaHandles rect={areaMm(tool.rect)} scale={scale} offset={b} />}
             </div>
           </SpreadView>
           <div className="page-labels" style={{ width: totalW }}>
@@ -628,7 +750,8 @@ export function Canvas() {
         </div>
       )}
       {swapSource && <div className="canvas-hint">Click another photo to swap with — on any spread. Esc to cancel.</div>}
-      {cropEl && cropAsset && <CropToolbar el={cropEl} asset={cropAsset} surfaceId={surface.id} />}
+      {cropEl && cropAsset && <CropToolbar key={cropEl.id} el={cropEl} asset={cropAsset} surfaceId={surface.id} ratio={cropRatio} onRatio={setCropRatio} />}
+      {tool && <ToolBar tool={tool} />}
       {menu && <ContextMenu target={menu} onClose={() => setMenu(null)} onEditText={(id) => setEditingText(id)} />}
     </div>
   );
@@ -732,7 +855,96 @@ function SelectionBox({ el, scale, offset, cropping }: { el: Element; scale: num
   );
 }
 
-/** Corner handles on the whole photo (the faint ghost) while cropping: drag to scale it. */
+/** How far the whole background photo reaches (surface mm): its box when fitted, the photo beyond the sheet when filling. */
+function bgExtents(bg: BackgroundImage, g: SurfaceGeometry, asset: PhotoAsset): Rect {
+  if (bg.fit === 'contain') return backgroundBox(bg, g, asset);
+  const area = backgroundArea(g);
+  const p = imagePlacement(area, { w: asset.widthPx, h: asset.heightPx }, bg.crop, 'cover');
+  return { x: area.x + p.x, y: area.y + p.y, w: p.w, h: p.h };
+}
+
+/** While moving the background: the whole photo, faint where it runs off the sheet, and its outline. */
+function BgGhost({ bg, g, asset, scale }: { bg: BackgroundImage; g: SurfaceGeometry; asset: PhotoAsset; scale: number }) {
+  const r = bgExtents(bg, g, asset);
+  const style = { left: (r.x + g.bleed) * scale, top: (r.y + g.bleed) * scale, width: r.w * scale, height: r.h * scale };
+  return (
+    <>
+      <div className="crop-ghost bg-ghost" style={{ inset: 0 }}>
+        <img src={thumbUrl(asset.id, 'm')} alt="" draggable={false} style={style} />
+      </div>
+      <div className="bg-outline" style={style} />
+    </>
+  );
+}
+
+/** Four corner handles on a rectangle (surface mm), named `<prefix>nw` … */
+function CornerHandles({ rect, scale, offset, prefix, title }: { rect: Rect; scale: number; offset: number; prefix: string; title: string }) {
+  const x0 = (rect.x + offset) * scale;
+  const y0 = (rect.y + offset) * scale;
+  const x1 = x0 + rect.w * scale;
+  const y1 = y0 + rect.h * scale;
+  return (
+    <>
+      {([['nw', x0, y0], ['ne', x1, y0], ['sw', x0, y1], ['se', x1, y1]] as const).map(([c, x, y]) => (
+        <div key={c} className={`handle crop-handle crop-handle-${c}`} data-handle={`${prefix}${c}`} style={{ left: x, top: y }} title={title} />
+      ))}
+    </>
+  );
+}
+
+/** The collage's photo area while it's being marked: everything else dimmed. */
+function AreaShade({ rect, scale, offset }: { rect: Rect | null; scale: number; offset: number }) {
+  return (
+    <div className="area-shade">
+      {rect ? (
+        <div className="area-box" style={{ left: (rect.x + offset) * scale, top: (rect.y + offset) * scale, width: rect.w * scale, height: rect.h * scale }}>
+          <span>Photos go here</span>
+        </div>
+      ) : (
+        <div className="area-hint">Drag on the sheet to mark where the photos go</div>
+      )}
+    </div>
+  );
+}
+
+function AreaHandles({ rect, scale, offset }: { rect: Rect; scale: number; offset: number }) {
+  return (
+    <div className="handles" style={{ left: (rect.x + offset) * scale, top: (rect.y + offset) * scale, width: rect.w * scale, height: rect.h * scale }}>
+      {HANDLES.map((h) => <div key={h} className={`handle handle-${h}`} data-handle={`area-${h}`} />)}
+    </div>
+  );
+}
+
+/** Floating controls for the background and photo-area tools. */
+function ToolBar({ tool }: { tool: CanvasTool }) {
+  const st = useEditor.getState();
+  if (tool.kind === 'background') {
+    return (
+      <div className="crop-toolbar" onPointerDown={(e) => e.stopPropagation()}>
+        <strong className="small">Background photo</strong>
+        <button className="btn btn-small btn-ghost" onClick={() => st.run('Reset background position', (d) => updateBackgroundImage(d, tool.surfaceId, { box: undefined, crop: { cx: 0.5, cy: 0.5, zoom: 1 } }))}>Reset</button>
+        <button className="btn btn-small btn-primary" onClick={() => st.setCanvasTool(null)}>Done</button>
+        <span className="crop-tip muted">Drag to move · scroll or drag a corner to resize · Esc when done</span>
+      </div>
+    );
+  }
+  return (
+    <div className="crop-toolbar" onPointerDown={(e) => e.stopPropagation()}>
+      <strong className="small">Photo area</strong>
+      <button className="btn btn-small btn-ghost" onClick={() => setPhotoArea(undefined)} title="Let the photos use the whole sheet again">Whole sheet</button>
+      <button className="btn btn-small btn-ghost" onClick={() => st.setCanvasTool(null)}>Cancel</button>
+      <button className="btn btn-small btn-primary" disabled={!tool.rect} onClick={() => tool.rect && setPhotoArea(tool.rect)}>Apply</button>
+      <span className="crop-tip muted">Drag to draw a box · drag its edges to adjust · Alt turns off edge snapping</span>
+    </div>
+  );
+}
+
+const CROP_EDGES: CropHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+
+/**
+ * While cropping: the crop box (the frame) with corner brackets and edge bars — drag them to crop,
+ * the photo stays still — and small round handles on the whole photo's corners to scale it.
+ */
 function CropHandles({ el, asset, scale, offset }: { el: ImageElement; asset: PhotoAsset; scale: number; offset: number }) {
   const { box, placement } = elementPlacement(el, asset);
   const x0 = (box.x + placement.x) * scale;
@@ -742,17 +954,31 @@ function CropHandles({ el, asset, scale, offset }: { el: ImageElement; asset: Ph
   return (
     <div className="handles" style={frameStyle(el, scale, offset)}>
       <div className="crop-outline" style={{ left: x0, top: y0, width: w, height: h }} />
-      {[[x0, y0], [x0 + w, y0], [x0, y0 + h], [x0 + w, y0 + h]].map(([x, y], i) => (
-        <div key={i} className="handle crop-handle" data-handle="cropzoom" style={{ left: x, top: y }} title="Drag to resize the photo" />
+      {([['nw', x0, y0], ['ne', x0 + w, y0], ['sw', x0, y0 + h], ['se', x0 + w, y0 + h]] as const).map(([c, x, y]) => (
+        <div key={c} className={`handle crop-handle crop-handle-${c}`} data-handle={`cropzoom-${c}`} style={{ left: x, top: y }} title="Drag to make the photo bigger or smaller" />
       ))}
+      {CROP_EDGES.map((c) => <div key={c} className={`cropbox-handle cropbox-${c}`} data-handle={`cropbox-${c}`} title="Drag to crop (Shift keeps the shape)" />)}
     </div>
   );
 }
 
-/** Floating controls while cropping: zoom, fill/fit, reset, done — and the print resolution. */
-function CropToolbar({ el, asset, surfaceId }: { el: ImageElement; asset: PhotoAsset; surfaceId: string }) {
+const CROP_RATIOS: { id: string; label: string; ratio: (a: PhotoAsset, el: ImageElement) => number | null }[] = [
+  { id: 'free', label: 'Free', ratio: () => null },
+  { id: 'frame', label: 'Keep shape', ratio: (_a, el) => el.widthMm / el.heightMm },
+  { id: 'original', label: 'Original', ratio: (a) => a.widthPx / a.heightPx },
+  { id: '1:1', label: 'Square', ratio: () => 1 },
+  { id: '4:5', label: '4 : 5', ratio: () => 4 / 5 },
+  { id: '3:4', label: '3 : 4', ratio: () => 3 / 4 },
+  { id: '2:3', label: '2 : 3', ratio: () => 2 / 3 },
+  { id: '9:16', label: '9 : 16', ratio: () => 9 / 16 },
+];
+
+/** Floating controls while cropping: shape, zoom, fill/fit, reset, cancel, done — and the print resolution. */
+function CropToolbar({ el, asset, surfaceId, ratio, onRatio }: { el: ImageElement; asset: PhotoAsset; surfaceId: string; ratio: number | null; onRatio: (r: number | null) => void }) {
   const doc = useEditor((s) => s.doc)!;
-  const { run, gesture, endGesture, setCrop } = useEditor.getState();
+  const { run, gesture, endGesture, setCrop, cancelCrop } = useEditor.getState();
+  const [shape, setShape] = useState('free');
+  const [landscape, setLandscape] = useState(el.widthMm >= el.heightMm);
   const box = innerBox(el);
   const img = { w: asset.widthPx, h: asset.heightPx };
   const setZoom = (z: number, live: boolean) => {
@@ -760,10 +986,31 @@ function CropToolbar({ el, asset, surfaceId }: { el: ImageElement; asset: PhotoA
     if (live) gesture((d) => updateElement(d, surfaceId, el.id, { crop }));
     else run('Zoom photo', (d) => updateElement(d, surfaceId, el.id, { crop }));
   };
+  /** Crop the box to a shape (portrait shapes turn landscape when the frame is), about its centre. */
+  const pick = (id: string, wide = landscape) => {
+    setShape(id);
+    const def = CROP_RATIOS.find((r) => r.id === id)!;
+    let r = def.ratio(asset, el);
+    if (r && (id !== 'frame' && id !== 'original') && wide !== r > 1 && r !== 1) r = 1 / r;
+    onRatio(r);
+    if (r) run(`Crop to ${def.label.toLowerCase()}`, (d) => updateElement(d, surfaceId, el.id, reframeCrop(el, img, null, 0, 0, r)));
+  };
+  const rotatable = shape !== 'free' && shape !== 'frame' && shape !== 'original' && shape !== '1:1';
   const dpi = Math.round(effectiveDpi(el, asset));
   const dpiClass = dpi >= doc.settings.minDpiWarning ? 'ok' : dpi >= doc.settings.minDpiError ? 'warn' : 'error';
   return (
     <div className="crop-toolbar" onPointerDown={(e) => e.stopPropagation()}>
+      <select className="crop-shape" value={shape} onChange={(e) => pick(e.target.value)} aria-label="Crop shape" title="Crop to a shape; the crop box keeps it while you drag">
+        {CROP_RATIOS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+      </select>
+      {rotatable && (
+        <button className="icon-btn" title={landscape ? 'Make it portrait' : 'Make it landscape'} onClick={() => {
+          setLandscape(!landscape);
+          pick(shape, !landscape);
+        }}>
+          <Icon name="rotate" size={14} />
+        </button>
+      )}
       <button className="icon-btn" title="Zoom out (−)" onClick={() => setZoom(Math.max(1, el.crop.zoom / 1.15), false)}>−</button>
       <input
         type="range" min={1} max={5} step={0.01} value={el.crop.zoom} aria-label="Photo zoom"
@@ -779,8 +1026,9 @@ function CropToolbar({ el, asset, surfaceId }: { el: ImageElement; asset: PhotoA
         <button className={el.fit === 'contain' ? 'on' : ''} onClick={() => run('Fit whole photo', (d) => updateElement(d, surfaceId, el.id, { fit: 'contain' }))} title="Show the whole photo">Fit</button>
       </div>
       <button className="btn btn-small btn-ghost" onClick={() => run('Reset crop', (d) => updateElement(d, surfaceId, el.id, { crop: defaultCrop(asset) }))}>Reset</button>
-      <button className="btn btn-small btn-primary" onClick={() => setCrop(null)}>Done</button>
-      <span className="crop-tip muted">Drag photo · scroll or pinch to zoom · arrows nudge · Enter when done</span>
+      <button className="btn btn-small btn-ghost" onClick={cancelCrop} title="Undo this crop (Esc)">Cancel</button>
+      <button className="btn btn-small btn-primary" onClick={() => setCrop(null)} title="Keep this crop (Enter)">Done</button>
+      {ratio === null && <span className="crop-tip muted">Drag the photo · drag the box's edges to crop · scroll to zoom</span>}
     </div>
   );
 }
