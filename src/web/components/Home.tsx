@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { POSTER_SIZES, PRINTERS, SIZE_PRESETS, STYLE_PRESETS, printer, type BindingId, type PrinterId } from '../../core';
-import { api, type ProjectSummary } from '../api';
+import { api, isBrowserBackend, type ProjectSummary } from '../api';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
+import { WebNotes, downloadBackup } from './WebNotes';
 
 type Deleted = { id: string; title: string; deletedAt: string; product: 'book' | 'poster' };
 
@@ -14,6 +15,7 @@ export function Home() {
   const [confirmPurge, setConfirmPurge] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [backupStatus, setBackupStatus] = useState<string | null>(null);
   const reload = () => {
     api.listProjects().then(setProjects).catch((e) => setError(String(e.message ?? e)));
     api.deletedProjects().then(setDeleted).catch(() => undefined);
@@ -45,6 +47,15 @@ export function Home() {
     setConfirmPurge(null);
     reload();
   };
+  const backup = async (p: ProjectSummary) => {
+    setBackupStatus(`Backing up “${p.title}”…`);
+    try {
+      setBackupStatus(await downloadBackup(p.id));
+    } catch (e) {
+      setBackupStatus(null);
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
   const daysLeft = (iso: string) => Math.max(0, 30 - Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
 
   return (
@@ -52,11 +63,13 @@ export function Home() {
       <header className="home-head">
         <div>
           <h1>Photobook Studio</h1>
-          <p className="muted">Everything stays on this computer — photos, thumbnails and books.</p>
+          <p className="muted">{isBrowserBackend ? 'Runs in your browser. Photos and books stay on this device — nothing is uploaded.' : 'Everything stays on this computer — photos, thumbnails and books.'}</p>
         </div>
         <button className="btn btn-primary" onClick={() => setCreating(true)}><Icon name="plus" /> New book or poster</button>
       </header>
-      {error && <div className="notice notice-error">Could not reach the local server: {error}</div>}
+      {error && <div className="notice notice-error">{isBrowserBackend ? error : `Could not reach the local server: ${error}`}</div>}
+      {isBrowserBackend && <WebNotes onRestored={reload} />}
+      {backupStatus && <div className="notice" role="status">{backupStatus}</div>}
       {undo && (
         <div className="undo-bar" role="status">
           <span>Moved “{undo.title}” to Recently deleted.</span>
@@ -78,6 +91,18 @@ export function Home() {
               {p.product === 'poster' ? `Poster · ${(p.trimWidthMm / 25.4).toFixed(0)} × ${(p.trimHeightMm / 25.4).toFixed(0)} in` : `${p.pageCount} pages`} · {p.photoCount} photos
             </span>
             <span className="muted small">Edited {new Date(p.updatedAt).toLocaleString()}</span>
+            {isBrowserBackend && (
+              <button
+                className="icon-btn project-backup" title={`Back up “${p.title}” to a file`} aria-label={`Back up ${p.title}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  void backup(p);
+                }}
+              >
+                <Icon name="download" />
+              </button>
+            )}
             <button
               className="icon-btn project-delete" title={`Delete “${p.title}”`} aria-label={`Delete ${p.title}`}
               onClick={(e) => {

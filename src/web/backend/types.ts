@@ -47,6 +47,8 @@ export interface LinkedFolder {
   onShelf: boolean;
   syncedAt: string | null;
   assetIds: string[];
+  /** Web version: the browser needs permission again (after a restart) before this folder can be read. */
+  needsAccess?: boolean;
 }
 
 export interface ShelfFolder {
@@ -64,6 +66,10 @@ export interface ShelfListing {
   parent: string | null;
   folders: ShelfFolder[];
   loosePhotos: number;
+  /** Web version: no shelf folder chosen yet, or this browser can't keep folder access at all. */
+  unsupported?: boolean;
+  /** Web version: the shelf folder needs permission again before it can be read. */
+  needsAccess?: boolean;
 }
 
 export interface FolderListing {
@@ -127,8 +133,8 @@ export interface NewProject {
   sizeId: string;
   stylePresetId?: string;
   pages?: number;
-  printerId?: string;
-  bindingId?: string;
+  printerId?: import('../../core').PrinterId;
+  bindingId?: import('../../core').BindingId;
   product?: 'book' | 'poster';
   landscape?: boolean;
 }
@@ -172,4 +178,31 @@ export interface Backend {
   shelfPreviewUrl(path: string): string;
   /** Link that downloads an export (`url` from an export response). */
   downloadUrl(url: string): string;
+  /** Only in the web version: what the browser offers instead of server features. */
+  readonly web?: WebExtras;
+}
+
+export interface StorageInfo {
+  /** Whether the browser promised not to clear this site's data on its own. */
+  persisted: boolean;
+  usageBytes: number;
+  quotaBytes: number;
+}
+
+export interface WebExtras {
+  /** Chrome/Edge: folders can be referenced in place, linked and relinked. */
+  readonly canPickDirectories: boolean;
+  /** Ask for a folder with the browser's picker; returns a folder reference, or null if cancelled. */
+  pickDirectory(): Promise<string | null>;
+  /** Files handed over by a file input or a drop → a folder reference to import (copied in). */
+  registerFiles(files: File[]): string;
+  /** How many of this project's folders (and the shelf) need permission again. */
+  foldersNeedingAccess(projectId: string): Promise<number>;
+  /** Ask for that permission (call from a click). Returns how many folders are readable now. */
+  requestFolderAccess(projectId: string): Promise<number>;
+  backupProject(projectId: string): Promise<{ url: string; file: string; bytes: number; photos: number; withoutOriginal: number }>;
+  restoreBackup(file: File): Promise<{ projectId: string; title: string; photos: number }>;
+  storage(): Promise<StorageInfo>;
+  /** Ask the browser to keep this site's data (no prompt in Chrome; Firefox may ask). */
+  persist(): Promise<boolean>;
 }

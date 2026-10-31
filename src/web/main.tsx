@@ -6,6 +6,7 @@ import './styles.css';
 import { Editor } from './components/Editor';
 import { Home } from './components/Home';
 import { API_VERSION } from '../core';
+import { isBrowserBackend } from './api';
 
 function useHashRoute() {
   const [hash, setHash] = useState(location.hash);
@@ -22,7 +23,8 @@ function App() {
   const m = hash.match(/^#\/book\/([\w-]+)/);
   return (
     <>
-      <VersionCheck />
+      {/* The web version has no server to be out of date. */}
+      {!isBrowserBackend && <VersionCheck />}
       {m ? <Editor key={m[1]} projectId={m[1]} /> : <Home />}
     </>
   );

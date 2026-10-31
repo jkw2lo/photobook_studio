@@ -672,3 +672,22 @@ input[type='checkbox'] { accent-color: var(--accent); width: 15px; height: 15px;
   .shelf-thumbs img:nth-child(n + 2) { display: none; }
   .shelf-row .btn-small { padding: 0 6px; }
 }
+
+/* Web version (GitHub Pages build) */
+.project-backup { position: absolute; top: 8px; right: 40px; opacity: 0; transition: opacity 0.12s; }
+.project-card:hover .project-backup, .project-backup:focus-visible { opacity: 1; }
+@media (hover: none) { .project-backup, .project-delete { opacity: 1; } }
+.web-notes { margin: 0 0 18px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line-soft); background: var(--panel); display: flex; flex-direction: column; gap: 10px; }
+.web-notes > .row { flex-wrap: wrap; gap: 8px; }
+.web-notes.closed .shelf-toggle .icon { transform: rotate(-90deg); }
+.web-notes-body { font-size: 12.5px; line-height: 1.5; color: var(--text); }
+.web-notes-body p { margin: 0 0 6px; }
+.web-notes-body ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.web-notes-body .icon { vertical-align: -2px; }
+.web-picker { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.web-picker p { margin: 0; }
+.web-picker .notice { align-self: stretch; }
+@media (max-width: 600px) {
+  .home { padding: 28px 16px; }
+  .home-head h1 { font-size: 28px; }
+}
