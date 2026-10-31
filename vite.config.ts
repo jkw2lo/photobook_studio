@@ -14,6 +14,8 @@ export default defineConfig(({ mode }) => {
   return {
     root: 'src/web',
     base: pages ? '/photobook_studio/' : '/',
+    // The web version's demo (sample photos, the portfolio's demo-welcome.js) ships only there.
+    publicDir: pages ? 'public' : false,
     plugins: [react()],
     define: { __BROWSER_BACKEND__: JSON.stringify(pages) },
     worker: { format: 'es' },

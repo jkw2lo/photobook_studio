@@ -691,3 +691,15 @@ input[type='checkbox'] { accent-color: var(--accent); width: 15px; height: 15px;
   .home { padding: 28px 16px; }
   .home-head h1 { font-size: 28px; }
 }
+
+/* Phones: the editor stacks — pages first, then the library, then the side panel — and the page
+   scrolls, instead of three columns squeezing the pages to nothing. */
+@media (max-width: 700px) {
+  .editor { height: auto; min-height: 100%; }
+  .topbar { height: auto; flex-wrap: wrap; padding: 6px 10px; row-gap: 6px; position: sticky; top: 0; z-index: 20; }
+  .book-title { max-width: 150px; }
+  .workspace { display: flex; flex-direction: column; min-height: 0; }
+  .stage { order: -1; height: 64vh; min-height: 340px; flex: none; }
+  .library { height: 72vh; flex: none; border-right: 0; border-top: 1px solid var(--line); }
+  .inspector { height: 80vh; flex: none; border-left: 0; border-top: 1px solid var(--line); }
+}

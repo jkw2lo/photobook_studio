@@ -143,8 +143,7 @@ export class BrowserImporter {
     const contentHash = await this.media<string>('hash', file);
     if (source.kind === 'copy') {
       // The same file copied in before (same name and contents): nothing new to store.
-      const same = (await this.store.firstAssetWithHash(contentHash)) ?? null;
-      const twin = same && same.fileName === found.name ? same : (await this.store.projectAssetsWithHash(job.projectId, contentHash)).find((a) => a.fileName === found.name);
+      const twin = (await this.store.assetsWithHash(contentHash)).find((a) => a.source.kind === 'copy' && a.fileName === found.name);
       if (twin) {
         await this.store.linkAsset(job.projectId, twin.id);
         job.alreadyInLibrary++;

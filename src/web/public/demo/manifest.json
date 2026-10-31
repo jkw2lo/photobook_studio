@@ -1,0 +1,74 @@
+{
+  "trip": "Amalfi Coast",
+  "photos": [
+    {
+      "file": "day1-01-ferry.jpg"
+    },
+    {
+      "file": "day1-02-harbour-pano.jpg",
+      "favorite": true
+    },
+    {
+      "file": "day1-03-positano.jpg"
+    },
+    {
+      "file": "day1-04-lemon-stall.jpg"
+    },
+    {
+      "file": "day1-05-stairs.jpg"
+    },
+    {
+      "file": "day1-06-dusk-terrace.jpg",
+      "favorite": true
+    },
+    {
+      "file": "day1-07-dinner.jpg"
+    },
+    {
+      "file": "day2-01-path-of-the-gods.jpg"
+    },
+    {
+      "file": "day2-02-trail-view.jpg"
+    },
+    {
+      "file": "day2-03-boat-a.jpg"
+    },
+    {
+      "file": "day2-03-boat-b.jpg"
+    },
+    {
+      "file": "day2-03-boat-c.jpg"
+    },
+    {
+      "file": "day2-04-lemon-grove.jpg",
+      "favorite": true
+    },
+    {
+      "file": "day2-05-beach.jpg"
+    },
+    {
+      "file": "day2-06-sunset.jpg"
+    },
+    {
+      "file": "day2-06-sunset-copy.jpg"
+    },
+    {
+      "file": "day3-01-cafe.jpg"
+    },
+    {
+      "file": "day3-02-tiles.jpg"
+    },
+    {
+      "file": "day3-03-door.jpg"
+    },
+    {
+      "file": "day3-04-dome.jpg"
+    },
+    {
+      "file": "day3-05-ravello.jpg"
+    },
+    {
+      "file": "day3-06-last-view.jpg"
+    }
+  ]
+}

@@ -90,3 +90,6 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 );
+
+// Web version: the portfolio's demo welcome (only for visitors arriving with ?from=portfolio).
+if (__BROWSER_BACKEND__) void import('./demo').then((m) => m.startDemoWelcome()).catch((e) => console.warn('demo welcome', e));

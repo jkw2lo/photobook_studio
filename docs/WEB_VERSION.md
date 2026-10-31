@@ -62,3 +62,18 @@ components keep calling `thumbUrl()` synchronously.
 Left out of the web build: the "server is out of date" banner and restart, the `/api/fs` folder
 browser (replaced by the browser's own folder picker), creating the Shelf folder for you, and the
 Mac launcher.
+
+## Demo for portfolio visitors
+
+Follows the portfolio's `DEMO.md` (jkw2lo/projects). `src/web/public/demo-welcome.js` is an
+unchanged copy of the portfolio's master (`projects/tools/demo-welcome.js`): change it there and
+copy it over, never here. `src/web/demo/` supplies the words, the sample and the walk-through:
+
+- Shown only for `?from=portfolio` with no books saved (the welcome script isn't even loaded otherwise).
+- **See the demo** imports 22 made-up illustrated photos (`src/web/public/demo/`, made by
+  `scripts/make-demo.ts`) through the real import, with their EXIF dates moved to about three
+  weeks ago, drafts *Amalfi Coast* with the Travel journal template, and makes a *Lemon grove*
+  poster. Then the page reloads and an eight-step walk-through runs.
+- **Start fresh** (from the banner) erases this browser's Photobook Studio data and reloads.
+- The sample photos and the welcome ship in the web build only (`publicDir` is off for the local build).
+

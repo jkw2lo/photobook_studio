@@ -11,6 +11,7 @@
     "build": "tsc --noEmit && vite build",
     "start": "NODE_ENV=production tsx src/server/main.ts",
     "fixtures": "tsx scripts/make-fixtures.ts",
+    "demo-photos": "tsx scripts/make-demo.ts",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
