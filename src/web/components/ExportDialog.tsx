@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { binding, coverGeometry, issueCounts, printablePages, printer, updateSettings, type BleedMode } from '../../core';
-import { api, type ExportResponse, type FileVerification, type FlipbookResponse, type ImageExportResponse } from '../api';
+import { api, downloadUrl, type ExportResponse, type FileVerification, type FlipbookResponse, type ImageExportResponse } from '../api';
 import { useEditor } from '../store';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
@@ -99,12 +99,13 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
 
       {result && (
         <div className="export-results">
-          <FileCard title={poster ? 'Poster' : 'Interior'} v={result.verification} url={result.url} bytes={result.bytes} extra={result.textOverflow.map((i) => i.message)} />
+          <FileCard title={poster ? 'Poster' : 'Interior'} v={result.verification} url={result.url} file={result.file} bytes={result.bytes} extra={result.textOverflow.map((i) => i.message)} />
           {result.cover && (
             <FileCard
               title="Cover"
               v={result.cover.verification}
               url={result.cover.url}
+              file={result.cover.file}
               bytes={result.cover.bytes}
               extra={[`Spine ${result.cover.spineMm.toFixed(2)} mm.`, ...result.cover.textOverflow.map((i) => i.message)]}
             />
@@ -175,7 +176,7 @@ function ImageExport() {
           <Icon name="check" size={16} />
           <span className="small">{res.format.toUpperCase()} · {res.widthPx} × {res.heightPx} px · {res.dpi} DPI · {(res.bytes / 1e6).toFixed(1)} MB</span>
           <a className="btn btn-small" href={res.url} target="_blank" rel="noreferrer">Open</a>
-          <a className="btn btn-small btn-primary" href={`${res.url}?download=1`}><Icon name="download" /> Download</a>
+          <a className="btn btn-small btn-primary" href={downloadUrl(res.url)} download={res.file}><Icon name="download" /> Download</a>
         </div>
       )}
       <p className="muted small">JPEG is smaller and fine for sharing; PNG is lossless. For a print shop, use the PDF.</p>
@@ -224,7 +225,7 @@ function FlipbookExport() {
           <Icon name="check" size={16} />
           <span className="small">{res.pages} pages{res.hasCover ? ' + cover' : ''} · {(res.bytes / 1e6).toFixed(1)} MB</span>
           <a className="btn btn-small" href={res.url} target="_blank" rel="noreferrer">Open</a>
-          <a className="btn btn-small btn-primary" href={`${res.url}?download=1`}><Icon name="download" /> Download</a>
+          <a className="btn btn-small btn-primary" href={downloadUrl(res.url)} download={res.file}><Icon name="download" /> Download</a>
         </div>
       )}
       <p className="muted small">One web page with page turns that works offline in any browser, on a phone too. Send it by AirDrop, email or a shared drive, or put it on any web host for a link. Nothing is uploaded from here.</p>
@@ -232,7 +233,7 @@ function FlipbookExport() {
   );
 }
 
-function FileCard({ title, v, url, bytes, extra }: { title: string; v: FileVerification; url: string; bytes: number; extra: string[] }) {
+function FileCard({ title, v, url, file, bytes, extra }: { title: string; v: FileVerification; url: string; file: string; bytes: number; extra: string[] }) {
   return (
     <div className={`export-result ${v.ok ? 'ok' : 'bad'}`}>
       <div className="row">
@@ -246,7 +247,7 @@ function FileCard({ title, v, url, bytes, extra }: { title: string; v: FileVerif
       {extra.map((p) => <p key={p} className="small muted">{p}</p>)}
       <div className="row">
         <a className="btn btn-small btn-primary" href={url} target="_blank" rel="noreferrer">Open</a>
-        <a className="btn btn-small" href={`${url}?download=1`}><Icon name="download" /> Download</a>
+        <a className="btn btn-small" href={downloadUrl(url)} download={file}><Icon name="download" /> Download</a>
       </div>
     </div>
   );
