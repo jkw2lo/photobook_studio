@@ -6,8 +6,8 @@ The same editor runs two ways:
 | --- | --- | --- |
 | Backend | Node server on 127.0.0.1 (`src/server`) | Runs in the page (`src/web/backend/browser`) |
 | Storage | SQLite + `data/` folder | IndexedDB in the browser profile |
-| Photos | Referenced by path | Chrome/Edge: referenced through a folder you grant access to. Safari/Firefox: copied into browser storage |
-| Build | `npm run build` | `npm run build:pages` (`VITE_BACKEND=browser`, base `/photobook_studio/`) |
+| Photos | Referenced by path | Chrome/Edge: referenced through a folder you grant access to. Safari/Firefox: copied into browser storage (IndexedDB) |
+| Build | `npm run build` | `npm run build:pages` (`vite build --mode pages`: browser backend, base `/photobook_studio/`) |
 
 Nothing is uploaded in either version: there is no server behind the web version, only static files.
 
@@ -25,7 +25,8 @@ selected. Both implementations have the same methods and return the same shapes:
   - `importer.ts` + `media.worker.ts` — import jobs with the same progress object the UI already
     polls. A small pool of Web Workers hashes (SHA-256), reads EXIF (exifr), decodes with
     `createImageBitmap` (EXIF orientation applied), makes thumbnails and runs the same analysis as
-    `src/server/media.ts` (`analysis.ts` holds the pure maths, tested against sharp's output).
+    `src/server/media.ts` (`analysis.ts` holds the pure maths, tested to reproduce the server's
+    numbers from sharp's pixels; the browser's own resize makes values close, not identical).
   - `exporter.ts` + `export.worker.ts` — print PDFs in a worker with PDFKit's browser build. The
     drawing code is shared with the server (`src/shared/pdfWriter.ts`); only image preparation
     (OffscreenCanvas instead of sharp) and font loading differ. Every file is re-verified with
@@ -38,6 +39,10 @@ selected. Both implementations have the same methods and return the same shapes:
 
 Code that both sides run (PDF drawing and verification, text and place outlines, the flipbook
 viewer) lives in `src/shared`, which — like `src/core` — imports nothing from Node.
+
+Tests: `tests/web-storage.test.ts` (the IndexedDB store, backups and folder references, with
+fake-indexeddb) and `tests/browser-analysis.test.ts`. The workers, PDF export and pdf.js rendering
+were checked by hand in Chrome; see the PR for what was verified.
 
 Thumbnails are served to `<img>` tags as `blob:` URLs created when the library is loaded, so the
 components keep calling `thumbUrl()` synchronously.

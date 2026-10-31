@@ -1,0 +1,23 @@
+# Unit and integration tests. macOS: the local app's HEIC import and fixtures use the built-in sips.
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run fixtures
+      - run: npm test
+      - run: npm run build
+      - run: npx vite build --mode pages

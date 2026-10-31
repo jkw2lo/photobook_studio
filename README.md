@@ -2,7 +2,18 @@
 
 A local-first photobook editor: import a folder of photos, get an automatic first draft of the whole book, refine it spread by spread, and export a print-ready PDF. Photos, thumbnails and projects never leave your computer.
 
-## Run it
+## Use it in your browser
+
+**https://jkw2lo.github.io/photobook_studio/** — nothing to install. The web version runs entirely in your browser: photos, thumbnails and books are stored in the browser on your device, and nothing is uploaded (there is no server behind it, only static files).
+
+- **Chrome or Edge** (recommended): import a folder and the photos stay in it; link folders and use the Shelf to keep them in sync. After a browser restart, the app asks for permission to read your folders again.
+- **Safari and Firefox:** imported photos are copied into the browser's storage. Linked folders and the Shelf need Chrome or Edge. Safari opens HEIC photos; other browsers need them converted to JPEG first.
+- **Back up your books.** Browsers can clear site data (low disk space, "clear browsing data"). The download button on each book saves one `.photobook` file with its pages and photos; **Restore from backup…** on the home page brings it back, in any browser.
+- Print PDFs (interior + cover, verified), poster images and the web flipbook are all made in the browser.
+
+The home page lists what differs from the local app, and [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md#web-version) has the details. To build it yourself: `npm run build:pages` (output in `dist/pages`); `npm run preview:pages` serves it at http://localhost:5190/photobook_studio/. Pushes to `main` deploy it with GitHub Actions (`.github/workflows/pages.yml`). How it works: [docs/WEB_VERSION.md](docs/WEB_VERSION.md).
+
+## Run it locally
 
 **The easy way:** open **Photobook Studio** from your Applications folder (`~/Applications`), Launchpad or Spotlight.
 

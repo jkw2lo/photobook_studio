@@ -683,7 +683,7 @@ input[type='checkbox'] { accent-color: var(--accent); width: 15px; height: 15px;
 .web-notes-body { font-size: 12.5px; line-height: 1.5; color: var(--text); }
 .web-notes-body p { margin: 0 0 6px; }
 .web-notes-body ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
-.web-notes-body .icon { vertical-align: -2px; }
+.web-notes-body .icon { display: inline-block; vertical-align: -2px; }
 .web-picker { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
 .web-picker p { margin: 0; }
 .web-picker .notice { align-self: stretch; }

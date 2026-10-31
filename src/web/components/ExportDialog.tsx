@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { binding, coverGeometry, issueCounts, printablePages, printer, updateSettings, type BleedMode } from '../../core';
-import { api, downloadUrl, type ExportResponse, type FileVerification, type FlipbookResponse, type ImageExportResponse } from '../api';
+import { api, downloadUrl, isBrowserBackend, type ExportResponse, type FileVerification, type FlipbookResponse, type ImageExportResponse } from '../api';
 import { useEditor } from '../store';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
@@ -114,7 +114,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
       )}
 
       <div className="modal-foot">
-        <span className="muted small">Photos are embedded at up to 300 DPI, sRGB. Files are saved in the app’s data folder on this computer.</span>
+        <span className="muted small">Photos are embedded at up to 300 DPI, sRGB. {isBrowserBackend ? 'Made in this browser: download the files to keep them.' : 'Files are saved in the app’s data folder on this computer.'}</span>
         <div className="row">
           <button className="btn btn-ghost" onClick={onClose}>Close</button>
           <button className="btn btn-primary" onClick={run} disabled={busy}>

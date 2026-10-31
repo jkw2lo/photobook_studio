@@ -39,3 +39,18 @@ Honest list of what this version does not do, or does only partly.
 ## Verification gaps
 - Import speed was measured on synthetic 2 MP images; real 12–48 MP camera files will be slower.
 - The "works offline" criterion is met by design (no outbound code, CSP, a source scan for URLs) but has not been run with networking actually switched off.
+
+## Web version
+
+The browser build (GitHub Pages) has everything above, plus these limits:
+
+- **Storage lives in the browser.** Books, thumbnails and copied-in photos are in the browser's site data for this site, on this device, in this browser profile. Another browser or device doesn't see them. Browsers may clear site data under storage pressure or when you clear browsing data; the app asks for persistent storage, but Safari and Firefox may not grant it. Use per-book backups (one `.photobook` file).
+- **Folders (Chrome/Edge):** photos are read in place through a folder you choose. After a browser restart, the browser asks for permission again ("Allow access" in the library); until then thumbnails and editing work, but export, linked-folder sync and missing-photo checks wait for permission. Moving or renaming the chosen folder itself breaks the link; relink by choosing it again.
+- **Safari and Firefox:** no folder access API, so imported photos are copied into browser storage (more disk use), and linked folders, the Shelf and relink-in-place aren't available. Relink copies the found files in.
+- **HEIC** imports only in Safari (which decodes it). Chrome, Edge and Firefox report "convert to JPEG first". The local app converts HEIC with macOS `sips`.
+- **Photo analysis** uses the same formulas as the local app on the browser's own decode and resize, so sharpness and near-duplicate fingerprints are close but not bit-identical to the local app's. Curation compares photos within a book (percentiles, Hamming distance), so drafts behave the same; a library imported in both versions will not match hash for hash.
+- **Exports run in the browser** and are held in memory until downloaded: very large books need a lot of RAM (each photo is decoded at full size once while its pages are drawn). Export results are links valid until the page is closed. JPEGs inside the PDF are encoded by the browser (chroma subsampling may differ from the local app's 4:4:4).
+- **Poster images** are capped at about 16 megapixels (Safari's canvas limit), so large posters at 300 DPI come out at a lower DPI, and the PNG/JPEG has no DPI tag. The flipbook uses JPEG page images where the browser can't encode WebP (Safari).
+- **Not in the web version:** the Mac launcher, the "server is out of date / restart" banner, typing folder paths, and creating the Shelf folder for you (create it in Finder or Explorer, then choose it).
+- **Backups** contain the originals that could be read when the backup was made. Photos in a folder without permission at that moment are included as thumbnails only, and come back as missing.
+

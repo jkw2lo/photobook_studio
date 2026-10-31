@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { findSurface, innerBox, issueCounts, moveElements, panCrop, updateElement, zoomCropAt } from '../../core';
+import { isBrowserBackend } from '../api';
 import { duplicate, group, remove, toggleLock, togglePin, ungroup } from '../elementActions';
 import { retrySave, selectedElement, selectedIds, useEditor } from '../store';
 import { Canvas } from './Canvas';
@@ -79,7 +80,7 @@ export function Editor({ projectId }: { projectId: string }) {
               <p className="muted">
                 {assetsCount
                   ? poster ? 'Let the app build a collage from your best photos, then refine it — or drag photos onto the sheet yourself.' : 'Let the app draft a complete book, then refine it — or drag photos onto the pages yourself.'
-                  : 'Use Import in the library. Photos never leave this computer.'}
+                  : `Use Import in the library. Photos never leave this ${isBrowserBackend ? 'device' : 'computer'}.`}
               </p>
               {assetsCount > 0 && (
                 <button className="btn btn-primary" onClick={poster ? focusAutoCollage : focusAutoDraft}>
