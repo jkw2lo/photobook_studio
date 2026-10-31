@@ -19,4 +19,5 @@ declare module 'fontkit' {
     layout(text: string): GlyphRun;
   }
   export function openSync(path: string): Font;
+  export function create(data: Uint8Array): Font;
 }

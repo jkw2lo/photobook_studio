@@ -1,17 +1,23 @@
 import { useEffect, useState } from 'react';
-import { api, type FolderListing } from '../api';
+import { api, isBrowserBackend, type FolderListing } from '../api';
+import { BrowserFolderPicker } from './BrowserFolderPicker';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
 
-/** Browse local folders through the local server (the browser cannot expose real paths itself). */
-export function FolderPicker({ title, action, offerLink, onChoose, onCancel }: {
+export interface FolderPickerProps {
   title: string;
   action: string;
   /** Offer "keep linked" (sync the folder with the library from now on). */
   offerLink?: boolean;
   onChoose: (path: string, link: boolean) => void;
   onCancel: () => void;
-}) {
+}
+
+/** Choose a folder: through the local server, or (web version) with the browser's own picker. */
+export const FolderPicker = isBrowserBackend ? BrowserFolderPicker : ServerFolderPicker;
+
+/** Browse local folders through the local server (the browser cannot expose real paths itself). */
+function ServerFolderPicker({ title, action, offerLink, onChoose, onCancel }: FolderPickerProps) {
   const [listing, setListing] = useState<FolderListing | null>(null);
   const [link, setLink] = useState(false);
   const [path, setPath] = useState('');

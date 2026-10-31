@@ -22,6 +22,7 @@ const PATHS: Record<string, string> = {
   spread: 'M3 5h8.5v14H3zM12.5 5H21v14h-8.5z',
   sparkle: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z',
   download: 'M12 4v11M7 10l5 5 5-5M5 20h14',
+  upload: 'M12 16V5M7 10l5-5 5 5M5 20h14',
   check: 'M5 12.5l4.5 4.5L19 7.5',
   alert: 'M12 4l9 16H3zM12 10v4M12 17v.5',
   info: 'M12 8v.5M12 11v5M12 21a9 9 0 100-18 9 9 0 000 18z',

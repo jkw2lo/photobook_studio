@@ -32,6 +32,8 @@ The repository was empty: no existing framework or structure to preserve. Enviro
 
 **Decision: local Node server + browser UI now, Tauri later.** The brief suggests Tauri 2, but Rust is not installed. A Node process bound to `127.0.0.1` gives the same guarantees that matter (real filesystem paths, persistent SQLite, background processing, nothing leaves the machine) with one language. All domain logic lives in `src/core`, which imports nothing from Node, React, or the server — enforced by a test — so a Tauri shell can later host the same UI and call the same core.
 
+**Web version.** The same UI also ships as a static site (GitHub Pages) with the backend running in the browser: `src/web/api.ts` hands components whichever `Backend` the build selected (HTTP to this server, or IndexedDB + Web Workers). Code both sides need (PDF drawing and verification, outlines, the flipbook viewer) is in `src/shared`, which imports nothing from Node. See [WEB_VERSION.md](WEB_VERSION.md).
+
 **Why the generator runs in the client:** core is pure, so "Generate draft" is just another document command. That makes it undoable like any edit, and the server never needs to know about layouts.
 
 ### Privacy boundary (architectural, not a promise)
