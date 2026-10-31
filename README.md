@@ -244,3 +244,7 @@ swift scripts/render-pdf.swift data/exports/<file>.pdf test-results/render 72 --
 | 10 | Works offline | ⚠️ By design (no outbound code, CSP, URL-scan test). Not yet run with the network actually disabled. |
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md).
+
+## Licence
+
+[MIT](LICENSE) © 2026 Jennifer Lo. Bundled fonts come from `@fontsource` packages under the SIL Open Font License; other dependencies keep their own licences.
