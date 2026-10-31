@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
-import { rm, stat } from 'node:fs/promises';
+import { readFile, rm, stat } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { basename, extname, join } from 'node:path';
@@ -94,14 +94,22 @@ export async function readMetadata(originalPath: string): Promise<ExtractedMetad
   let capturedAt: string | null = null;
   let gpsLat: number | null = null;
   let gpsLon: number | null = null;
+  // exifr is given the bytes, not the path: with a path it leaves file handles for the garbage
+  // collector to close, which newer Node versions (26.13+) treat as an error.
+  let data: Buffer;
   try {
-    const tags = await exifr.parse(originalPath, { reviveValues: false, pick: ['DateTimeOriginal', 'CreateDate', 'DateTimeDigitized', 'ModifyDate', 'DateTime'] });
+    data = await readFile(originalPath);
+  } catch {
+    return { capturedAt, gpsLat, gpsLon };
+  }
+  try {
+    const tags = await exifr.parse(data, { reviveValues: false, pick: ['DateTimeOriginal', 'CreateDate', 'DateTimeDigitized', 'ModifyDate', 'DateTime'] });
     if (tags) capturedAt = exifDate(tags.DateTimeOriginal) ?? exifDate(tags.CreateDate) ?? exifDate(tags.DateTimeDigitized) ?? exifDate(tags.ModifyDate) ?? exifDate(tags.DateTime);
   } catch {
     // no EXIF — fine
   }
   try {
-    const gps = await exifr.gps(originalPath);
+    const gps = await exifr.gps(data);
     if (gps && Number.isFinite(gps.latitude) && Number.isFinite(gps.longitude)) {
       gpsLat = gps.latitude;
       gpsLon = gps.longitude;
