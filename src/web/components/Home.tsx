@@ -174,7 +174,7 @@ function NewPosterForm({ onClose }: { onClose: () => void }) {
             </div>
           </div>
         </div>
-        <p className="muted small">After importing photos, use Auto collage to choose a mosaic, grid, hero or pinboard layout. 0.125 in bleed on every edge; change it in the Print tab if your print shop asks for something else.</p>
+        <p className="muted small">After importing photos, use Auto collage to choose a mosaic, grid, hero or pinboard layout. 0.125 in bleed on every edge; change it in Layout › Sheet if your print shop asks for something else.</p>
         {error && <div className="notice notice-error">{error}</div>}
       </div>
       <div className="modal-foot">

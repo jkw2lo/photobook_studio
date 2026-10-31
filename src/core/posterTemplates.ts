@@ -361,7 +361,7 @@ export function removePosterTemplate(doc: BookDocument, assets: Map<string, Phot
   const t = posterTemplate(doc.template);
   const recorded = doc.templateElementIds ? new Set(doc.templateElementIds) : null;
   const fromTemplate = (e: Element) => (recorded ? recorded.has(e.id) && !(e.type === 'image' && e.assetId && !t?.placesPhotos) : e.type !== 'image');
-  const { area: _area, ...collage } = doc.collage ?? ({} as CollageSettings);
+  const { area: _area, areaShape: _shape, ...collage } = doc.collage ?? ({} as CollageSettings);
   const next: BookDocument = {
     ...doc,
     template: undefined,

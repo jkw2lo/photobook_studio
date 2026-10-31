@@ -35,6 +35,16 @@ const PATHS: Record<string, string> = {
   fit: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
   front: 'M8 8h12v12H8zM4 4h12v4M4 4v12h4',
   history: 'M3 12a9 9 0 103-6.7L3 8M3 3v5h5M12 7v5l3 3',
+  layout: 'M4 4h16v16H4zM4 10h16M10 10v10',
+  calendar: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+  map: 'M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14',
+  sliders: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M14 4v4M8 10v4M16 16v4',
+  shape: 'M12 3l3 6h-6zM4 14h7v7H4zM17.5 21a3.5 3.5 0 100-7 3.5 3.5 0 000 7z',
+  move: 'M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3',
+  page: 'M6 3h9l4 4v14H6zM15 3v4h4',
+  palette: 'M12 3a9 9 0 100 18c1.1 0 1.5-.8 1.2-1.6-.4-1 .3-1.9 1.3-1.9H17a4 4 0 004-4c0-5.5-4-10.5-9-10.5zM7.5 11a1 1 0 100-.01M10 7a1 1 0 100-.01M15 7.5a1 1 0 100-.01',
+  type: 'M4 7V5h16v2M12 5v14M9 19h6',
+  select: 'M5 3l12 7-5.5 1.5L9 17z',
 };
 
 export function Icon({ name, size = 16 }: { name: string; size?: number }) {

@@ -1,4 +1,4 @@
-// Milestone 1 through the real UI: new book → import 21 photos → auto draft → edit → reload → export.
+// Milestone 1 through the real UI: new book → import 21 photos (one an exact copy, skipped) → auto draft → edit → reload → export.
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 
@@ -19,8 +19,8 @@ test('import, draft, edit, reopen and export a book', async ({ page }) => {
   // Generous: the performance test may be importing 500 photos in parallel.
   await expect(page.getByText('21 photos directly in this folder')).toBeVisible({ timeout: 20_000 });
   await page.getByRole('button', { name: 'Import this folder' }).click();
-  await expect(page.getByText(/Imported 21 photos/)).toBeVisible({ timeout: 60_000 });
-  await expect(page.locator('.library .tile')).toHaveCount(21);
+  await expect(page.getByText(/Imported 20 photos.*1 exact duplicate skipped/)).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('.library .tile')).toHaveCount(20);
 
   // Automatic draft
   // Auto draft fills the book straight away; its controls are in the side panel, next to the pages.
@@ -44,13 +44,14 @@ test('import, draft, edit, reopen and export a book', async ({ page }) => {
   await page.mouse.down();
   await page.mouse.move(from.x - 40, from.y + 30, { steps: 8 });
   await page.mouse.up();
-  // Position fields live on the photo panel's Position tab.
-  await page.locator('.inspector .subtabs').getByRole('tab', { name: 'Position' }).click();
+  // Position fields live in Photo › Position.
+  await page.locator('.inspector .side-rail').getByRole('tab', { name: 'Position' }).click();
   const xField = page.locator('.field', { hasText: /^X/ }).locator('input');
   const movedX = await xField.inputValue();
   // Add a text box and edit it inline.
   await page.keyboard.press('Escape');
-  await page.locator('.inspector .tabs').getByRole('button', { name: 'Add', exact: true }).click();
+  await page.locator('.inspector .tabs').getByRole('tab', { name: 'Elements' }).click();
+  await page.locator('.inspector .side-rail').getByRole('tab', { name: 'Text' }).click();
   await page.locator('.add-panel').getByRole('menuitem', { name: 'Body' }).click();
   await page.locator('.text-input').fill('Written in the E2E test');
   await page.locator('.text-input').blur();
@@ -60,12 +61,13 @@ test('import, draft, edit, reopen and export a book', async ({ page }) => {
   await page.reload();
   await expect(page.locator('.canvas .el-text', { hasText: 'Written in the E2E test' })).toBeVisible();
   await page.mouse.click(from.x - 40, from.y + 30);
-  await page.locator('.inspector .subtabs').getByRole('tab', { name: 'Position' }).click();
+  await page.locator('.inspector .side-rail').getByRole('tab', { name: 'Position' }).click();
   await expect(xField).toHaveValue(movedX);
 
   // Undo/redo round-trip on a fresh edit
   await page.keyboard.press('Escape');
-  await page.locator('.inspector .tabs').getByRole('button', { name: 'Add', exact: true }).click();
+  await page.locator('.inspector .tabs').getByRole('tab', { name: 'Elements' }).click();
+  await page.locator('.inspector .side-rail').getByRole('tab', { name: 'Text' }).click();
   await page.locator('.add-panel').getByRole('menuitem', { name: 'Body' }).click();
   const added = page.locator('.canvas .el-text', { hasText: 'Double-click to edit' });
   await expect(added).toHaveCount(1);
@@ -96,7 +98,7 @@ test('make a collage poster: import, auto collage, switch style, export', async 
   await path.fill(FIXTURES);
   await path.press('Enter');
   await page.getByRole('button', { name: 'Import this folder' }).click();
-  await expect(page.getByText(/Imported 21 photos|already in library/)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/Imported 20 photos|already in library/)).toBeVisible({ timeout: 60_000 });
 
   // Auto collage fills the sheet immediately and its controls sit in the side panel, beside the result.
   await page.getByRole('button', { name: 'Generate collage' }).click();
@@ -116,14 +118,16 @@ test('make a collage poster: import, auto collage, switch style, export', async 
   await expect(page.locator('.preview-pane .preview-meta')).toContainText('MP');
 
   // Text can be added to a poster, and survives re-arranging.
-  await page.locator('.inspector .tabs').getByRole('button', { name: 'Add', exact: true }).click();
+  await page.locator('.inspector .tabs').getByRole('tab', { name: 'Elements' }).click();
+  await page.locator('.inspector .side-rail').getByRole('tab', { name: 'Text' }).click();
   await page.locator('.add-panel').getByRole('menuitem', { name: 'Quote' }).click();
   await expect(page.locator('.canvas .el-text')).toHaveCount(1);
   // Quick styles restyle it in one click (here: a band of colour behind the text).
   await page.locator('.inspector .quick-style', { hasText: 'Label band' }).click();
   await expect.poll(() => page.locator('.canvas .el-text').evaluate((e) => getComputedStyle(e).backgroundColor)).toMatch(/rgba\(.*0\.85\)/);
   await page.keyboard.press('Escape');
-  // "On sheet" arranges only the photos already there.
+  // "On sheet" arranges only the photos already there (Layout › Collage).
+  await page.locator('.inspector .tabs').getByRole('tab', { name: 'Layout' }).click();
   await page.locator('.auto-collage').getByRole('radio', { name: 'On sheet' }).click();
   await page.locator('.auto-collage').getByRole('button', { name: 'Arrange' }).click();
   await expect(page.locator('.canvas .el-text')).toHaveCount(1);
@@ -135,7 +139,7 @@ test('make a collage poster: import, auto collage, switch style, export', async 
   await expect(page.locator('.crop-toolbar')).toBeVisible();
   await page.keyboard.press('Enter');
   await expect(page.locator('.crop-toolbar')).toHaveCount(0);
-  await page.keyboard.press('Escape'); // deselect: back to the Poster panel
+  await page.keyboard.press('Escape'); // deselect: back to Layout › Collage
 
   // Right-click a photo to pin it: shuffling leaves it exactly where it is.
   const pinTarget = page.locator('.canvas .el-image').nth(2);
@@ -156,12 +160,12 @@ test('make a collage poster: import, auto collage, switch style, export', async 
   await expect(page.locator('.save')).toHaveText('Saved');
 
   // A template restyles the sheet: round photos, its own type and stars; then an icon from the palette.
-  await page.locator('.inspector .subtabs').getByRole('tab', { name: 'Templates' }).click();
+  await page.locator('.inspector .side-rail').getByRole('tab', { name: 'Templates' }).click();
   await page.locator('.template-card', { hasText: 'Night circles' }).click();
   await expect.poll(() => page.locator('.canvas .el-image').first().evaluate((e) => (e as HTMLElement).style.clipPath)).toContain('path(');
   await expect(page.locator('.canvas .el-shape')).toHaveCount(3);
-  await page.locator('.inspector .tabs').getByRole('button', { name: 'Add', exact: true }).click();
-  await page.locator('.add-panel .subtabs').getByRole('tab', { name: 'Shapes' }).click();
+  await page.locator('.inspector .tabs').getByRole('tab', { name: 'Elements' }).click();
+  await page.locator('.inspector .side-rail').getByRole('tab', { name: 'Shapes' }).click();
   await page.locator('.palette .seg button', { hasText: 'Icons' }).click();
   await page.locator('.palette [aria-label="Add Heart"]').click();
   await expect(page.locator('.canvas .el-shape svg path')).toHaveCount(4);

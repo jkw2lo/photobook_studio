@@ -6,20 +6,14 @@ import {
 import { api } from '../api';
 import { useEditor } from '../store';
 import { ColorInput } from './ColorInput';
-import { TypeSection } from './TypePanel';
 import { Icon } from './Icon';
 import { NumField } from './Inspector';
 
-export function BookPanel() {
+/** The title and subtitle (templates, the cover and the title page show them). */
+export function TitleFields() {
   const doc = useEditor((s) => s.doc)!;
-  const projectId = useEditor((s) => s.projectId)!;
-  const revision = useEditor((s) => s.revision);
-  const { run } = useEditor.getState();
-  const st = doc.settings;
-  const style = doc.style;
-
   return (
-    <div className="stack">
+    <>
       <label className="field">
         <span>Title</span>
         <input value={doc.title} onChange={(e) => useEditor.getState().gesture((d) => setTitle(d, e.target.value))} onBlur={() => useEditor.getState().endGesture('Rename book')} onKeyDown={(e) => e.stopPropagation()} />
@@ -28,9 +22,23 @@ export function BookPanel() {
         <span>Subtitle</span>
         <input value={doc.subtitle} placeholder="Defaults to the date range" onChange={(e) => useEditor.getState().gesture((d) => setTitle(d, d.title, e.target.value))} onBlur={() => useEditor.getState().endGesture('Edit subtitle')} onKeyDown={(e) => e.stopPropagation()} />
       </label>
+    </>
+  );
+}
 
-      {doc.settings.product === 'poster' ? <PosterPrintSection /> : <PrinterSection />}
+/** Printer, size, bleed and resolution thresholds (posters: bleed, margin and DPI). */
+export function PrintSettings() {
+  const poster = useEditor((s) => s.doc?.settings.product === 'poster');
+  return poster ? <PosterPrintSection /> : <PrinterSection />;
+}
 
+/** Book style: preset, margins, spacing, paper and text colour. */
+export function BookStyleSettings() {
+  const doc = useEditor((s) => s.doc)!;
+  const { run } = useEditor.getState();
+  const style = doc.style;
+  return (
+    <div className="stack">
       <div className="section-title">Style</div>
       <label className="field">
         <span>Preset</span>
@@ -56,17 +64,29 @@ export function BookPanel() {
           <span>Paper</span>
           <ColorInput value={style.background} label="Paper colour" apply={(d, c) => updateStyle(d, { background: c })} />
         </label>
-        <label className="field">
-          <span>Text</span>
-          <ColorInput value={style.textColor} label="Text colour" apply={(d, c) => updateStyle(d, { textColor: c })} />
-        </label>
+        <TextColorField />
       </div>
-      <TypeSection />
       <p className="muted small">Margins and spacing apply to new layouts and regenerated pages.</p>
-
-      <History projectId={projectId} revision={revision} />
     </div>
   );
+}
+
+/** The default colour of text. */
+export function TextColorField() {
+  const color = useEditor((s) => s.doc!.style.textColor);
+  return (
+    <label className="field">
+      <span>Text colour</span>
+      <ColorInput value={color} label="Text colour" apply={(d, c) => updateStyle(d, { textColor: c })} />
+    </label>
+  );
+}
+
+/** Saved versions, for the current project. */
+export function VersionHistory() {
+  const projectId = useEditor((s) => s.projectId)!;
+  const revision = useEditor((s) => s.revision);
+  return <History projectId={projectId} revision={revision} />;
 }
 
 /** Saved versions (last 50 autosaves). Restoring is itself an undoable edit. */

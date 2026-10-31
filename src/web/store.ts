@@ -16,8 +16,10 @@ export interface Selection {
 }
 
 /** An on-canvas tool that takes over the pointer: moving the background photo, or marking where a
- * collage's photos go (`rect`: the area being drawn, as fractions of the sheet). */
-export type CanvasTool = { kind: 'background'; surfaceId: string } | { kind: 'area'; surfaceId: string; rect: Rect | null };
+ * collage's photos go — a box (`rect`) or a freeform outline (`shape`), as fractions of the sheet. */
+export type CanvasTool =
+  | { kind: 'background'; surfaceId: string }
+  | { kind: 'area'; surfaceId: string; mode: 'box' | 'free'; rect: Rect | null; shape: { x: number; y: number }[] | null };
 
 export interface Toast {
   id: number;
@@ -63,9 +65,9 @@ interface EditorState {
   syncing: boolean;
   /** Bumped to bring the poster's Auto collage controls into view. */
   collageFocus: number;
-  /** Bumped to open the book's Draft tab. */
+  /** Bumped to open the book's Layout › Draft. */
   draftFocus: number;
-  /** Result of the last book draft, shown in the Draft tab. */
+  /** Result of the last book draft, shown in Layout › Draft. */
   draftReport: DraftReport | null;
   /** Photo shown in the library's preview pane. */
   previewAssetId: string | null;

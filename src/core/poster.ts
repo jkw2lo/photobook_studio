@@ -1,7 +1,8 @@
 import type { BookDocument, CollageSettings, CollageSource, Element, ImageElement, PhotoAsset, Rect } from './model';
 import { SCHEMA_VERSION } from './model';
 import { blankSpread, defaultSettings } from './book';
-import { layoutCollageAround, orderPhotos, titleBand, type CollageStyle } from './collage';
+import { freeRects, layoutCollageAround, layoutInRects, orderPhotos, titleBand, type CollageStyle } from './collage';
+import { cutToOutline, outlineBands, polygonArea, polygonBounds, type Pt } from './freeform';
 import { aspectOf, chronological, dateRangeOf } from './curation';
 import { curatePool, selectWithCoverage, type CuratedPool } from './generator';
 import { mulberry32 } from './random';
@@ -94,6 +95,16 @@ export function photoArea(doc: BookDocument, settings: CollageSettings): Rect {
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
+/** The freeform outline the photos fill, in sheet mm (points on the sheet's edge run into the bleed), or null. */
+export function photoOutline(doc: BookDocument, settings: CollageSettings): Pt[] | null {
+  const shape = settings.areaShape;
+  if (!shape || shape.length < 3) return null;
+  const s = doc.settings;
+  const b = s.bleedMm;
+  const at = (v: number, len: number) => (v <= 0 ? -b : v >= 1 ? len + b : v * len);
+  return shape.map((p) => ({ x: at(p.x, s.trimWidthMm), y: at(p.y, s.trimHeightMm) }));
+}
+
 export interface PosterReport {
   available: number;
   placed: number;
@@ -184,11 +195,22 @@ export function layoutPoster(
   const pinned = sheetImages(doc).filter(isPinned);
   const pinnedIds = new Set(pinned.map((e) => e.assetId));
   const free = photos.filter((p) => !pinnedIds.has(p.id));
-  const { elements, used } = layoutCollageAround(
-    doc, rest, free,
-    { style: settings.style as CollageStyle, gapMm: settings.gapMm, seed: settings.seed, hero: heroPick, keepOrder: (settings.order ?? 'time') !== 'time' },
-    pinned.map(elementBounds),
-  );
+  const opts = { style: settings.style as CollageStyle, gapMm: settings.gapMm, seed: settings.seed, hero: heroPick, keepOrder: (settings.order ?? 'time') !== 'time' };
+  const outline = photoOutline(doc, settings);
+  let laidOut;
+  if (outline) {
+    // Bands about one row of photos tall, following the outline; edge frames are cut to it below.
+    const bounds = polygonBounds(outline);
+    const fill = Math.abs(polygonArea(outline)) / Math.max(1, bounds.w * bounds.h);
+    const rows = Math.max(1, Math.min(free.length, Math.round(Math.sqrt((free.length * rest.h) / (Math.max(1, rest.w) * fill) / 1.4))));
+    const minSize = Math.max(8, Math.min(rest.w, rest.h) * 0.05);
+    const pieces = outlineBands(outline, rest, rows, settings.gapMm, minSize).flatMap((r) => freeRects(r, pinned.map(elementBounds), settings.gapMm, minSize));
+    laidOut = layoutInRects(doc, pieces, free, opts);
+    laidOut = { ...laidOut, elements: laidOut.elements.flatMap((e) => (e.type === 'image' && !settings.frameShape ? cutToOutline(e, outline) ?? [] : [e])) };
+    const shown = new Set(laidOut.elements.flatMap((e) => (e.type === 'image' && e.assetId ? [e.assetId] : [])));
+    laidOut.used = laidOut.used.filter((a) => shown.has(a.id));
+  } else laidOut = layoutCollageAround(doc, rest, free, opts, pinned.map(elementBounds));
+  const { elements, used } = laidOut;
   // Photos marked "keep crop" get their crop, fit, border and cut-out shape back in the new frame;
   // "keep rotation" keeps their tilt. Either way they keep their identity.
   const kept = new Map(sheetImages(doc).filter((e) => isKept(e) && !isPinned(e) && e.assetId).map((e) => [e.assetId!, e]));
@@ -302,7 +324,7 @@ export function generatePoster(
   }
   // Seed 1 tells the story in time order; shuffles also rearrange, so even when every photo is
   // already on the sheet a shuffle gives a visibly different collage.
-  if ((settings.order ?? 'time') !== 'time') chosen = orderPhotos(chosen, settings.order!);
+  if ((settings.order ?? 'time') !== 'time') chosen = orderPhotos(chosen, settings.order!, settings.seed - 1);
   else if (settings.seed !== 1) chosen = chosen.map((a) => ({ a, k: rng() })).sort((x, y) => x.k - y.k).map((x) => x.a);
   const laid = layoutPoster(doc, chosen, settings, heroPick);
   const { used } = laid;
@@ -327,7 +349,8 @@ export function relayoutPoster(doc: BookDocument, assets: Map<string, PhotoAsset
   const unique = [...new Set(current)];
   const order = settings.order ?? 'time';
   let photos: PhotoAsset[];
-  if (order !== 'time') photos = orderPhotos(unique, order);
+  // Colour orders follow the seed too: a shuffle gives another flow, a re-flow keeps it.
+  if (order !== 'time') photos = orderPhotos(unique, order, settings.seed - 1);
   else if (opts.shuffle) {
     const rng = mulberry32(settings.seed * 7919);
     photos = unique.map((a) => ({ a, k: rng() })).sort((x, y) => x.k - y.k).map((x) => x.a);

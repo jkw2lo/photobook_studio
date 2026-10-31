@@ -9,8 +9,6 @@ import { CollageControls, gapOptions, marginOptions } from './CollageControls';
 import { ColorInput } from './ColorInput';
 import { Icon } from './Icon';
 import { BackgroundImageField } from './BackgroundImageField';
-import { GradeControls } from './DesignPanel';
-import { SubTabs } from './Inspector';
 import { PosterTemplates } from './PosterTemplates';
 
 /** Sensible first settings for a sheet: spacing and border scaled to its size. */
@@ -34,23 +32,20 @@ export function generateFirstCollage(assets: PhotoAsset[]) {
 }
 
 /**
- * Inspector panel for a poster when nothing is selected. Auto collage lives here, beside the sheet,
- * so every regenerate is visible immediately — no dialog covering the result.
+ * Layout › Collage for a poster. Auto collage lives here, beside the sheet, so every regenerate is
+ * visible immediately — no dialog covering the result.
  */
-export function PosterPanel() {
+export function PosterCollagePanel() {
   const doc = useEditor((s) => s.doc)!;
   const assetList = useEditor((s) => s.assets);
   const assets = useEditor((s) => s.assetMap);
   const focus = useEditor((s) => s.collageFocus);
   const sectionRef = useRef<HTMLDivElement>(null);
   const [flash, setFlash] = useState(false);
-  const [tab, setTab] = useState<'collage' | 'templates' | 'sheet'>('collage');
   const [report, setReport] = useState<PosterReport | null>(null);
   const curated = useMemo(() => curatePool(assetList), [assetList]);
   const sheet = doc.spreads[0];
   const settings = doc.collage ?? DEFAULT_COLLAGE;
-  const s = doc.settings;
-  const landscape = s.trimWidthMm > s.trimHeightMm;
   const usable = assetList.filter((a) => !a.excluded && !a.missing).length;
   const maxPhotos = Math.max(1, Math.min(300, usable));
   const photosOnSheet = sheet?.elements.filter((e) => e.type === 'image' && e.assetId).length ?? 0;
@@ -61,17 +56,11 @@ export function PosterPanel() {
   // Top-bar "Auto collage" brings this section into view.
   useEffect(() => {
     if (!focus) return;
-    setTab('collage');
     sectionRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
     setFlash(true);
     const t = setTimeout(() => setFlash(false), 900);
     return () => clearTimeout(t);
   }, [focus]);
-
-  const sizeId = POSTER_SIZES.find((z) => {
-    const [w, h] = landscape ? [z.heightMm, z.widthMm] : [z.widthMm, z.heightMm];
-    return Math.abs(w - s.trimWidthMm) < 0.5 && Math.abs(h - s.trimHeightMm) < 0.5;
-  })?.id ?? 'custom';
 
   const source: CollageSource = settings.source ?? 'best';
   const pinnedCount = sheet?.elements.filter(isPinned).length ?? 0;
@@ -94,7 +83,6 @@ export function PosterPanel() {
       setReport(null);
       return hasPhotos ? relayoutPoster(prepared, assets, next, { shuffle }) : { ...prepared, collage: next };
     });
-  const resize = (w: number, h: number) => reflow('Change poster size', settings, (d) => updateSettings(d, { trimWidthMm: w, trimHeightMm: h }));
 
   /** Arrange (seed 1: the best result) or Shuffle (next seed) using the chosen photos. */
   const act = (shuffle: boolean) => {
@@ -118,9 +106,6 @@ export function PosterPanel() {
 
   return (
     <div className="stack">
-      <SubTabs items={[{ id: 'collage', label: 'Collage' }, { id: 'templates', label: 'Templates' }, { id: 'sheet', label: 'Sheet' }]} value={tab} onChange={setTab} />
-      {tab === 'collage' && (
-        <>
       <div ref={sectionRef} className={`auto-collage ${flash ? 'flash' : ''}`}>
         <div className="row between">
           <strong>Auto collage</strong>
@@ -177,13 +162,29 @@ export function PosterPanel() {
       {hasPhotos && <p className="muted small">Style, spacing, border and title re-flow the photos already on the sheet.</p>}
       <CollageControls doc={doc} value={settings} compact onChange={(next) => reflow(next.style !== settings.style ? 'Change collage style' : 'Adjust collage', next)} />
       <PhotoAreaField doc={doc} settings={settings} />
+      <p className="muted small">Arranging replaces manual moves on the sheet — pin a photo (right-click it) to keep it where it is, or undo (⌘Z).</p>
+    </div>
+  );
+}
 
-        </>
-      )}
-      {tab === 'templates' && <PosterTemplates />}
-      {tab === 'sheet' && (
-        <>
-      <div className="section-title">Sheet</div>
+/** Layout › Sheet: the poster's size and orientation (photos on it re-flow to fit). */
+export function PosterSheetPanel() {
+  const doc = useEditor((s) => s.doc)!;
+  const assets = useEditor((s) => s.assetMap);
+  const s = doc.settings;
+  const settings = doc.collage ?? DEFAULT_COLLAGE;
+  const landscape = s.trimWidthMm > s.trimHeightMm;
+  const hasPhotos = doc.spreads[0]?.elements.some((e) => e.type === 'image' && e.assetId);
+  const sizeId = POSTER_SIZES.find((z) => {
+    const [w, h] = landscape ? [z.heightMm, z.widthMm] : [z.widthMm, z.heightMm];
+    return Math.abs(w - s.trimWidthMm) < 0.5 && Math.abs(h - s.trimHeightMm) < 0.5;
+  })?.id ?? 'custom';
+  const resize = (w: number, h: number) => useEditor.getState().run('Change poster size', (d) => {
+    const sized = updateSettings(d, { trimWidthMm: w, trimHeightMm: h });
+    return hasPhotos ? relayoutPoster(sized, assets, settings) : sized;
+  });
+  return (
+    <div className="stack">
       <label className="field">
         <span>Size</span>
         <select
@@ -201,21 +202,24 @@ export function PosterPanel() {
         <button className={!landscape ? 'on' : ''} onClick={() => landscape && resize(s.trimHeightMm, s.trimWidthMm)}>Portrait</button>
         <button className={landscape ? 'on' : ''} onClick={() => !landscape && resize(s.trimHeightMm, s.trimWidthMm)}>Landscape</button>
       </div>
+    </div>
+  );
+}
+
+/** Layout › Background: the sheet's colour and a photo behind everything. */
+export function PosterBackgroundPanel() {
+  const doc = useEditor((s) => s.doc)!;
+  const sheet = doc.spreads[0];
+  return (
+    <div className="stack">
       <label className="field">
-        <span>Background</span>
+        <span>Colour</span>
         <ColorInput value={sheet?.background ?? doc.style.background} label="Poster background" apply={(d, c) => setSurfaceBackground(d, d.spreads[0].id, c)} />
       </label>
       <div className="field">
-        <span>Background image</span>
+        <span>Photo</span>
         <BackgroundImageField surfaceId={sheet.id} />
       </div>
-      <p className="muted small">Arranging replaces manual moves on the sheet — pin a photo (right-click it) to keep it where it is, or undo (⌘Z). Posters warn below {s.minDpiWarning} DPI: they're seen from further away than book pages.</p>
-      <div className="section-title">Colour grade</div>
-      <GradeControls />
-
-        </>
-      )}
-      <p className="muted small">Text, shapes, calendars and maps are in the <strong>Add</strong> tab.</p>
     </div>
   );
 }
@@ -236,14 +240,15 @@ function PhotoAreaField({ doc, settings }: { doc: BookDocument; settings: Collag
     const x0 = clampF(r.x / W);
     const y0 = clampF(r.y / H);
     const rect = settings.area ? { x: x0, y: y0, w: clampF((r.x + r.w) / W) - x0, h: clampF((r.y + r.h) / H) - y0 } : null;
-    useEditor.getState().setCanvasTool({ kind: 'area', surfaceId: sheet.id, rect });
+    const shape = settings.areaShape ?? null;
+    useEditor.getState().setCanvasTool({ kind: 'area', surfaceId: sheet.id, mode: shape ? 'free' : 'box', rect: shape ? null : rect, shape });
   };
   const a = settings.area;
   return (
     <div className="field photo-area-field">
       <span>Photo area</span>
       <div className="row">
-        <span className="small">{a ? `Custom — ${Math.round(a.w * 100)}% × ${Math.round(a.h * 100)}% of the sheet` : 'Whole sheet'}</span>
+        <span className="small">{settings.areaShape ? 'Freeform outline' : a ? `Box — ${Math.round(a.w * 100)}% × ${Math.round(a.h * 100)}% of the sheet` : 'Whole sheet'}</span>
       </div>
       <div className="btn-grid">
         <button className={`btn btn-small ${marking ? 'btn-on' : ''}`} onClick={() => (marking ? useEditor.getState().setCanvasTool(null) : start())} title="Drag a box on the sheet: photos are laid out only inside it">

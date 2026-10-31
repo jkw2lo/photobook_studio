@@ -66,7 +66,7 @@ export function Library() {
         <div className="row">
           {assets.length > 1 && (
             <button className="btn btn-small btn-ghost" onClick={() => setCleanup(true)} title="Review similar shots, blurry photos and duplicates">
-              <Icon name="sparkle" /> Clean up
+              <Icon name="sparkle" /> <span className="lib-btn-label">Clean up</span>
             </button>
           )}
           {links.length > 0 && (

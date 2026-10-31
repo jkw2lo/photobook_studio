@@ -56,6 +56,8 @@ export interface CollageSettings {
   frameShape?: string;
   /** Where the photos go, as fractions of the sheet (templates leave room for text). Missing = the whole sheet inside the margin. */
   area?: Rect;
+  /** A freeform outline the photos fill (fractions of the sheet); `area` is then its bounding box. */
+  areaShape?: { x: number; y: number }[];
   /** Which photos Arrange and Shuffle use: the strongest `photoCount`, every usable photo, or only
    * the photos already on the sheet. Missing = 'best'. */
   source?: CollageSource;

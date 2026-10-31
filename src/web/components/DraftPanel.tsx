@@ -5,7 +5,6 @@ import {
 } from '../../core';
 import { useEditor } from '../store';
 import { Icon } from './Icon';
-import { BookTemplatesSection } from './BookTemplates';
 
 /**
  * Run the generator as one undoable step and remember its report for the panel. A book started
@@ -73,8 +72,6 @@ export function DraftPanel() {
 
   return (
     <div className="stack">
-      <div className="section-title">Book templates</div>
-      <BookTemplatesSection />
       <div className="auto-collage">
         <div className="row between">
           <strong>Auto draft</strong>

@@ -21,7 +21,7 @@ export function previewCss(style: BookStyle, ts: TextStyle, px: number): CSSProp
   };
 }
 
-/** Book tab: choose a type pack, then fine-tune any role. */
+/** Elements › Type: choose a type pack, then fine-tune any role. */
 export function TypeSection() {
   const doc = useEditor((s) => s.doc)!;
   const { run } = useEditor.getState();

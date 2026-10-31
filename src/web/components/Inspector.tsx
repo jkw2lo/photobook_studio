@@ -9,69 +9,215 @@ import { thumbUrl } from '../api';
 import { duplicate, remove, togglePin, toggleKeepCrop, toggleKeepRotation, toggleLock } from '../elementActions';
 import { selectedElement, useEditor } from '../store';
 import { ColorInput } from './ColorInput';
-import { BookPanel } from './BookPanel';
+import { BookStyleSettings, PrintSettings, TextColorField, TitleFields, VersionHistory } from './BookPanel';
+import { BookTemplatesSection } from './BookTemplates';
+import { PosterTemplates } from './PosterTemplates';
+import { TypeSection } from './TypePanel';
 import { CoverPanel } from './CoverPanel';
 import { FontPicker } from './FontPicker';
-import { PosterPanel } from './PosterUI';
+import { PosterBackgroundPanel, PosterCollagePanel, PosterSheetPanel } from './PosterUI';
 import { DraftPanel } from './DraftPanel';
 import { CalendarControls } from './CalendarControls';
-import { OpacitySlider, PhotoAdjustControls, PhotoShapeControls, ShapeControls, TextEffects } from './DesignPanel';
-import { AddPanel, type AddSection } from './AddPanel';
+import { GradeControls, OpacitySlider, PhotoAdjustControls, PhotoShapeControls, ShapeControls, TextEffects } from './DesignPanel';
+import { AddPanel, addSections, type AddSection } from './AddPanel';
 import { AlignTools, LayersPanel, MultiPanel } from './SelectionPanel';
 import { Icon } from './Icon';
 import { PreflightPanel } from './PreflightPanel';
 import { TemplatePicker } from './TemplatePicker';
 
-type Tab = 'edit' | 'add' | 'draft' | 'book' | 'preflight';
+// The right-hand panel: four tabs that never change name — Layout (the poster or page itself),
+// Photo (the selected photo, and all photos), Elements (text, shapes and the rest: add and edit),
+// Preflight — each with its own sections in a rail down the left. Layers sit underneath, in a dock
+// whose height you drag.
 
-/** Sub-tabs within each kind of element panel (remembered per kind while you work). */
+type Top = 'layout' | 'photo' | 'elements' | 'preflight';
+type PosterSide = 'collage' | 'templates' | 'background' | 'sheet';
+type BookSide = 'page' | 'draft' | 'templates' | 'book';
+type PhotoSide = 'photo' | 'adjust' | 'cutout' | 'position' | 'all';
+type ElementsSide = 'selected' | AddSection | 'type';
+
+/** Sub-tabs inside the text, shape and calendar panels (remembered per kind while you work). */
 type Sub = { image: 'photo' | 'adjust' | 'cutout' | 'position'; text: 'text' | 'effects' | 'position'; shape: 'shape' | 'position'; calendar: 'calendar' | 'position' };
 const DEFAULT_SUB: Sub = { image: 'photo', text: 'text', shape: 'shape', calendar: 'calendar' };
 
+interface RailItem<T extends string> {
+  id: T;
+  label: string;
+  icon: string;
+  dim?: boolean;
+}
+
+function SideRail<T extends string>({ items, value, onChange, label }: { items: RailItem<T>[]; value: T; onChange: (v: T) => void; label: string }) {
+  return (
+    <nav className="side-rail" role="tablist" aria-label={label} aria-orientation="vertical">
+      {items.map((x) => (
+        <button key={x.id} role="tab" aria-selected={value === x.id} className={`${value === x.id ? 'on' : ''} ${x.dim ? 'dim' : ''}`} onClick={() => onChange(x.id)} title={x.label}>
+          <Icon name={x.icon} size={17} />
+          <span>{x.label}</span>
+        </button>
+      ))}
+    </nav>
+  );
+}
+
 export function Inspector({ issueCount }: { issueCount: { error: number; warning: number } }) {
-  const [tab, setTab] = useState<Tab>('edit');
+  const [top, setTop] = useState<Top>('layout');
+  const [posterSide, setPosterSide] = useState<PosterSide>('collage');
+  const [bookSide, setBookSide] = useState<BookSide>('page');
+  const [photoSide, setPhotoSide] = useState<PhotoSide>('all');
+  const [elementsSide, setElementsSide] = useState<ElementsSide>('text');
   const [sub, setSub] = useState<Sub>(DEFAULT_SUB);
-  const [addSection, setAddSection] = useState<AddSection>('text');
   const selected = useEditor(selectedElement);
   const multiCount = useEditor((s) => s.multi.length);
   const onCover = useEditor((s) => s.currentSpread === COVER_INDEX);
   const poster = useEditor((s) => s.doc?.settings.product === 'poster');
+  const doc = useEditor((s) => s.doc)!;
+  const index = useEditor((s) => s.currentSpread);
   const collageFocus = useEditor((s) => s.collageFocus);
   const draftFocus = useEditor((s) => s.draftFocus);
+  const photoSelected = multiCount <= 1 && selected?.type === 'image';
+  const otherSelected = !!selected && (multiCount > 1 || selected.type !== 'image');
+
   useEffect(() => {
-    if (collageFocus) setTab('edit');
+    if (!collageFocus) return;
+    setTop('layout');
+    setPosterSide('collage');
   }, [collageFocus]);
   useEffect(() => {
-    if (draftFocus) setTab('draft');
+    if (!draftFocus) return;
+    setTop('layout');
+    setBookSide('draft');
   }, [draftFocus]);
-  // Posters have no Draft tab (Auto collage lives in the Poster panel).
+  // Selecting something brings up its controls: photos in Photo, everything else in Elements.
+  // Clicking away goes back to the tab you were on, if the selection is what switched it.
+  const returnTo = useRef<{ from: Top; to: Top } | null>(null);
   useEffect(() => {
-    if (poster && tab === 'draft') setTab('edit');
-  }, [poster, tab]);
+    if (!selected) {
+      const r = returnTo.current;
+      returnTo.current = null;
+      if (r) setTop((t) => (t === r.to ? r.from : t));
+      return;
+    }
+    const to: Top = photoSelected ? 'photo' : 'elements';
+    if (photoSelected) setPhotoSide((p) => (p === 'all' ? 'photo' : p));
+    else setElementsSide('selected');
+    setTop((t) => {
+      if (t !== to) returnTo.current = { from: returnTo.current?.from ?? t, to };
+      return to;
+    });
+  }, [selected?.id, multiCount > 1]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (selected) setTab('edit');
-  }, [selected?.id]);
+    if (!otherSelected) setElementsSide((e) => (e === 'selected' ? 'text' : e));
+  }, [otherSelected]);
+
+  const layoutItems: RailItem<string>[] = poster
+    ? [{ id: 'collage', label: 'Collage', icon: 'grid' }, { id: 'templates', label: 'Templates', icon: 'sparkle' }, { id: 'background', label: 'Background', icon: 'image' }, { id: 'sheet', label: 'Sheet', icon: 'fit' }]
+    : [{ id: 'page', label: onCover ? 'Cover' : 'Page', icon: 'spread' }, { id: 'draft', label: 'Draft', icon: 'shuffle' }, { id: 'templates', label: 'Templates', icon: 'sparkle' }, { id: 'book', label: 'Book', icon: 'page' }];
+  const photoItems: RailItem<PhotoSide>[] = [
+    { id: 'photo', label: 'Photo', icon: 'crop', dim: !photoSelected },
+    { id: 'adjust', label: 'Adjust', icon: 'sliders', dim: !photoSelected },
+    { id: 'cutout', label: 'Shape', icon: 'shape', dim: !photoSelected },
+    { id: 'position', label: 'Position', icon: 'move', dim: !photoSelected },
+    { id: 'all', label: 'All photos', icon: 'palette' },
+  ];
+  const elementItems: RailItem<ElementsSide>[] = [
+    ...(otherSelected ? [{ id: 'selected' as const, label: 'Selected', icon: 'select' }] : []),
+    ...addSections(doc, index).map((x) => ({ id: x.id, label: x.label, icon: ({ text: 'text', shapes: 'star', calendar: 'calendar', map: 'map', pages: 'page' } as const)[x.id] })),
+    { id: 'type', label: 'Type', icon: 'type' },
+  ];
+
+  const layoutSide = poster ? posterSide : bookSide;
   return (
     <aside className="inspector">
-      <div className="tabs">
-        <button className={tab === 'edit' ? 'on' : ''} onClick={() => setTab('edit')}>{multiCount > 1 ? 'Selection' : selected ? ({ image: 'Photo', text: 'Text', shape: 'Shape', calendar: 'Calendar' } as const)[selected.type] : poster ? 'Poster' : onCover ? 'Cover' : 'Spread'}</button>
-        <button className={tab === 'add' ? 'on' : ''} onClick={() => setTab('add')} title="Add text, shapes, icons, calendars, maps and page designs"><Icon name="plus" size={13} /> Add</button>
-        {!poster && <button className={tab === 'draft' ? 'on' : ''} onClick={() => setTab('draft')}>Draft</button>}
-        <button className={tab === 'book' ? 'on' : ''} onClick={() => setTab('book')}>{poster ? 'Print' : 'Book'}</button>
-        <button className={tab === 'preflight' ? 'on' : ''} onClick={() => setTab('preflight')}>
+      <div className="tabs" role="tablist" aria-label="Panels">
+        {([['layout', 'Layout'], ['photo', 'Photo'], ['elements', 'Elements']] as const).map(([id, label]) => (
+          <button key={id} role="tab" aria-selected={top === id} className={top === id ? 'on' : ''} onClick={() => { returnTo.current = null; setTop(id); }}>{label}</button>
+        ))}
+        <button role="tab" aria-selected={top === 'preflight'} className={top === 'preflight' ? 'on' : ''} onClick={() => { returnTo.current = null; setTop('preflight'); }}>
           Preflight
           {issueCount.error > 0 ? <span className="pill pill-error">{issueCount.error}</span> : issueCount.warning > 0 ? <span className="pill pill-warn">{issueCount.warning}</span> : <span className="pill pill-ok"><Icon name="check" size={11} /></span>}
         </button>
       </div>
-      <div className="inspector-body">
-        {tab === 'edit' && (multiCount > 1 ? <MultiPanel /> : selected ? <ElementPanel sub={sub} setSub={setSub} /> : poster ? <PosterPanel /> : onCover ? <CoverPanel /> : <SpreadPanel />)}
-        {tab === 'add' && <AddPanel section={addSection} onSection={setAddSection} />}
-        {tab === 'edit' && <LayersPanel />}
-        {tab === 'draft' && <DraftPanel />}
-        {tab === 'book' && <BookPanel />}
-        {tab === 'preflight' && <PreflightPanel />}
+      <div className="inspector-main">
+        {top === 'layout' && <SideRail label="Layout" items={layoutItems} value={layoutSide} onChange={(v) => (poster ? setPosterSide(v as PosterSide) : setBookSide(v as BookSide))} />}
+        {top === 'photo' && <SideRail label="Photo" items={photoItems} value={photoSide} onChange={setPhotoSide} />}
+        {top === 'elements' && <SideRail label="Elements" items={elementItems} value={elementItems.some((x) => x.id === elementsSide) ? elementsSide : 'text'} onChange={setElementsSide} />}
+        <div className="inspector-body">
+          {top === 'layout' && poster && posterSide === 'collage' && <PosterCollagePanel />}
+          {top === 'layout' && poster && posterSide === 'templates' && <div className="stack"><TitleFields /><div className="section-title">Templates</div><PosterTemplates /></div>}
+          {top === 'layout' && poster && posterSide === 'background' && <PosterBackgroundPanel />}
+          {top === 'layout' && poster && posterSide === 'sheet' && <div className="stack"><PosterSheetPanel /><PrintSettings /><VersionHistory /></div>}
+          {top === 'layout' && !poster && bookSide === 'page' && (onCover ? <CoverPanel /> : <SpreadPanel />)}
+          {top === 'layout' && !poster && bookSide === 'draft' && <DraftPanel />}
+          {top === 'layout' && !poster && bookSide === 'templates' && <div className="stack"><TitleFields /><div className="section-title">Book templates</div><BookTemplatesSection /></div>}
+          {top === 'layout' && !poster && bookSide === 'book' && <div className="stack"><PrintSettings /><BookStyleSettings /><VersionHistory /></div>}
+
+          {top === 'photo' && photoSide === 'all' && <div className="stack"><div className="section-title">Colour grade</div><GradeControls /></div>}
+          {top === 'photo' && photoSide !== 'all' && (photoSelected ? <ElementPanel sub={{ ...sub, image: photoSide }} setSub={setSub} railDriven /> : (
+            <div className="panel-empty">
+              <Icon name="image" size={22} />
+              <p>Click a photo on the {poster ? 'sheet' : 'page'} to crop, adjust or shape it.</p>
+              <p className="muted small">Double-click a photo to crop it straight away. All photos has the colour grade for every photo.</p>
+            </div>
+          ))}
+
+          {top === 'elements' && elementsSide === 'selected' && otherSelected && (multiCount > 1 ? <MultiPanel /> : <ElementPanel sub={sub} setSub={setSub} />)}
+          {top === 'elements' && elementsSide !== 'selected' && elementsSide !== 'type' && <AddPanel section={elementsSide} />}
+          {top === 'elements' && (elementsSide === 'type' || (elementsSide === 'selected' && !otherSelected)) && (
+            <div className="stack"><TextColorField /><TypeSection /></div>
+          )}
+
+          {top === 'preflight' && <PreflightPanel />}
+        </div>
       </div>
+      <LayersDock />
     </aside>
+  );
+}
+
+const LAYERS_KEY = 'photobook:layersHeight';
+
+/** Layers under the panel; drag the divider to give either more room. */
+function LayersDock() {
+  const [height, setHeight] = useState(() => {
+    try {
+      return Number(localStorage.getItem(LAYERS_KEY)) || 180;
+    } catch {
+      return 180;
+    }
+  });
+  const ref = useRef<HTMLDivElement>(null);
+  const onDown = (e: React.PointerEvent) => {
+    const panel = ref.current?.parentElement;
+    if (!panel) return;
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = height;
+    const max = panel.clientHeight - 160;
+    let next = startH;
+    const move = (ev: PointerEvent) => {
+      next = Math.max(44, Math.min(max, startH + startY - ev.clientY));
+      setHeight(next);
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      try {
+        localStorage.setItem(LAYERS_KEY, String(Math.round(next)));
+      } catch {
+        // storage unavailable
+      }
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  return (
+    <div className="layers-dock" ref={ref} style={{ height }}>
+      <div className="dock-divider" role="separator" aria-orientation="horizontal" aria-label="Resize layers" title="Drag to resize" onPointerDown={onDown} onDoubleClick={() => setHeight(height > 60 ? 44 : 180)}>
+        <span />
+      </div>
+      <LayersPanel docked />
+    </div>
   );
 }
 
@@ -144,7 +290,7 @@ export function SubTabs<T extends string>({ items, value, onChange }: { items: {
   );
 }
 
-function ElementPanel({ sub, setSub }: { sub: Sub; setSub: (s: Sub) => void }) {
+function ElementPanel({ sub, setSub, railDriven }: { sub: Sub; setSub: (s: Sub) => void; railDriven?: boolean }) {
   const doc = useEditor((s) => s.doc)!;
   const sel = useEditor((s) => s.selection)!;
   const el = useEditor(selectedElement)!;
@@ -173,7 +319,7 @@ function ElementPanel({ sub, setSub }: { sub: Sub; setSub: (s: Sub) => void }) {
         </div>
       </div>
 
-      {el.type === 'image' && (
+      {el.type === 'image' && !railDriven && (
         <SubTabs
           items={[{ id: 'photo', label: 'Photo' }, ...(el.assetId ? [{ id: 'adjust' as const, label: 'Adjust' }] : []), { id: 'cutout', label: 'Cut-out' }, { id: 'position', label: 'Position' }]}
           value={!el.assetId && sub.image === 'adjust' ? 'photo' : sub.image} onChange={(v) => setSub({ ...sub, image: v })}
@@ -379,7 +525,7 @@ function TextControls({ el, spreadId, part }: { el: TextElement; spreadId: strin
         </select>
       </div>
       {el.styleLinked !== false ? (
-        <p className="muted small style-status">Follows the {roleLabel(el.role)} style — change it everywhere in the {doc.settings.product === 'poster' ? 'Print' : 'Book'} tab.</p>
+        <p className="muted small style-status">Follows the {roleLabel(el.role)} style — change it everywhere in Elements › Type.</p>
       ) : (
         <div className="style-status custom">
           <span className="small">Custom look</span>
@@ -530,7 +676,7 @@ function SpreadPanel() {
         </button>
       </div>
 
-      <p className="muted small">Text, shapes, calendars, maps and ready-made pages (contents, quotes…) are in the <strong>Add</strong> tab.</p>
+      <p className="muted small">Text, shapes, calendars, maps and ready-made pages (contents, quotes…) are in the <strong>Elements</strong> tab.</p>
 
       <label className="field">
         <span>Chapter</span>

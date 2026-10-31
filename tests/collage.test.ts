@@ -210,4 +210,43 @@ describe('arranging by look', () => {
     expect(ids(byLook)).not.toEqual(ids(byTime));
     expect(preflight(byLook, assetMap(photos)).filter((i) => i.severity === 'error')).toEqual([]);
   });
+
+  it('shuffling a collage arranged by look or colour rearranges it (and still flows)', () => {
+    const photos = Array.from({ length: 12 }, (_, i) => tinted([[220, 40, 40], [40, 200, 60], [40, 60, 220], [230, 180, 40]][i % 4] as [number, number, number], i));
+    for (const order of ['similar', 'color'] as const) {
+      const base = { style: 'mosaic' as const, photoCount: 12, gapMm: 2, marginMm: 12, titlePosition: 'none' as const, order };
+      const ids = (seed: number) => imgs(generatePoster(createPoster({ title: 'X', sizeId: 'p16x20' }), photos, { ...base, seed }).doc.spreads[0].elements).map((f) => f.assetId).join();
+      expect(new Set([ids(1), ids(2), ids(3)]).size).toBe(3);
+      // Variants keep look-alikes together: a shifted or reversed flow, not a random scatter.
+      const v = orderPhotos(photos, order, 3);
+      let switches = 0;
+      for (let i = 1; i < v.length; i++) if (v[i].analysis!.avgColor!.join() !== v[i - 1].analysis!.avgColor!.join()) switches++;
+      expect(switches).toBeLessThanOrEqual(4);
+    }
+  });
+});
+
+describe('freeform photo area', () => {
+  it('fills a drawn outline: photos inside it, edge photos cut to it', () => {
+    const photos = Array.from({ length: 20 }, (_, i) => fakeAsset({ minute: i * 5 }));
+    // A circle in the upper middle of the sheet (fractions of the sheet).
+    const shape = Array.from({ length: 48 }, (_, i) => ({ x: 0.5 + 0.35 * Math.cos((i / 48) * 2 * Math.PI), y: 0.35 + 0.27 * Math.sin((i / 48) * 2 * Math.PI) }));
+    const poster = createPoster({ title: 'X', sizeId: 'p16x20' });
+    const W = poster.settings.trimWidthMm;
+    const H = poster.settings.trimHeightMm;
+    const area = { x: 0.15, y: 0.08, w: 0.7, h: 0.54 };
+    const { doc, report } = generatePoster(poster, photos, { style: 'mosaic', photoCount: 20, gapMm: 2, marginMm: 0, titlePosition: 'none', seed: 1, area, areaShape: shape });
+    const frames = imgs(doc.spreads[0].elements);
+    expect(report.placed).toBeGreaterThanOrEqual(16);
+    const cx = 0.5 * W;
+    const cy = 0.35 * H;
+    for (const f of frames) {
+      // Every frame's centre is inside the circle (an ellipse in mm).
+      const u = (f.xMm + f.widthMm / 2 - cx) / (0.35 * W);
+      const v = (f.yMm + f.heightMm / 2 - cy) / (0.27 * H);
+      expect(u * u + v * v).toBeLessThan(1.05);
+    }
+    expect(frames.filter((f) => f.mask?.kind === 'outline').length).toBeGreaterThan(4);
+    expect(preflight(doc, assetMap(photos)).filter((i) => i.severity === 'error')).toEqual([]);
+  });
 });

@@ -3,10 +3,10 @@ import {
   COVER_INDEX, addPhotoAt, defaultCrop, effectiveDpi, elementBounds, elementPlacement, geometryFor, innerBox, panCrop, toInnerBox, zoomCropAt,
   elementsInRect, expandGroups, sizeSnap, spacingSnap, type SpacingMark, pageContentRect, pointInElement, setFramePhoto, unionBounds, surfaceAt, swapFramePhotos, updateElement, type BookDocument,
   type Element, type ImageElement, type PhotoAsset, type SurfaceGeometry, MM_PER_PT,
-  backgroundArea, backgroundBox, imagePlacement, moveBackground, reframeCrop, scaleBackground, updateBackgroundImage, type BackgroundImage, type CropHandle, type Rect,
+  backgroundArea, backgroundBox, imagePlacement, moveBackground, polygonArea, reframeCrop, scaleBackground, simplifyOutline, updateBackgroundImage, type BackgroundImage, type CropHandle, type Rect,
 } from '../../core';
 import { thumbUrl } from '../api';
-import { setPhotoArea } from '../elementActions';
+import { applyAreaTool, setPhotoArea } from '../elementActions';
 import { selectedIds, useEditor, type CanvasTool } from '../store';
 import { ContextMenu, type MenuTarget } from './ContextMenu';
 import { Icon } from './Icon';
@@ -31,6 +31,8 @@ type Gesture =
   | { kind: 'bgmove'; start: Pt; orig: BackgroundImage }
   | { kind: 'bgscale'; anchor: Pt; startDist: number; orig: BackgroundImage }
   | { kind: 'area'; start: Pt; orig: Rect; handle: Handle | 'move' | 'draw'; before: Rect | null }
+  /** Freeform photo area: the outline being drawn (mm). */
+  | { kind: 'lasso'; points: Pt[]; before: Pt[] | null }
   | { kind: 'swap'; orig: ImageElement; at: Pt; client: Pt; target: string | null }
   | { kind: 'multimove'; start: Pt; origs: Element[]; moved: boolean; clickedId: string; wasSelected: boolean }
   | { kind: 'marquee'; start: Pt; additive: boolean; base: string[] };
@@ -226,6 +228,11 @@ export function Canvas() {
       return;
     }
     // Marking the photo area: drag its edges, move it, or draw a new one.
+    if (tool?.kind === 'area' && tool.mode === 'free') {
+      capture(e.pointerId);
+      gestureRef.current = { kind: 'lasso', points: [p], before: tool.shape };
+      return;
+    }
     if (tool?.kind === 'area') {
       capture(e.pointerId);
       const r = tool.rect ? areaMm(tool.rect) : null;
@@ -330,6 +337,15 @@ export function Canvas() {
         ? moveBackground(gst.orig, g, bgAsset, p.x - gst.start.x, p.y - gst.start.y)
         : scaleBackground(gst.orig, g, bgAsset, Math.hypot(p.x - gst.anchor.x, p.y - gst.anchor.y) / gst.startDist, gst.anchor);
       gesture((d) => updateBackgroundImage(d, sid, patch));
+      return;
+    }
+    if (gst.kind === 'lasso') {
+      const t = useEditor.getState().canvasTool;
+      if (t?.kind !== 'area') return;
+      const last = gst.points[gst.points.length - 1];
+      if (Math.hypot(p.x - last.x, p.y - last.y) * scale < 2) return;
+      gst.points.push({ x: Math.max(0, Math.min(W, p.x)), y: Math.max(0, Math.min(H, p.y)) });
+      useEditor.setState({ canvasTool: { ...t, shape: gst.points.map((q) => ({ x: q.x / W, y: q.y / H })) } });
       return;
     }
     if (gst.kind === 'area') {
@@ -572,6 +588,17 @@ export function Canvas() {
       if (t?.kind === 'area' && gst.handle === 'draw' && (!t.rect || t.rect.w * W < 10 || t.rect.h * H < 10)) useEditor.setState({ canvasTool: { ...t, rect: gst.before } });
       return;
     }
+    if (gst.kind === 'lasso') {
+      const t = useEditor.getState().canvasTool;
+      if (t?.kind !== 'area') return;
+      // Tidy the outline; points near the sheet's edge snap to it (photos then run into the bleed).
+      const snap = 8 / scale;
+      const edge = (v: number, max: number) => (v < snap ? 0 : v > max - snap ? max : v);
+      const pts = simplifyOutline(gst.points, 3 / scale, 1.5 / scale).map((q) => ({ x: edge(q.x, W), y: edge(q.y, H) }));
+      const big = pts.length >= 3 && Math.abs(polygonArea(pts)) > 400;
+      useEditor.setState({ canvasTool: { ...t, shape: big ? pts.map((q) => ({ x: q.x / W, y: q.y / H })) : gst.before } });
+      return;
+    }
     if (gst.kind === 'cropbox') return endGesture('Crop photo');
     const labels = { move: 'Move', resize: 'Resize', rotate: 'Rotate', crop: 'Adjust crop', cropzoom: 'Zoom photo' } as const;
     endGesture(`${labels[gst.kind]} ${gst.orig.type === 'image' ? 'photo' : gst.orig.type === 'text' ? 'text' : 'shape'}`);
@@ -684,7 +711,8 @@ export function Canvas() {
             {showGuides && <Guides g={g} scale={scale} />}
             {cropEl && cropAsset && <CropGhost el={cropEl} scale={scale} offset={b} assetId={cropAsset.id} asset={cropAsset} />}
             {tool?.kind === 'background' && bg && bgAsset && <BgGhost bg={bg} g={g} asset={bgAsset} scale={scale} />}
-            {tool?.kind === 'area' && <AreaShade rect={tool.rect ? areaMm(tool.rect) : null} scale={scale} offset={b} />}
+            {tool?.kind === 'area' && tool.mode === 'box' && <AreaShade rect={tool.rect ? areaMm(tool.rect) : null} scale={scale} offset={b} />}
+            {tool?.kind === 'area' && tool.mode === 'free' && <OutlineShade shape={tool.shape?.map((q) => ({ x: q.x * W, y: q.y * H })) ?? null} scale={scale} offset={b} />}
             {guides.map((gl, i) =>
               gl.axis === 'x' ? <div key={i} className="snap-line snap-x" style={{ left: (gl.at + b) * scale }} /> : <div key={i} className="snap-line snap-y" style={{ top: (gl.at + b) * scale }} />,
             )}
@@ -729,7 +757,7 @@ export function Canvas() {
               {selected && !selected.locked && !editingText && !cropId && multiEls.length <= 1 && <HandleLayer el={selected} scale={scale} offset={b} />}
               {cropEl && cropAsset && <CropHandles el={cropEl} asset={cropAsset} scale={scale} offset={b} />}
               {tool?.kind === 'background' && bg && bgAsset && <CornerHandles rect={bgExtents(bg, g, bgAsset)} scale={scale} offset={b} prefix="bg-" title="Drag to resize the photo" />}
-              {tool?.kind === 'area' && tool.rect && <AreaHandles rect={areaMm(tool.rect)} scale={scale} offset={b} />}
+              {tool?.kind === 'area' && tool.mode === 'box' && tool.rect && <AreaHandles rect={areaMm(tool.rect)} scale={scale} offset={b} />}
             </div>
           </SpreadView>
           <div className="page-labels" style={{ width: totalW }}>
@@ -907,6 +935,18 @@ function AreaShade({ rect, scale, offset }: { rect: Rect | null; scale: number; 
   );
 }
 
+/** The freeform photo area while it's being drawn: everything outside the outline dimmed. */
+function OutlineShade({ shape, scale, offset }: { shape: Pt[] | null; scale: number; offset: number }) {
+  if (!shape || shape.length < 2) return <div className="area-shade"><div className="area-hint">Draw around where the photos should go — let go to close the outline</div></div>;
+  const d = shape.map((q, i) => `${i ? 'L' : 'M'}${((q.x + offset) * scale).toFixed(1)} ${((q.y + offset) * scale).toFixed(1)}`).join(' ') + ' Z';
+  return (
+    <svg className="area-shade area-outline" width="100%" height="100%">
+      <path d={`M-9999 -9999 H9999 V9999 H-9999 Z ${d}`} fillRule="evenodd" className="area-outline-dim" />
+      <path d={d} className="area-outline-line" />
+    </svg>
+  );
+}
+
 function AreaHandles({ rect, scale, offset }: { rect: Rect; scale: number; offset: number }) {
   return (
     <div className="handles" style={{ left: (rect.x + offset) * scale, top: (rect.y + offset) * scale, width: rect.w * scale, height: rect.h * scale }}>
@@ -928,13 +968,18 @@ function ToolBar({ tool }: { tool: CanvasTool }) {
       </div>
     );
   }
+  const ready = tool.mode === 'box' ? !!tool.rect : !!tool.shape && tool.shape.length >= 3;
   return (
     <div className="crop-toolbar" onPointerDown={(e) => e.stopPropagation()}>
       <strong className="small">Photo area</strong>
+      <div className="seg seg-compact" role="radiogroup" aria-label="Area shape">
+        <button role="radio" aria-checked={tool.mode === 'box'} className={tool.mode === 'box' ? 'on' : ''} onClick={() => useEditor.setState({ canvasTool: { ...tool, mode: 'box' } })} title="A rectangle with handles">Box</button>
+        <button role="radio" aria-checked={tool.mode === 'free'} className={tool.mode === 'free' ? 'on' : ''} onClick={() => useEditor.setState({ canvasTool: { ...tool, mode: 'free' } })} title="Draw any outline, like a lasso">Freeform</button>
+      </div>
       <button className="btn btn-small btn-ghost" onClick={() => setPhotoArea(undefined)} title="Let the photos use the whole sheet again">Whole sheet</button>
       <button className="btn btn-small btn-ghost" onClick={() => st.setCanvasTool(null)}>Cancel</button>
-      <button className="btn btn-small btn-primary" disabled={!tool.rect} onClick={() => tool.rect && setPhotoArea(tool.rect)}>Apply</button>
-      <span className="crop-tip muted">Drag to draw a box · drag its edges to adjust · Alt turns off edge snapping</span>
+      <button className="btn btn-small btn-primary" disabled={!ready} onClick={() => applyAreaTool(tool)}>Apply</button>
+      <span className="crop-tip muted">{tool.mode === 'box' ? 'Drag to draw a box · drag its edges to adjust · Alt turns off edge snapping' : 'Drag around the area, like a lasso · draw again to replace it · Enter applies'}</span>
     </div>
   );
 }

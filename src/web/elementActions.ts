@@ -1,5 +1,5 @@
 import { DEFAULT_COLLAGE, duplicateElement, duplicateElements, groupElements, relayoutPoster, removeElements, reorderElement, reorderElements, setLockedMany, ungroupElements, updateElement, type CollageSettings, type Element, type Rect } from '../core';
-import { selectedIds, useEditor, type Selection } from './store';
+import { selectedIds, useEditor, type CanvasTool, type Selection } from './store';
 
 // Element actions shared by the inspector, the right-click menu and keyboard shortcuts.
 
@@ -85,15 +85,29 @@ export function ungroup(sel: Selection) {
 }
 
 /**
- * Where a poster's photos go (fractions of the sheet; undefined = the whole sheet), then re-flow
- * the photos on it into that area.
+ * Where a poster's photos go (fractions of the sheet; undefined = the whole sheet), optionally a
+ * freeform outline inside that box, then re-flow the photos on it into that area.
  */
-export function setPhotoArea(area: Rect | undefined) {
+export function setPhotoArea(area: Rect | undefined, shape?: { x: number; y: number }[]) {
   const s = st();
   if (!s.doc) return;
-  const next: CollageSettings = { ...(s.doc.collage ?? DEFAULT_COLLAGE), area };
+  const next: CollageSettings = { ...(s.doc.collage ?? DEFAULT_COLLAGE), area, areaShape: area ? shape : undefined };
   if (!area) delete next.area;
+  if (!next.areaShape) delete next.areaShape;
   const hasPhotos = s.doc.spreads[0]?.elements.some((e) => e.type === 'image' && e.assetId);
   s.run(area ? 'Set photo area' : 'Use the whole sheet for photos', (d) => (hasPhotos ? relayoutPoster(d, s.assetMap, next) : { ...d, collage: next }));
   s.setCanvasTool(null);
+}
+
+/** Apply what the photo-area tool has marked (a box, or a freeform outline and its bounds). */
+export function applyAreaTool(tool: CanvasTool) {
+  if (tool.kind !== 'area') return;
+  if (tool.mode === 'free' && tool.shape && tool.shape.length >= 3) {
+    const xs = tool.shape.map((p) => p.x);
+    const ys = tool.shape.map((p) => p.y);
+    const x = Math.min(...xs);
+    const y = Math.min(...ys);
+    return setPhotoArea({ x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y }, tool.shape);
+  }
+  if (tool.mode === 'box' && tool.rect) setPhotoArea(tool.rect);
 }

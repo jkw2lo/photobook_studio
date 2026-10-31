@@ -4,7 +4,7 @@ import { PageAddonsSection } from './BookTemplates';
 import { ElementsPalette } from './DesignPanel';
 import { TextChoices } from './TypePanel';
 
-// The Add tab: everything you can put on a page or poster, in one place and always one click away
+// Elements › Text, Shapes, Calendar, Map, Pages: everything you can put on a page or poster, in one place and always one click away
 // — text, shapes / banners / lines / icons, calendars, map outlines and (books) whole page designs.
 // New items land in the middle of the page you're on and are selected, ready to edit.
 
@@ -22,30 +22,28 @@ function addPoint(doc: BookDocument, index: number): { x: number; y: number } {
   return { x: s.trimWidthMm * (right ? 1.5 : 0.5), y: s.trimHeightMm / 2 };
 }
 
-export function AddPanel({ section, onSection }: { section: AddSection; onSection: (s: AddSection) => void }) {
-  const doc = useEditor((s) => s.doc)!;
-  const index = useEditor((s) => s.currentSpread);
-  const poster = doc.settings.product === 'poster';
-  const surface = index === COVER_INDEX ? doc.cover : doc.spreads[index];
-  const sections: { id: AddSection; label: string }[] = [
+/** What can be added on the current page (books also get whole page designs). */
+export function addSections(doc: BookDocument, index: number): { id: AddSection; label: string }[] {
+  return [
     { id: 'text', label: 'Text' },
     { id: 'shapes', label: 'Shapes' },
     { id: 'calendar', label: 'Calendar' },
     { id: 'map', label: 'Map' },
-    ...(!poster && index !== COVER_INDEX ? [{ id: 'pages' as const, label: 'Pages' }] : []),
+    ...(doc.settings.product !== 'poster' && index !== COVER_INDEX ? [{ id: 'pages' as const, label: 'Pages' }] : []),
   ];
-  const current = sections.some((x) => x.id === section) ? section : 'text';
-  if (!surface) return <p className="muted small">Create the cover first (Cover panel), then add to it here.</p>;
+}
+
+export function AddPanel({ section }: { section: AddSection }) {
+  const doc = useEditor((s) => s.doc)!;
+  const index = useEditor((s) => s.currentSpread);
+  const poster = doc.settings.product === 'poster';
+  const surface = index === COVER_INDEX ? doc.cover : doc.spreads[index];
+  const current = addSections(doc, index).some((x) => x.id === section) ? section : 'text';
+  if (!surface) return <p className="muted small">Create the cover first (Layout › Cover), then add to it here.</p>;
   if (surface.locked && current !== 'pages') return <p className="muted small">This {index === COVER_INDEX ? 'cover' : 'spread'} is locked. Unlock it to add things.</p>;
   const at = addPoint(doc, index);
-  // (shapes, calendars and maps go in the middle)
   return (
     <div className="stack add-panel">
-      <div className="subtabs" role="tablist" aria-label="Add">
-        {sections.map((x) => (
-          <button key={x.id} role="tab" aria-selected={current === x.id} className={current === x.id ? 'on' : ''} onClick={() => onSection(x.id)}>{x.label}</button>
-        ))}
-      </div>
       {/* Text lands low on the page, where captions and titles usually go, rather than over the photos. */}
       {current === 'text' && <TextChoices surfaceId={surface.id} at={{ x: at.x, y: doc.settings.trimHeightMm * (poster ? 0.9 : 0.85) }} />}
       {current === 'shapes' && <ElementsPalette surfaceId={surface.id} at={at} only="shapes" />}

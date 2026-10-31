@@ -6,7 +6,7 @@ import {
 } from '../../core';
 import { useEditor } from '../store';
 
-// Book templates (whole-book looks, in the Draft tab) and page add-ons (contents, text sections,
+// Book templates (whole-book looks, in Layout › Templates) and page add-ons (contents, text sections,
 // quotes, openers… in the spread panel).
 
 /** Elements drawn small and simplified: text as real type, shapes as paths, frames as grey boxes. */

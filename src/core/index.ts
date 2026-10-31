@@ -31,3 +31,4 @@ export * from './selection';
 export * from './cleanup';
 export * from './spacing';
 export * from './calendar';
+export * from './freeform';

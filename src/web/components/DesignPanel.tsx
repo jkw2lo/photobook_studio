@@ -61,7 +61,7 @@ export function OpacitySlider({ spreadId, ids, value, label = 'Opacity' }: { spr
 
 export function ElementsPalette({ surfaceId, at, only }: { surfaceId: string; at: { x: number; y: number }; only?: 'shapes' | 'calendar' | 'map' }) {
   const [picked, setCat] = useState<ShapeCategory | 'calendar' | 'map'>('shape');
-  // Shown as one part of the Add tab: calendars and maps get their own sections there.
+  // Shown as one part of the Elements tab: calendars and maps get their own sections there.
   const cat = only === 'calendar' ? 'calendar' : only === 'map' ? 'map' : only === 'shapes' && (picked === 'calendar' || picked === 'map') ? 'shape' : picked;
   const [mapFill, setMapFill] = useState<'outline' | 'filled'>('outline');
   const [mapPlace, setMapPlace] = useState<'sticker' | 'background'>('sticker');
@@ -461,6 +461,7 @@ export function GradeSliders({ value, apply, label }: { value: ColorGrade; apply
 
 export function GradeControls() {
   const grade = useEditor((s) => s.doc?.grade) ?? NO_GRADE;
+  const poster = useEditor((s) => s.doc?.settings.product === 'poster');
   const { run } = useEditor.getState();
   const apply = (d: BookDocument, next: ColorGrade | undefined) => ({ ...d, grade: next && !isNeutralGrade(next) ? next : undefined });
   return (
@@ -479,7 +480,7 @@ export function GradeControls() {
         })}
       </div>
       <GradeSliders value={grade} apply={apply} label="Grade" />
-      <p className="muted small">Applies to every photo on the poster (and the background image), on screen and in the PDF. Text and shapes keep their colours. Double-click a slider to reset it.</p>
+      <p className="muted small">Applies to every photo {poster ? 'on the poster (and the background image)' : 'in the book'}, on screen and in the PDF. Text and shapes keep their colours. Double-click a slider to reset it.</p>
     </div>
   );
 }

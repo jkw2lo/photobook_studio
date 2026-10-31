@@ -63,8 +63,11 @@ export function rgbToHsl([r, g, b]: [number, number, number]): [number, number, 
  * Order photos for a collage. 'similar' chains each photo to its nearest neighbour by colour grid
  * (palette + rough composition), so look-alikes sit together and the sheet flows from one mood to
  * the next. Photos without colour data keep time order at the end.
+ * `variant` (0 = the canonical order) gives other orders that still flow — the chain starts from a
+ * different photo, or the colour wheel from a different hue, and every other variant runs the
+ * other way — so shuffling a colour-ordered collage visibly changes it.
  */
-export function orderPhotos(photos: PhotoAsset[], order: PhotoOrder): PhotoAsset[] {
+export function orderPhotos(photos: PhotoAsset[], order: PhotoOrder, variant = 0): PhotoAsset[] {
   const timeOrdered = [...photos].sort((a, b) => (a.capturedAt ?? '').localeCompare(b.capturedAt ?? '') || a.fileName.localeCompare(b.fileName));
   if (order === 'time') return timeOrdered;
   const withColor = timeOrdered.filter((p) => p.analysis?.avgColor);
@@ -73,7 +76,8 @@ export function orderPhotos(photos: PhotoAsset[], order: PhotoOrder): PhotoAsset
     const hsl = new Map(withColor.map((p) => [p, rgbToHsl(p.analysis!.avgColor!)]));
     const vivid = withColor.filter((p) => hsl.get(p)![1] >= 0.12).sort((a, b) => hsl.get(a)![0] - hsl.get(b)![0]);
     const muted = withColor.filter((p) => hsl.get(p)![1] < 0.12).sort((a, b) => hsl.get(b)![2] - hsl.get(a)![2]);
-    return [...vivid, ...muted, ...without];
+    const out = [...variantRotate(vivid, variant), ...muted];
+    return [...(variant % 2 ? out.reverse() : out), ...without];
   }
   const vec = (p: PhotoAsset) => p.analysis!.colorGrid ?? [...p.analysis!.avgColor!, ...p.analysis!.avgColor!, ...p.analysis!.avgColor!];
   const dist = (a: number[], b: number[]) => {
@@ -82,8 +86,9 @@ export function orderPhotos(photos: PhotoAsset[], order: PhotoOrder): PhotoAsset
     return d;
   };
   const remaining = new Set(withColor);
-  // Start from the darkest photo so the chain runs dark → light.
-  let current = withColor.reduce<PhotoAsset | undefined>((best, p) => (!best || rgbToHsl(p.analysis!.avgColor!)[2] < rgbToHsl(best.analysis!.avgColor!)[2] ? p : best), undefined);
+  // Start from the darkest photo so the chain runs dark → light (variants start further along).
+  const byLight = [...withColor].sort((a, b) => rgbToHsl(a.analysis!.avgColor!)[2] - rgbToHsl(b.analysis!.avgColor!)[2]);
+  let current: PhotoAsset | undefined = variantRotate(byLight, variant)[0];
   const chain: PhotoAsset[] = [];
   while (current) {
     chain.push(current);
@@ -100,7 +105,15 @@ export function orderPhotos(photos: PhotoAsset[], order: PhotoOrder): PhotoAsset
     }
     current = next;
   }
-  return [...chain, ...without];
+  return [...(variant % 2 ? chain.reverse() : chain), ...without];
+}
+
+/** Variants 0,1 start at the beginning; each later pair starts about a fifth further round. */
+function variantRotate<T>(list: T[], variant: number): T[] {
+  if (list.length < 2) return list;
+  const step = Math.max(1, Math.round(list.length / 5));
+  const k = (Math.floor(variant / 2) * step) % list.length;
+  return [...list.slice(k), ...list.slice(0, k)];
 }
 
 export interface CollageResult {
@@ -176,7 +189,11 @@ export function freeRects(box: Rect, obstacles: Rect[], gap: number, minSize: nu
 export function layoutCollageAround(doc: Pick<BookDocument, 'style'>, box: Rect, photos: PhotoAsset[], opts: CollageOptions, obstacles: Rect[]): CollageResult {
   if (!obstacles.length) return layoutCollage(doc, box, photos, opts);
   const minSize = Math.max(12, Math.min(box.w, box.h) * 0.08);
-  const rects = freeRects(box, obstacles, opts.gapMm, minSize);
+  return layoutInRects(doc, freeRects(box, obstacles, opts.gapMm, minSize), photos, opts);
+}
+
+/** Share the photos out over several pieces of the sheet in proportion to their area, in reading order. */
+export function layoutInRects(doc: Pick<BookDocument, 'style'>, rects: Rect[], photos: PhotoAsset[], opts: CollageOptions): CollageResult {
   if (!rects.length || !photos.length) return { elements: [], used: [] };
   const isHero = opts.style === 'hero';
   const featured = isHero ? (opts.hero && photos.includes(opts.hero) ? opts.hero : photos[0]) : undefined;

@@ -111,24 +111,31 @@ function layerName(e: Element, assetName: (id: string) => string | undefined): s
   return shapeDef(e.shape).name;
 }
 
-/** Everything on the current page, top of the stack first: select, reorder, lock. */
-export function LayersPanel() {
+/** Everything on the current page, top of the stack first: select, reorder, lock. `docked`: always
+ * open, filling the layers dock under the side panel. */
+export function LayersPanel({ docked }: { docked?: boolean } = {}) {
   const doc = useEditor((s) => s.doc)!;
   const index = useEditor((s) => s.currentSpread);
   const assets = useEditor((s) => s.assetMap);
   const ids = useEditor(useShallow(selectedIds));
   const [open, setOpen] = useState(false);
   const surface = index === -1 ? doc.cover : doc.spreads[index];
-  if (!surface || !surface.elements.length) return null;
+  if (!surface || !surface.elements.length) {
+    return docked ? <div className="layers layers-docked"><div className="layers-head"><span>Layers</span></div><p className="muted small">Nothing on this {index === -1 ? 'cover' : doc.settings.product === 'poster' ? 'sheet' : 'spread'} yet.</p></div> : null;
+  }
   const { run, select, toggleInSelection } = useEditor.getState();
   const rows = [...surface.elements].reverse();
   return (
-    <div className="layers">
-      <button className="layers-head" onClick={() => setOpen(!open)} aria-expanded={open}>
-        <span>Layers <span className="muted">({surface.elements.length})</span></span>
-        <Icon name="down" size={12} />
-      </button>
-      {open && (
+    <div className={`layers ${docked ? 'layers-docked' : ''}`}>
+      {docked ? (
+        <div className="layers-head"><span>Layers <span className="muted">({surface.elements.length})</span></span></div>
+      ) : (
+        <button className="layers-head" onClick={() => setOpen(!open)} aria-expanded={open}>
+          <span>Layers <span className="muted">({surface.elements.length})</span></span>
+          <Icon name="down" size={12} />
+        </button>
+      )}
+      {(open || docked) && (
         <div className="layers-list" role="list">
           {rows.map((e) => {
             const i = surface.elements.indexOf(e);

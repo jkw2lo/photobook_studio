@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { findSurface, innerBox, issueCounts, moveElements, panCrop, updateElement, zoomCropAt } from '../../core';
-import { duplicate, group, remove, setPhotoArea, toggleLock, togglePin, ungroup } from '../elementActions';
+import { applyAreaTool, duplicate, group, remove, toggleLock, togglePin, ungroup } from '../elementActions';
 import { retrySave, selectedElement, selectedIds, useEditor } from '../store';
 import { Canvas } from './Canvas';
 import { ExportDialog } from './ExportDialog';
@@ -14,7 +14,7 @@ import { usePreflight } from './PreflightPanel';
 import { generateFirstCollage } from './PosterUI';
 import { generateFirstDraft } from './DraftPanel';
 
-/** Books: Auto draft lives in the side panel's Draft tab; an empty book is drafted right away. */
+/** Books: Auto draft lives in the side panel's Layout › Draft; an empty book is drafted right away. */
 function focusAutoDraft() {
   const st = useEditor.getState();
   st.select(null);
@@ -68,9 +68,10 @@ export function Editor({ projectId }: { projectId: string }) {
 
   return (
     <div className="editor">
+      <Library />
+      <div className="editor-main">
       <TopBar onGenerate={poster ? focusAutoCollage : focusAutoDraft} onExport={() => setDialog('export')} onPreview={() => setDialog('preview')} />
       <div className="workspace">
-        <Library />
         <main className="stage">
           {view === 'overview' ? <Overview /> : <Canvas />}
           {isEmpty && view === 'spread' && (
@@ -91,6 +92,7 @@ export function Editor({ projectId }: { projectId: string }) {
           {!poster && <Navigator />}
         </main>
         <Inspector issueCount={counts} />
+      </div>
       </div>
       <Toasts />
       {dialog === 'export' && <ExportDialog onClose={() => setDialog(null)} />}
@@ -189,7 +191,7 @@ function useKeyboard(enabled: boolean) {
       if (st.canvasTool) {
         if (e.key === 'Enter') {
           e.preventDefault();
-          if (st.canvasTool.kind === 'area' && st.canvasTool.rect) return setPhotoArea(st.canvasTool.rect);
+          if (st.canvasTool.kind === 'area') return applyAreaTool(st.canvasTool);
           return st.setCanvasTool(null);
         }
         return;
