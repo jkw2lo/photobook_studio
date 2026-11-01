@@ -20,7 +20,7 @@ export interface AppContext {
   importer: Importer;
 }
 
-export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl?: string; restart?: () => void } = {}) {
+export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl?: string; restart?: () => void; quit?: () => void } = {}) {
   const store = new Store(dataDir);
   const importer = new Importer(store);
   const app = express();
@@ -52,7 +52,7 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
     return p;
   };
 
-  app.get('/api/health', (_req, res) => res.json({ ok: true, dataDir, apiVersion: API_VERSION, schemaVersion: SCHEMA_VERSION, canRestart: !!opts.restart }));
+  app.get('/api/health', (_req, res) => res.json({ ok: true, dataDir, apiVersion: API_VERSION, schemaVersion: SCHEMA_VERSION, canRestart: !!opts.restart, canQuit: !!opts.quit }));
 
   // Restart onto the latest code (the editor's "server is out of date" banner). The custom header
   // can't be sent cross-site without a CORS preflight, which this server never grants.
@@ -61,6 +61,14 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
     if (!opts.restart) return void res.status(409).json({ error: 'This server was started for development: restart it from its terminal.' });
     res.status(202).json({ ok: true });
     setTimeout(opts.restart, 150);
+  });
+
+  // Quit the app (the editor's Quit button). Same cross-site guard as restart.
+  app.post('/api/quit', (req, res) => {
+    if (req.get('x-photobook') !== '1') return void res.status(403).json({ error: 'Not allowed' });
+    if (!opts.quit) return void res.status(409).json({ error: 'This server was started for development: stop it from its terminal.' });
+    res.status(202).json({ ok: true });
+    setTimeout(opts.quit, 150);
   });
 
   // ---- projects

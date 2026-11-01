@@ -3,7 +3,7 @@ import { NO_GRADE, backgroundBox, isNeutralGrade, posterGeometry, scaleBackgroun
 import { thumbUrl } from '../api';
 import { useEditor } from '../store';
 import { ASSET_MIME } from './Canvas';
-import { GradeSliders } from './DesignPanel';
+import { GradeSliders, InvertButton } from './DesignPanel';
 import { Icon } from './Icon';
 
 /**
@@ -119,6 +119,10 @@ function BackgroundAdjust({ surfaceId, value }: { surfaceId: string; value: Colo
       </button>
       {open && (
         <>
+          <div className="btn-grid">
+            <button className={`btn btn-small ${value?.mono === 'bw' ? 'btn-on' : ''}`} onClick={() => useEditor.getState().run('Background black & white', (d) => apply(d, { ...(value ?? NO_GRADE), mono: value?.mono === 'bw' ? undefined : 'bw', preset: 'custom' }))}>Black & white</button>
+            <InvertButton value={value ?? NO_GRADE} apply={apply} label="background" />
+          </div>
           <GradeSliders value={value ?? NO_GRADE} apply={apply} label="Background" />
           {!isNeutralGrade(value) && <button className="link small" onClick={() => useEditor.getState().run('Reset background adjustments', (d) => apply(d, undefined))}>Reset adjustments</button>}
         </>

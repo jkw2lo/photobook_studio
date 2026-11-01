@@ -112,6 +112,13 @@ describe.runIf(existsSync(FIXTURES))('library housekeeping (API)', () => {
     void rest;
   });
 
+  it('only quits when asked by the editor, and not a development server', async () => {
+    expect((await api('POST', '/api/quit')).status).toBe(403);
+    const res = await fetch(base + '/api/quit', { method: 'POST', headers: { 'x-photobook': '1' } });
+    expect(res.status).toBe(409);
+    expect((await api('GET', '/api/health')).body.canQuit).toBe(false);
+  });
+
   it('refreshing an imported folder picks up new photos', async () => {
     const pid = await newProject();
     const d = dir('grow', [['day1-01-arrival.jpg']]);

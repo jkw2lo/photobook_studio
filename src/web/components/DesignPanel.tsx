@@ -487,6 +487,17 @@ export function TextEffects({ el, spreadId }: { el: TextElement; spreadId: strin
   );
 }
 
+/** Turn photos into a negative (white becomes black, colours their opposites), or back. */
+export function InvertButton({ value, apply, label }: { value: ColorGrade; apply: (d: BookDocument, next: ColorGrade | undefined) => BookDocument; label: string }) {
+  const { run } = useEditor.getState();
+  return (
+    <button className={`btn btn-small ${value.invert ? 'btn-on' : ''}`} aria-pressed={!!value.invert} title="A negative: white becomes black and every colour its opposite (works with black & white too)"
+      onClick={() => run(value.invert ? `Un-invert ${label}` : `Invert ${label}`, (d) => apply(d, { ...value, invert: !value.invert || undefined, preset: 'custom' }))}>
+      <Icon name="contrast" /> Invert
+    </button>
+  );
+}
+
 /** A darker shade of a colour, for 3D sides. */
 function darker(hex: string): string {
   const x = hex.replace('#', '').padEnd(6, '0');
@@ -552,6 +563,9 @@ export function GradeControls({ surfaceId }: { surfaceId?: string } = {}) {
           );
         })}
       </div>
+      <div className="btn-grid">
+        <InvertButton value={grade} apply={apply} label={surfaceId ? 'page' : poster ? 'poster' : 'book'} />
+      </div>
       <GradeSliders value={grade} apply={apply} label="Grade" />
       <p className="muted small">Applies to every photo {where}, on screen and in the PDF. Text and shapes keep their colours. Double-click a slider to reset it.</p>
     </div>
@@ -574,7 +588,8 @@ export function MultiPhotoAdjust({ spreadId, ids }: { spreadId: string; ids: str
         <button className="btn btn-small" onClick={() => run(`Auto-enhance ${photos.length} photos`, (d) => photos.reduce((acc, e) => updateElement(acc, spreadId, e.id, { adjust: autoAdjust(e.assetId ? assets.get(e.assetId)?.analysis ?? null : null) }), d))} title="Each photo gets its own fix for exposure and colour cast">
           <Icon name="sparkle" /> Auto-enhance each
         </button>
-        <button className="btn btn-small" onClick={() => run(`Black & white ${photos.length} photos`, (d) => apply(d, { ...value, mono: value.mono === 'bw' ? undefined : 'bw', preset: 'custom' }))}>Black & white</button>
+        <button className={`btn btn-small ${value.mono === 'bw' ? 'btn-on' : ''}`} onClick={() => run(`Black & white ${photos.length} photos`, (d) => apply(d, { ...value, mono: value.mono === 'bw' ? undefined : 'bw', preset: 'custom' }))}>Black & white</button>
+        <InvertButton value={value} apply={apply} label={`${photos.length} photos`} />
       </div>
       <GradeSliders value={value} apply={apply} label="Photos" />
       <button className="link small" onClick={() => run('Reset photo adjustments', (d) => apply(d, undefined))}>Reset all {photos.length}</button>
@@ -597,6 +612,7 @@ export function PhotoAdjustControls({ el, spreadId, analysis }: { el: ImageEleme
         <button className={`btn btn-small ${el.adjust?.mono === 'bw' ? 'btn-on' : ''}`} onClick={() => run(el.adjust?.mono === 'bw' ? 'Colour photo' : 'Black & white photo', (d) => apply(d, { ...value, mono: el.adjust?.mono === 'bw' ? undefined : 'bw', preset: 'custom' }))}>
           Black & white
         </button>
+        <InvertButton value={value} apply={apply} label="photo" />
       </div>
       <GradeSliders value={value} apply={apply} label="Photo" />
       {adjusted && <button className="link small" onClick={() => run('Reset photo adjustments', (d) => apply(d, undefined))}>Reset adjustments</button>}

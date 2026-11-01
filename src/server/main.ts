@@ -17,7 +17,18 @@ const restart = () => {
     env: { ...process.env, PHOTOBOOK_PORT: String(port), PHOTOBOOK_DATA_DIR: dataDir },
   }).unref();
 };
-const { app, store } = createApp(dataDir, production ? { staticDir: join(ROOT, 'dist/web'), restart } : { devWebUrl: `http://127.0.0.1:${webPort}/` });
+// Quit (the editor's Quit button): started from the Dock app, ask that app to quit — its quit
+// handler stops this server, so it doesn't then warn that the server stopped. Otherwise (npm start)
+// just shut down. Either way, give up waiting after a few seconds and shut down.
+const launcherApp = process.env.PHOTOBOOK_LAUNCHER_APP;
+const quit = () => {
+  if (launcherApp) {
+    const target = launcherApp.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    spawn('osascript', ['-e', `tell application "${target}" to quit`], { detached: true, stdio: 'ignore' }).unref();
+    setTimeout(shutdown, 5000).unref();
+  } else shutdown();
+};
+const { app, store } = createApp(dataDir, production ? { staticDir: join(ROOT, 'dist/web'), restart, quit } : { devWebUrl: `http://127.0.0.1:${webPort}/` });
 
 // 127.0.0.1 only: the API is never exposed to the local network.
 const server = app.listen(port, '127.0.0.1', () => {
@@ -25,11 +36,13 @@ const server = app.listen(port, '127.0.0.1', () => {
   console.log(production ? `\n  Open the editor: http://127.0.0.1:${port}\n` : `\n  Open the editor: http://127.0.0.1:${webPort}  (this port only serves data)\n`);
 });
 
-const shutdown = () => {
+function shutdown() {
   server.close(() => {
     store.close();
     process.exit(0);
   });
-};
+  // Open keep-alive connections would hold close() up: don't wait for them.
+  setTimeout(() => process.exit(0), 1500).unref();
+}
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);

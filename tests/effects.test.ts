@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   TEXT_LOOKS, addTextAt, applyTextLook, createPoster, cutPath, displayText, maskPath, polygonArea, saveTextLook, setSurfaceGrade, textBoxForDirection, textLayers, textLookFields,
-  updateElement, makeImageElement, gradeFromPreset, type TextElement,
+  updateElement, makeImageElement, gradeFromPreset, gradeColor, isNeutralGrade, type TextElement,
 } from '../src/core';
 import { exportPosterPdf } from '../src/server/pdf';
 
@@ -90,4 +90,17 @@ describe('PDF export', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   }, 60_000);
+});
+
+describe('inverted photos', () => {
+  const g = (over: object) => ({ ...gradeFromPreset('none'), preset: 'custom', ...over });
+  it('turns white to black and colours to their opposites, after black & white', () => {
+    expect(gradeColor(g({ invert: true }), [255, 255, 255])).toEqual([0, 0, 0]);
+    expect(gradeColor(g({ invert: true }), [200, 100, 50])).toEqual([55, 155, 205]);
+    const [r, gg, b] = gradeColor(g({ invert: true, mono: 'bw' }), [200, 100, 50]);
+    expect(r).toBe(gg);
+    expect(gg).toBe(b);
+    expect(r).toBeGreaterThan(128); // a mid-dark colour becomes a light grey
+    expect(isNeutralGrade(g({ invert: true }))).toBe(false);
+  });
 });

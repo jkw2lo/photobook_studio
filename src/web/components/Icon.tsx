@@ -45,6 +45,8 @@ const PATHS: Record<string, string> = {
   palette: 'M12 3a9 9 0 100 18c1.1 0 1.5-.8 1.2-1.6-.4-1 .3-1.9 1.3-1.9H17a4 4 0 004-4c0-5.5-4-10.5-9-10.5zM7.5 11a1 1 0 100-.01M10 7a1 1 0 100-.01M15 7.5a1 1 0 100-.01',
   type: 'M4 7V5h16v2M12 5v14M9 19h6',
   select: 'M5 3l12 7-5.5 1.5L9 17z',
+  contrast: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 3v18',
+  power: 'M12 3v9M6.3 6.6a8 8 0 1011.4 0',
 };
 
 export function Icon({ name, size = 16 }: { name: string; size?: number }) {

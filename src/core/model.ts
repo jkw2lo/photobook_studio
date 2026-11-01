@@ -386,6 +386,8 @@ export interface ColorGrade {
   fade: number;
   /** Tint shadows-to-highlights through a single colour (black & white, sepia). */
   mono?: 'bw' | 'sepia';
+  /** A negative: every colour turned to its opposite (white becomes black), after everything else. */
+  invert?: boolean;
 }
 
 /**

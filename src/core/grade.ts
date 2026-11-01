@@ -33,7 +33,7 @@ export function gradeFromPreset(id: string): ColorGrade {
 }
 
 export const isNeutralGrade = (gr: ColorGrade | undefined) =>
-  !gr || (!gr.mono && !gr.brightness && !gr.contrast && !gr.saturation && !gr.warmth && !gr.fade);
+  !gr || (!gr.mono && !gr.invert && !gr.brightness && !gr.contrast && !gr.saturation && !gr.warmth && !gr.fade);
 
 type M3 = [number, number, number, number, number, number, number, number, number];
 interface Affine {
@@ -90,6 +90,8 @@ export function gradeMatrix(gr: ColorGrade): Affine {
     const a = (gr.fade / 100) * 0.25;
     t = then(t, { m: [1 - a, 0, 0, 0, 1 - a, 0, 0, 0, 1 - a], o: [a, a, a] });
   }
+  // A negative, last: rgb' = 1 − rgb.
+  if (gr.invert) t = then(t, { m: [-1, 0, 0, 0, -1, 0, 0, 0, -1], o: [1, 1, 1] });
   return t;
 }
 

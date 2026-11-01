@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { POSTER_SIZES, PRINTERS, SIZE_PRESETS, STYLE_PRESETS, printer, type BindingId, type PrinterId } from '../../core';
 import { api, type ProjectSummary } from '../api';
 import { Icon } from './Icon';
+import { QuitButton } from './QuitButton';
 import { Modal } from './Modal';
 
 type Deleted = { id: string; title: string; deletedAt: string; product: 'book' | 'poster' };
@@ -54,7 +55,10 @@ export function Home() {
           <h1>Photobook Studio</h1>
           <p className="muted">Everything stays on this computer — photos, thumbnails and books.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setCreating(true)}><Icon name="plus" /> New book or poster</button>
+        <div className="row">
+          <button className="btn btn-primary" onClick={() => setCreating(true)}><Icon name="plus" /> New book or poster</button>
+          <QuitButton />
+        </div>
       </header>
       {error && <div className="notice notice-error">Could not reach the local server: {error}</div>}
       {undo && (

@@ -481,6 +481,19 @@ useEditor.subscribe((s, prev) => {
   if (prev.gestureBase && !s.gestureBase && s.saveState === 'dirty') schedule();
 });
 
+/** Save any pending changes now (before quitting). Resolves true once everything is saved. */
+export async function saveNow(): Promise<boolean> {
+  if (saveTimer) clearTimeout(saveTimer);
+  for (let i = 0; i < 40; i++) {
+    const st = useEditor.getState().saveState;
+    if (!useEditor.getState().doc || st === 'saved') return true;
+    if (st === 'error' || st === 'conflict') return false;
+    if (!saving) await flush();
+    else await new Promise((r) => setTimeout(r, 100));
+  }
+  return useEditor.getState().saveState === 'saved';
+}
+
 /** Retry after an error (network hiccup, server restart). */
 export function retrySave() {
   useEditor.setState({ saveState: 'dirty' });

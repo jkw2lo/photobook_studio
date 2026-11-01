@@ -45,6 +45,21 @@ for _ in $(seq 1 20); do lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1 || 
 cd "$PROJECT" || exit 1
 echo "---- $(date) starting on port $PORT" >> "$LOG"
 
+# The Dock app that ran this script (if any), so the editor's Quit button can quit it — its quit
+# handler stops the server. A restart from the editor keeps the one it was given.
+LAUNCHER_APP="${PHOTOBOOK_LAUNCHER_APP:-}"
+if [ -z "$LAUNCHER_APP" ]; then
+  pid=$PPID
+  for _ in 1 2 3 4 5 6; do
+    cmd="$(ps -o command= -p "$pid" 2>/dev/null)"
+    case "$cmd" in
+      *.app/Contents/MacOS/*) LAUNCHER_APP="${cmd%%.app/Contents/MacOS/*}.app"; break ;;
+    esac
+    pid="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')"
+    if [ -z "$pid" ] || [ "$pid" -le 1 ]; then break; fi
+  done
+fi
+
 # Rebuild the editor when any source file is newer than the last build.
 BUILT="$PROJECT/dist/web/index.html"
 if [ ! -f "$BUILT" ] || [ -n "$(find src -newer "$BUILT" -type f -print -quit 2>/dev/null)" ]; then
@@ -55,7 +70,7 @@ if [ ! -f "$BUILT" ] || [ -n "$(find src -newer "$BUILT" -type f -print -quit 2>
   fi
 fi
 
-NODE_ENV=production PHOTOBOOK_PORT="$PORT" PHOTOBOOK_DATA_DIR="$DATA" \
+NODE_ENV=production PHOTOBOOK_PORT="$PORT" PHOTOBOOK_DATA_DIR="$DATA" PHOTOBOOK_LAUNCHER_APP="$LAUNCHER_APP" \
   nohup ./node_modules/.bin/tsx src/server/main.ts >> "$LOG" 2>&1 < /dev/null &
 echo $! > "$PIDFILE"
 

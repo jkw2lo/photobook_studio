@@ -6,6 +6,7 @@ import { Canvas } from './Canvas';
 import { ExportDialog } from './ExportDialog';
 import { FlipPreview } from './FlipPreview';
 import { MockupPreview } from './MockupPreview';
+import { QuitButton } from './QuitButton';
 import { Icon } from './Icon';
 import { Inspector } from './Inspector';
 import { Library } from './Library';
@@ -150,6 +151,7 @@ function TopBar({ onGenerate, onExport, onPreview, onMockup }: { onGenerate: () 
         <button className="btn" onClick={onMockup} title={poster ? 'See it framed on a wall, or as a postcard on a table' : 'See it as a print on a table'}><Icon name="image" /> In a room</button>
         <button className="btn" onClick={onGenerate}><Icon name="sparkle" /> {poster ? 'Auto collage' : 'Auto draft'}</button>
         <button className="btn btn-primary" onClick={onExport}><Icon name="download" /> Export PDF</button>
+        <QuitButton compact />
       </div>
     </header>
   );
