@@ -212,8 +212,9 @@ class PdfWriter<A extends { asset: PhotoAsset }> {
     // Never upsample; downsample to 300 DPI at the printed size.
     const tw = Math.max(1, Math.min(width, Math.round(mmToInch(visible.dest.w) * TARGET_DPI)));
     const th = Math.max(1, Math.min(height, Math.round(mmToInch(visible.dest.h) * TARGET_DPI)));
-    // The photo's own adjustment, then the document's grade — as in the editor.
-    const chain = [el.adjust, this.grade];
+    // The photo's own adjustment, then the document's grade — as in the editor. A grade for the
+    // photos only leaves the background photo alone.
+    const chain = [el.adjust, el.id.endsWith(':bg') && this.grade?.scope === 'photos' ? undefined : this.grade];
     const grade = isNeutralChain(chain) ? null : gradeChainMatrix(chain);
     const key = `${asset.id}|${left},${top},${width},${height}|${tw}x${th}|${gradeChainKey(chain)}`;
     let buf = this.imageCache.get(key);

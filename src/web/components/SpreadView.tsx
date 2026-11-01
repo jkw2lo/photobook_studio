@@ -60,7 +60,8 @@ export const SpreadView = memo(function SpreadView({ settings, style, spreadCoun
             }}
           />
         ))}
-      {bgFrame && <ElementView el={bgFrame} scale={scale} offset={b} asset={assets.get(bgFrame.assetId!)} thumbSize={thumbSize} filter={graded ? `url(#${filterId})` : undefined} grade={grade} />}
+      {/* A grade for the photos only leaves the background photo alone. */}
+      {bgFrame && <ElementView el={bgFrame} scale={scale} offset={b} asset={assets.get(bgFrame.assetId!)} thumbSize={thumbSize} filter={graded && grade?.scope !== 'photos' ? `url(#${filterId})` : undefined} grade={grade?.scope !== 'photos' ? grade : undefined} />}
       {surface.elements.map((el) =>
         el.id === hiddenElementId ? null : (
           <ElementView key={el.id} el={el} scale={scale} offset={b} asset={el.type === 'image' && el.assetId ? assets.get(el.assetId) : undefined} thumbSize={thumbSize} filter={graded ? `url(#${filterId})` : undefined} grade={grade} />

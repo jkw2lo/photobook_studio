@@ -29,7 +29,7 @@ async function until(test: () => boolean, ms = 6000) {
 }
 
 /** The demo's book (or poster), opened with the app's own route, once its pages are on screen. */
-async function openProject(which: 'book' | 'poster') {
+async function openProject(which: 'book' | 'poster' | 'tea') {
   const id = demoIds()?.[which];
   if (!id) return;
   if (location.hash !== `#/book/${id}`) location.hash = `#/book/${id}`;
@@ -68,7 +68,7 @@ export async function startDemoWelcome() {
     id: 'photobook-studio',
     name: 'Photobook Studio',
     accent: '#e7a65f',
-    demo: 'A three-day Amalfi Coast trip: 22 photos drafted into a travel journal, and a lemon grove poster.',
+    demo: 'A three-day Amalfi Coast trip drafted into a travel journal and a lemon grove poster, plus a Japanese teas poster designed by hand.',
     fresh: 'No books yet. Make one, import a folder of photos, and it drafts the pages.',
     isEmpty: async () => (await api.listProjects()).length === 0 && (await api.deletedProjects()).length === 0,
     loadDemo: async () => {
@@ -94,7 +94,22 @@ export async function startDemoWelcome() {
         go: home,
         el: '.project-grid',
         title: 'Your books',
-        text: 'Everything you make lives here, in this browser. The demo has Amalfi Coast, a 24-page travel journal, and a Lemon grove poster.',
+        text: 'Everything you make lives here, in this browser. The demo has Amalfi Coast, a 24-page travel journal, and two posters: Lemon grove and Japanese teas.',
+      },
+      {
+        go: () => openProject('poster'),
+        el: ['main.stage .canvas', 'main.stage'],
+        title: 'A poster in one click',
+        text: 'Lemon grove is an automatic collage of the same photos. Arrange and Shuffle try other layouts; the side panel changes the style, spacing and photo shapes.',
+      },
+      {
+        go: async () => {
+          if (demoIds()?.tea) await openProject('tea');
+          else await home();
+        },
+        el: ['main.stage .canvas', 'main.stage'],
+        title: 'Or design it yourself',
+        text: 'Japanese teas was made by hand from scanned tea labels: photos cut out along their edges, some turned into black-and-white negatives, over a background photo.',
       },
       {
         go: () => openProject('book'),

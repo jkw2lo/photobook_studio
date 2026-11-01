@@ -1,3 +1,4 @@
+import { cutPath, type Pt } from './cutouts';
 // Shape library: shapes, banners, lines and icons, drawn as vector paths in a 100 × 100 box. The
 // same path data is used for colour shapes, for cutting photos to a shape, by the editor (SVG) and
 // by the PDF exporter, so what you see is what prints. Paths use absolute M / L / C / Q / Z only,
@@ -249,7 +250,8 @@ export function fitPath(d: string, srcW: number, srcH: number, w: number, h: num
 }
 
 /** The outline of a photo mask in a w × h frame (frame-local units). */
-export function maskPath(mask: { kind: 'shape'; shape: string } | { kind: 'text' | 'outline'; d: string; aspect: number }, w: number, h: number): { d: string; evenOdd: boolean } {
+export function maskPath(mask: { kind: 'shape'; shape: string } | { kind: 'text' | 'outline'; d: string; aspect: number } | { kind: 'cut'; keep?: Pt[]; erase: Pt[][] }, w: number, h: number): { d: string; evenOdd: boolean } {
+  if (mask.kind === 'cut') return { d: cutPath(mask, w, h), evenOdd: true };
   if (mask.kind !== 'shape') return { d: fitPath(mask.d, 100 * mask.aspect, 100, w, h), evenOdd: false };
   const def = shapeDef(mask.shape);
   return { d: scalePath(def.d, w, h), evenOdd: !!def.evenOdd };

@@ -2,7 +2,7 @@ import { createWriteStream } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import sharp from 'sharp';
+import sharp, { type Sharp } from 'sharp';
 import { printablePages, type BookDocument, type PhotoAsset, type PreflightIssue } from '../core';
 import {
   renderCover, renderInterior, renderPoster, verifyPdf as verifyBytes,
@@ -44,16 +44,31 @@ const env: PdfEnv<ExportAsset> = {
       .extract({ left: cut.left, top: cut.top, width: cut.width, height: cut.height })
       .resize(cut.outWidth, cut.outHeight, { fit: 'fill' });
     img = cut.cutout ? img.ensureAlpha() : img.flatten({ background: '#ffffff' });
-    // The colour grade: the same rgb' = M·rgb + o the editor applies (alpha untouched).
-    if (cut.grade) {
-      const { m, o } = cut.grade;
-      img = cut.cutout
-        ? img.recomb([[m[0], m[1], m[2], 0], [m[3], m[4], m[5], 0], [m[6], m[7], m[8], 0], [0, 0, 0, 1]]).linear([1, 1, 1, 1], [o[0] * 255, o[1] * 255, o[2] * 255, 0])
-        : img.recomb([[m[0], m[1], m[2]], [m[3], m[4], m[5]], [m[6], m[7], m[8]]]).linear([1, 1, 1], [o[0] * 255, o[1] * 255, o[2] * 255]);
-    }
+    // The colour grade: the same rgb' = M·rgb + o the editor applies (alpha untouched), done on the
+    // finished pixels in one step and clamped once. (As sharp's recomb + linear, the negative values
+    // an invert produces get clamped between the two steps after a resize, and print white.)
+    if (cut.grade) img = await applyGrade(img.toColourspace('srgb'), cut.grade);
     return cut.cutout ? img.png({ compressionLevel: 6 }).toBuffer() : img.jpeg({ quality: 92, chromaSubsampling: '4:4:4' }).toBuffer();
   },
 };
+
+/** A colour grade (rgb' = M·rgb + o, sRGB 0–1) applied to an image's final 8-bit pixels; alpha is left alone. */
+async function applyGrade(img: Sharp, { m, o }: { m: number[]; o: number[] }): Promise<Sharp> {
+  const { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
+  const ch = info.channels;
+  const out = Buffer.from(data);
+  const ob = o.map((v) => v * 255);
+  const clamp = (v: number) => (v <= 0 ? 0 : v >= 255 ? 255 : Math.round(v));
+  for (let i = 0; i < out.length; i += ch) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    out[i] = clamp(m[0] * r + m[1] * g + m[2] * b + ob[0]);
+    out[i + 1] = clamp(m[3] * r + m[4] * g + m[5] * b + ob[1]);
+    out[i + 2] = clamp(m[6] * r + m[7] * g + m[8] * b + ob[2]);
+  }
+  return sharp(out, { raw: { width: info.width, height: info.height, channels: ch } });
+}
 
 function fileOutput(path: string): PdfOutput {
   const stream = createWriteStream(path);
