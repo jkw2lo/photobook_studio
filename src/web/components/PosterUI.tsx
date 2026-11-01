@@ -9,6 +9,7 @@ import { CollageControls, gapOptions, marginOptions } from './CollageControls';
 import { ColorInput } from './ColorInput';
 import { Icon } from './Icon';
 import { BackgroundImageField } from './BackgroundImageField';
+import { PatternField } from './PatternField';
 import { PosterTemplates } from './PosterTemplates';
 
 /** Sensible first settings for a sheet: spacing and border scaled to its size. */
@@ -220,6 +221,8 @@ export function PosterBackgroundPanel() {
         <span>Photo</span>
         <BackgroundImageField surfaceId={sheet.id} />
       </div>
+      <div className="section-title">Pattern</div>
+      <PatternField surfaceId={sheet.id} />
     </div>
   );
 }

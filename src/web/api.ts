@@ -175,8 +175,8 @@ export const api = {
   setShelfRoot: (root: string) => call<ShelfListing>('PUT', '/api/shelf', { root }),
   createShelf: () => call<ShelfListing>('POST', '/api/shelf/create'),
   relink: (projectId: string, folder: string) => call<{ relinked: number; stillMissing: number }>('POST', `/api/projects/${projectId}/relink`, { folder }),
-  exportPdf: (projectId: string, doc: BookDocument, bleedMode?: 'all' | 'outer') =>
-    call<ExportResponse>('POST', `/api/projects/${projectId}/export`, { doc, bleedMode }),
+  exportPdf: (projectId: string, doc: BookDocument, bleedMode?: 'all' | 'outer', quality?: 'share' | 'good' | 'best') =>
+    call<ExportResponse>('POST', `/api/projects/${projectId}/export`, { doc, bleedMode, quality }),
 };
 
 // v=2: thumbnails of cutouts became WebP with transparency; the version skips older cached JPEGs.

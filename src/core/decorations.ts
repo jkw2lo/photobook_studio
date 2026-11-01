@@ -14,7 +14,7 @@ function sizeFor(doc: Pick<BookDocument, 'settings'>, shapeId: string): { w: num
   const def = shapeDef(shapeId);
   const short = Math.min(doc.settings.trimWidthMm, doc.settings.trimHeightMm);
   const round = def.id === 'seal' || def.id === 'burst';
-  const width = (round ? 0.22 : { icon: 0.14, shape: 0.3, banner: 0.55, line: 0.5 }[def.category]) * short;
+  const width = (round ? 0.22 : { icon: 0.14, shape: 0.3, banner: 0.55, line: 0.5, sticker: 0.2 }[def.category]) * short;
   const w = def.category === 'line' || def.category === 'banner' ? width : Math.min(width, width * def.aspect);
   return { w, h: Math.max(def.category === 'line' ? 0.6 : 2, w / def.aspect) };
 }

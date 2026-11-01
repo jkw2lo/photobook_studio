@@ -34,3 +34,5 @@ export * from './calendar';
 export * from './freeform';
 export * from './textLooks';
 export * from './gradeScope';
+export * from './patterns';
+export * from './stickers';

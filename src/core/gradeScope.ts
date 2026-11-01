@@ -31,7 +31,11 @@ function gradeElement(el: Element, grades: ColorGrade[]): Element {
         glow: el.glow && { ...el.glow, color: c(el.glow.color) }, outline2: el.outline2 && { ...el.outline2, color: c(el.outline2.color) },
       };
     case 'shape':
-      return { ...el, fill: c(el.fill), strokeColor: el.strokeColor && c(el.strokeColor), gradient: grad(el.gradient) };
+      return {
+        ...el, fill: c(el.fill), strokeColor: el.strokeColor && c(el.strokeColor), gradient: grad(el.gradient),
+        shadow: el.shadow && { ...el.shadow, color: c(el.shadow.color) }, extrude: el.extrude && { ...el.extrude, color: c(el.extrude.color) },
+        glow: el.glow && { ...el.glow, color: c(el.glow.color) }, outline2: el.outline2 && { ...el.outline2, color: c(el.outline2.color) },
+      };
     case 'calendar':
       return { ...el, color: c(el.color), accent: c(el.accent) };
     default:
@@ -43,5 +47,12 @@ function gradeElement(el: Element, grades: ColorGrade[]): Element {
  * Photos aren't touched here — they're graded as images. */
 export function gradeSurfaceColours(surface: Spread, styleBackground: string, grades: ColorGrade[]): Spread {
   if (!grades.length) return surface;
-  return { ...surface, background: gradeHex(surface.background ?? styleBackground, grades), elements: surface.elements.map((e) => gradeElement(e, grades)) };
+  const p = surface.pattern;
+  const c = (hex: string) => gradeHex(hex, grades);
+  return {
+    ...surface,
+    background: c(surface.background ?? styleBackground),
+    pattern: p && { ...p, color: c(p.color), gradient: p.gradient && { ...p.gradient, from: c(p.gradient.from), to: c(p.gradient.to) } },
+    elements: surface.elements.map((e) => gradeElement(e, grades)),
+  };
 }

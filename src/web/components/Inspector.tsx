@@ -24,6 +24,8 @@ import { AlignTools, LayersPanel, MultiPanel } from './SelectionPanel';
 import { Icon } from './Icon';
 import { PreflightPanel } from './PreflightPanel';
 import { TextLooksPanel } from './TextLooks';
+import { StickersPanel } from './StickersPanel';
+import { PatternField } from './PatternField';
 import { TemplatePicker } from './TemplatePicker';
 
 // The right-hand panel: four tabs that never change name — Layout (the poster or page itself),
@@ -35,7 +37,7 @@ type Top = 'layout' | 'photo' | 'elements' | 'preflight';
 type PosterSide = 'collage' | 'templates' | 'background' | 'colour' | 'sheet';
 type BookSide = 'page' | 'draft' | 'templates' | 'colour' | 'book';
 type PhotoSide = 'photo' | 'adjust' | 'cutout' | 'position';
-type ElementsSide = 'selected' | AddSection | 'looks' | 'type';
+type ElementsSide = 'selected' | AddSection | 'looks' | 'stickers' | 'type';
 
 /** Sub-tabs inside the text, shape and calendar panels (remembered per kind while you work). */
 type Sub = { image: 'photo' | 'adjust' | 'cutout' | 'position'; text: 'text' | 'effects' | 'position'; shape: 'shape' | 'position'; calendar: 'calendar' | 'position' };
@@ -128,9 +130,11 @@ export function Inspector({ issueCount }: { issueCount: { error: number; warning
   ];
   const elementItems: RailItem<ElementsSide>[] = [
     ...(otherSelected ? [{ id: 'selected' as const, label: 'Selected', icon: 'select' }] : []),
-    ...addSections(doc, index).flatMap((x) => {
-      const item = { id: x.id as ElementsSide, label: x.label, icon: ({ text: 'text', shapes: 'star', calendar: 'calendar', map: 'map', pages: 'page' } as const)[x.id] };
-      return x.id === 'text' ? [item, { id: 'looks' as const, label: 'Looks', icon: 'sparkle' }] : [item];
+    ...addSections(doc, index).flatMap((x): RailItem<ElementsSide>[] => {
+      const item: RailItem<ElementsSide> = { id: x.id, label: x.label, icon: ({ text: 'text', shapes: 'shape', calendar: 'calendar', map: 'map', pages: 'page' } as const)[x.id] };
+      if (x.id === 'text') return [item, { id: 'looks', label: 'Looks', icon: 'sparkle' }];
+      if (x.id === 'shapes') return [item, { id: 'stickers', label: 'Stickers', icon: 'star' }];
+      return [item];
     }),
     { id: 'type', label: 'Type', icon: 'type' },
   ];
@@ -179,7 +183,8 @@ export function Inspector({ issueCount }: { issueCount: { error: number; warning
 
           {top === 'elements' && elementsSide === 'selected' && otherSelected && (multiCount > 1 ? <MultiPanel /> : <ElementPanel sub={sub} setSub={setSub} />)}
           {top === 'elements' && elementsSide === 'looks' && <TextLooksPanel />}
-          {top === 'elements' && elementsSide !== 'selected' && elementsSide !== 'type' && elementsSide !== 'looks' && <AddPanel section={elementsSide} />}
+          {top === 'elements' && elementsSide === 'stickers' && <StickersPanel />}
+          {top === 'elements' && elementsSide !== 'selected' && elementsSide !== 'type' && elementsSide !== 'looks' && elementsSide !== 'stickers' && <AddPanel section={elementsSide} />}
           {top === 'elements' && (elementsSide === 'type' || (elementsSide === 'selected' && !otherSelected)) && (
             <div className="stack"><TextColorField /><TypeSection /></div>
           )}
@@ -815,6 +820,10 @@ function SpreadPanel() {
           {spread.background && <button className="link" onClick={() => run('Reset background', (d) => setSurfaceBackground(d, spread.id, undefined))}>Use book colour</button>}
         </div>
       </label>
+      <div className="field">
+        <span>Pattern</span>
+        <PatternField surfaceId={spread.id} />
+      </div>
 
       {!spread.locked && (
         <>

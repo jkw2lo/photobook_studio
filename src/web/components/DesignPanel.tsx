@@ -168,7 +168,7 @@ export function ElementsPalette({ surfaceId, at, only }: { surfaceId: string; at
 
 // ---- gradient editor (text and shapes) --------------------------------------------------------------
 
-function GradientFields({ value, apply, label }: { value: Gradient; apply: (d: BookDocument, g: Gradient) => BookDocument; label: string }) {
+export function GradientFields({ value, apply, label }: { value: Gradient; apply: (d: BookDocument, g: Gradient) => BookDocument; label: string }) {
   const { gesture, endGesture, run } = useEditor.getState();
   return (
     <div className="stack tight">
@@ -252,6 +252,7 @@ export function ShapeControls({ el, spreadId }: { el: ShapeElement; spreadId: st
         />
         <span>Behind the photos (background layer)</span>
       </label>
+      <ShapeEffects el={el} spreadId={spreadId} />
       <label className="field">
         <span>Opacity — {Math.round(el.opacity * 100)}%</span>
         <input
@@ -260,6 +261,52 @@ export function ShapeControls({ el, spreadId }: { el: ShapeElement; spreadId: st
           onPointerUp={() => endGesture('Opacity')} onKeyUp={() => endGesture('Opacity')}
         />
       </label>
+    </div>
+  );
+}
+
+/** Sticker effects on a shape: hard shadow, neon glow, 3D depth and a die-cut outline. */
+function ShapeEffects({ el, spreadId }: { el: ShapeElement; spreadId: string }) {
+  const { run } = useEditor.getState();
+  const s = Math.min(el.widthMm, el.heightMm);
+  const r = (f: number) => Math.round(f * s * 100) / 100;
+  const upd = (label: string, patch: Partial<ShapeElement>) => run(label, (d) => updateElement(d, spreadId, el.id, patch));
+  const live = (patch: (v: number) => Partial<ShapeElement>) => (d: BookDocument, v: number) => updateElement(d, spreadId, el.id, patch(v));
+  const ink = el.fill === 'none' ? el.strokeColor ?? '#000000' : el.fill;
+  const toggle = (on: boolean, label: string, add: Partial<ShapeElement>, remove: Partial<ShapeElement>) => upd(on ? `No ${label}` : label, on ? remove : add);
+  return (
+    <div className="stack">
+      <div className="section-title">Sticker effects</div>
+      <div className="btn-grid">
+        <button className={`btn btn-small ${el.shadow ? 'btn-on' : ''}`} onClick={() => toggle(!!el.shadow, 'shadow', { shadow: { color: '#111111', dxMm: r(0.06), dyMm: r(0.06), opacity: 1 } }, { shadow: undefined })}>Shadow</button>
+        <button className={`btn btn-small ${el.glow ? 'btn-on' : ''}`} onClick={() => toggle(!!el.glow, 'glow', { glow: { color: ink, sizeMm: r(0.12) } }, { glow: undefined })}>Glow</button>
+        <button className={`btn btn-small ${el.extrude ? 'btn-on' : ''}`} onClick={() => toggle(!!el.extrude, '3D', { extrude: { color: '#111111', depthMm: r(0.08), angleDeg: 45 } }, { extrude: undefined })}>3D</button>
+        <button className={`btn btn-small ${el.outline2 ? 'btn-on' : ''}`} onClick={() => toggle(!!el.outline2, 'die-cut border', { outline2: { color: '#ffffff', widthMm: r(0.08) } }, { outline2: undefined })}>Die-cut border</button>
+      </div>
+      {el.shadow && (
+        <div className="field-row">
+          <label className="field"><span>Shadow</span><ColorInput value={el.shadow.color} label="Shadow colour" apply={(d, c) => updateElement(d, spreadId, el.id, { shadow: { ...el.shadow!, color: c } })} /></label>
+          <NumField label="Offset" value={el.shadow.dxMm} min={0} max={40} step={0.1} suffix="mm" apply={live((v) => ({ shadow: { ...el.shadow!, dxMm: v, dyMm: v } }))} undoLabel="Shadow offset" />
+        </div>
+      )}
+      {el.glow && (
+        <div className="field-row">
+          <label className="field"><span>Glow</span><ColorInput value={el.glow.color} label="Glow colour" apply={(d, c) => updateElement(d, spreadId, el.id, { glow: { ...el.glow!, color: c } })} /></label>
+          <NumField label="Size" value={el.glow.sizeMm} min={0.2} max={40} step={0.1} suffix="mm" apply={live((v) => ({ glow: { ...el.glow!, sizeMm: v } }))} undoLabel="Glow size" />
+        </div>
+      )}
+      {el.extrude && (
+        <div className="field-row">
+          <label className="field"><span>3D side</span><ColorInput value={el.extrude.color} label="3D colour" apply={(d, c) => updateElement(d, spreadId, el.id, { extrude: { ...el.extrude!, color: c } })} /></label>
+          <NumField label="Depth" value={el.extrude.depthMm} min={0.2} max={40} step={0.1} suffix="mm" apply={live((v) => ({ extrude: { ...el.extrude!, depthMm: v } }))} undoLabel="3D depth" />
+        </div>
+      )}
+      {el.outline2 && (
+        <div className="field-row">
+          <label className="field"><span>Border</span><ColorInput value={el.outline2.color} label="Die-cut border colour" apply={(d, c) => updateElement(d, spreadId, el.id, { outline2: { ...el.outline2!, color: c } })} /></label>
+          <NumField label="Width" value={el.outline2.widthMm} min={0.1} max={20} step={0.1} suffix="mm" apply={live((v) => ({ outline2: { ...el.outline2!, widthMm: v } }))} undoLabel="Border width" />
+        </div>
+      )}
     </div>
   );
 }

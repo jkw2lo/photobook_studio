@@ -4,7 +4,7 @@ import { cutPath, type Pt } from './freeform';
 // by the PDF exporter, so what you see is what prints. Paths use absolute M / L / C / Q / Z only,
 // which keeps scaling to any frame (scalePath) a matter of scaling numbers.
 
-export type ShapeCategory = 'shape' | 'banner' | 'line' | 'icon';
+export type ShapeCategory = 'shape' | 'banner' | 'line' | 'icon' | 'sticker';
 
 export interface ShapeDef {
   id: string;
@@ -181,8 +181,78 @@ export const SHAPES: ShapeDef[] = [
   { id: 'i-gift', name: 'Gift', category: 'icon', d: rect(4, 30, 92, 20) + rect(10, 50, 80, 50) + poly([[50, 30], [30, 6], [22, 14], [42, 30]]) + poly([[50, 30], [70, 6], [78, 14], [58, 30]]), aspect: 1 },
   { id: 'i-check', name: 'Tick', category: 'icon', d: poly([[0, 54], [14, 40], [36, 62], [86, 10], [100, 24], [36, 88]]), aspect: 1.15 },
   { id: 'i-arrow', name: 'Arrow', category: 'icon', d: poly([[0, 38], [62, 38], [62, 10], [100, 50], [62, 90], [62, 62], [0, 62]]), aspect: 1.6 },
+  // Stickers (bolder pieces for sticker packs; any of them can be used on its own too)
+  { id: 's-bolt', name: 'Lightning', category: 'sticker', d: poly([[60, 0], [16, 58], [44, 58], [34, 100], [84, 40], [56, 40], [70, 0]]), aspect: 0.7 },
+  { id: 's-rainbow', name: 'Rainbow', category: 'sticker', d: rainbow(), aspect: 2 },
+  { id: 's-smiley', name: 'Smiley', category: 'sticker', d: ellipse(50, 50, 50, 50) + ellipse(34, 38, 6, 10) + ellipse(66, 38, 6, 10) + 'M24 58Q50 92 76 58Q50 76 24 58Z', aspect: 1, evenOdd: true },
+  { id: 's-heart-line', name: 'Heart outline', category: 'sticker', d: outlined(HEART, 0.74, 50, 46), aspect: 1.05, evenOdd: true },
+  { id: 's-star-line', name: 'Star outline', category: 'sticker', d: outlined(star(5, 50, 21, 50, 53), 0.62, 50, 55), aspect: 1, evenOdd: true },
+  { id: 's-squiggle', name: 'Squiggle', category: 'sticker', d: squiggle(), aspect: 3 },
+  { id: 's-asterisk', name: 'Asterisk', category: 'sticker', d: bars(3, 48, 9, Math.PI / 2), aspect: 1 },
+  { id: 's-x', name: 'Cross', category: 'sticker', d: bars(2, 50, 11, Math.PI / 4), aspect: 1 },
+  { id: 's-exclaim', name: 'Exclamation', category: 'sticker', d: roundRect(38, 0, 24, 68, 12) + ellipse(50, 88, 12, 12), aspect: 0.4 },
+  { id: 's-checker', name: 'Checkerboard', category: 'sticker', d: checker(4), aspect: 1 },
+  { id: 's-badge', name: 'Badge', category: 'sticker', d: ellipse(50, 50, 50, 50) + ellipse(50, 50, 44, 44) + ellipse(50, 50, 38, 38), aspect: 1, evenOdd: true },
+  { id: 's-quote', name: 'Quote marks', category: 'sticker', d: ellipse(28, 38, 18, 18) + 'M10 40Q10 80 40 96Q24 76 28 56Z' + ellipse(74, 38, 18, 18) + 'M56 40Q56 80 86 96Q70 76 74 56Z', aspect: 1.2 },
+  { id: 's-ornament', name: 'Ornament', category: 'sticker', d: poly([[0, 48], [38, 45], [38, 55], [0, 52]]) + poly([[100, 48], [62, 45], [62, 55], [100, 52]]) + poly([[50, 30], [62, 50], [50, 70], [38, 50]]), aspect: 6 },
+  { id: 's-arrow', name: 'Doodle arrow', category: 'sticker', d: 'M8 86Q30 20 80 30L76 18L98 40L72 56L76 42Q36 36 20 92Z', aspect: 1.2 },
+  { id: 's-sparkles', name: 'Sparkles', category: 'sticker', d: 'M40 6Q44 40 78 44Q44 48 40 82Q36 48 2 44Q36 40 40 6Z' + 'M80 56Q82 70 96 72Q82 74 80 88Q78 74 64 72Q78 70 80 56Z' + 'M78 4Q79 12 87 13Q79 14 78 22Q77 14 69 13Q77 12 78 4Z', aspect: 1 },
+  { id: 's-scribble', name: 'Circle doodle', category: 'sticker', d: mapPath(ellipse(50, 50, 45, 35) + ellipse(50, 50, 39, 29), (x, y) => { const a = -0.14; return [50 + (x - 50) * Math.cos(a) - (y - 50) * Math.sin(a), 50 + (x - 50) * Math.sin(a) + (y - 50) * Math.cos(a)]; }), aspect: 1.25, evenOdd: true },
   { id: 'i-palm', name: 'Palm', category: 'icon', d: 'M48 100L54 100Q58 70 54 42L50 42Q52 70 48 100Z' + 'M52 42Q30 18 4 30Q28 26 52 42Z' + 'M52 42Q70 14 98 24Q74 24 52 42Z' + 'M52 42Q46 10 64 0Q56 18 52 42Z' + 'M52 42Q20 40 10 62Q30 44 52 42Z' + 'M52 42Q84 40 94 64Q74 46 52 42Z', aspect: 1 },
 ];
+
+// ---- stickers ----------------------------------------------------------------------------------
+
+/** A shape with a hole of itself, scaled down about a point: outline stickers (even-odd). */
+function outlined(d: string, k: number, cx = 50, cy = 50): string {
+  return d + mapPath(d, (x, y) => [cx + (x - cx) * k, cy + (y - cy) * k]);
+}
+
+/** Concentric half-rings standing on the bottom edge (stretch to 2:1 for round arcs). */
+function rainbow(): string {
+  let d = '';
+  for (const [R, w] of [[50, 11], [36, 11], [22, 11]] as const) {
+    const ry = R * 2;
+    const r = R - w;
+    const iy = r * 2;
+    d += `M${pt(50 - R, 100)}C${pt(50 - R, 100 - ry * K)} ${pt(50 - R * K, 100 - ry)} ${pt(50, 100 - ry)}C${pt(50 + R * K, 100 - ry)} ${pt(50 + R, 100 - ry * K)} ${pt(50 + R, 100)}`;
+    d += `L${pt(50 + r, 100)}C${pt(50 + r, 100 - iy * K)} ${pt(50 + r * K, 100 - iy)} ${pt(50, 100 - iy)}C${pt(50 - r * K, 100 - iy)} ${pt(50 - r, 100 - iy * K)} ${pt(50 - r, 100)}Z`;
+  }
+  return d;
+}
+
+/** A thick hand-drawn squiggle, as a band. */
+function squiggle(): string {
+  const top: [number, number][] = [];
+  const bottom: [number, number][] = [];
+  for (let i = 0; i <= 40; i++) {
+    const x = 2 + (i / 40) * 96;
+    const y = 50 + Math.sin((i / 40) * Math.PI * 4) * 28;
+    top.push([x, y - 9]);
+    bottom.push([x, y + 9]);
+  }
+  return poly([...top, ...bottom.reverse()]);
+}
+
+/** Bars through the centre at even angles (an asterisk, or an X with two). */
+function bars(n: number, len: number, w: number, rot = 0): string {
+  let d = '';
+  for (let i = 0; i < n; i++) {
+    const a = rot + (i / n) * Math.PI;
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    const p = (x: number, y: number): [number, number] => [50 + x * c - y * s, 50 + x * s + y * c];
+    d += poly([p(-len, -w), p(len, -w), p(len, w), p(-len, w)]);
+  }
+  return d;
+}
+
+function checker(n: number): string {
+  let d = '';
+  const s = 100 / n;
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if ((r + c) % 2 === 0) d += rect(c * s, r * s, s, s);
+  return d;
+}
 
 function scallop(): string {
   // Circle with a scalloped edge: 16 bumps.
@@ -206,6 +276,7 @@ export const SHAPE_CATEGORIES: { id: ShapeCategory; label: string }[] = [
   { id: 'banner', label: 'Banners' },
   { id: 'line', label: 'Lines' },
   { id: 'icon', label: 'Icons' },
+  { id: 'sticker', label: 'Stickers' },
 ];
 
 export const PHOTO_SHAPES = SHAPES.filter((s) => s.photoMask);

@@ -112,6 +112,20 @@ describe.runIf(existsSync(FIXTURES))('library housekeeping (API)', () => {
     void rest;
   });
 
+  it('exports smaller PDFs for sharing than at best quality', async () => {
+    const pid = await newProject();
+    const d = dir('q', [['day1-01-arrival.jpg'], ['day2-04-lake.jpg']]);
+    await importDir(pid, d);
+    const list = await assets(pid);
+    const { doc } = (await api('GET', `/api/projects/${pid}`)).body;
+    const sheet = doc.spreads[0];
+    sheet.elements = list.map((a, i) => ({ id: `f${i}`, type: 'image', assetId: a.id, xMm: 10, yMm: 10 + i * 150, widthMm: 250, heightMm: 140, rotationDeg: 0, locked: false, crop: { cx: 0.5, cy: 0.5, zoom: 1 }, fit: 'cover', borderMm: 0, borderColor: '#ffffff' }));
+    const size = async (quality: string) => (await api('POST', `/api/projects/${pid}/export`, { doc, quality })).body.bytes as number;
+    const share = await size('share');
+    const best = await size('best');
+    expect(share).toBeLessThan(best * 0.7);
+  }, 60_000);
+
   it('only quits when asked by the editor, and not a development server', async () => {
     expect((await api('POST', '/api/quit')).status).toBe(403);
     const res = await fetch(base + '/api/quit', { method: 'POST', headers: { 'x-photobook': '1' } });

@@ -23,7 +23,7 @@ function LookPreview({ fields, text }: { fields: Partial<TextElement>; text: str
     styleLinked: false, ...fields,
   } as TextElement;
   // Fit the sample: shrink the type (and its effects, which are proportional) to the tile.
-  const k = Math.min(1, 26 / Math.max(1, el.fontSizePt), (PREVIEW_W - 6) / Math.max(1, text.length * el.fontSizePt * 0.3528 * (el.uppercase ? 0.7 : 0.55)));
+  const k = Math.min(1, 26 / Math.max(1, el.fontSizePt), (PREVIEW_W - 8) / Math.max(1, text.length * el.fontSizePt * 0.3528 * ((el.uppercase ? 0.82 : 0.6) + (el.letterSpacingEm ?? 0))));
   const scaled: TextElement = {
     ...el, fontSizePt: el.fontSizePt * k, paddingMm: (el.paddingMm ?? 0) * k, strokeWidthMm: el.strokeWidthMm ? el.strokeWidthMm * k : undefined,
     outline2: el.outline2 && { ...el.outline2, widthMm: el.outline2.widthMm * k }, shadow: el.shadow && { ...el.shadow, dxMm: el.shadow.dxMm * k, dyMm: el.shadow.dyMm * k },

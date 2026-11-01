@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { binding, coverGeometry, issueCounts, printablePages, printer, updateSettings, type BleedMode } from '../../core';
 import { api, type ExportResponse, type FileVerification, type FlipbookResponse, type ImageExportResponse } from '../api';
 import { useEditor } from '../store';
@@ -8,6 +8,13 @@ import { usePreflight } from './PreflightPanel';
 
 const inch = (mm: number) => (mm / 25.4).toFixed(3).replace(/\.?0+$/, '');
 
+type Quality = 'share' | 'good' | 'best';
+const QUALITIES: { id: Quality; label: string; hint: string; dpi: number }[] = [
+  { id: 'share', label: 'Sharing', hint: 'Smallest files — for email, messages and screens', dpi: 150 },
+  { id: 'good', label: 'Good', hint: 'Decent quality at a sensible size — home printing, drafts', dpi: 220 },
+  { id: 'best', label: 'Best', hint: 'Highest quality — for the print shop', dpi: 300 },
+];
+
 export function ExportDialog({ onClose }: { onClose: () => void }) {
   const doc = useEditor((s) => s.doc)!;
   const projectId = useEditor((s) => s.projectId)!;
@@ -16,6 +23,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ExportResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [quality, setQuality] = useState<Quality>('best');
   const s = doc.settings;
   const pr = printer(s.printerId);
   const pages = printablePages(doc).length;
@@ -30,7 +38,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      setResult(await api.exportPdf(projectId, doc));
+      setResult(await api.exportPdf(projectId, doc, undefined, quality));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -40,6 +48,15 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal title={poster ? 'Export print-ready poster' : 'Export print-ready PDFs'} onClose={onClose} wide>
+      <div className="field export-quality">
+        <span>Quality</span>
+        <div className="seg seg-wide" role="radiogroup" aria-label="Export quality">
+          {QUALITIES.map((q) => (
+            <button key={q.id} role="radio" aria-checked={quality === q.id} className={quality === q.id ? 'on' : ''} title={q.hint} onClick={() => { setQuality(q.id); setResult(null); }}>{q.label}</button>
+          ))}
+        </div>
+        <span className="muted small">{QUALITIES.find((q) => q.id === quality)!.hint}. Sets the PDF and the {poster ? 'image' : 'flipbook'} options below; you can still change those.</span>
+      </div>
       {poster ? (
         <div className="export-summary">
           <div>
@@ -95,7 +112,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
       )}
       {error && <div className="notice notice-error">{error}</div>}
 
-      {poster ? <ImageExport /> : <FlipbookExport />}
+      {poster ? <ImageExport quality={quality} /> : <FlipbookExport quality={quality} />}
 
       {result && (
         <div className="export-results">
@@ -113,7 +130,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
       )}
 
       <div className="modal-foot">
-        <span className="muted small">Photos are embedded at up to 300 DPI, sRGB. Files are saved in the app’s data folder on this computer.</span>
+        <span className="muted small">Photos are embedded at up to {QUALITIES.find((q) => q.id === quality)!.dpi} DPI, sRGB{quality === 'share' ? ', compressed for a small file' : ''}. Files are saved in the app’s data folder on this computer.</span>
         <div className="row">
           <button className="btn btn-ghost" onClick={onClose}>Close</button>
           <button className="btn btn-primary" onClick={run} disabled={busy}>
@@ -126,7 +143,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
 }
 
 /** Poster as a PNG or JPEG: for sharing, or printing at home. */
-function ImageExport() {
+function ImageExport({ quality }: { quality: Quality }) {
   const doc = useEditor((s) => s.doc)!;
   const projectId = useEditor((s) => s.projectId)!;
   const [format, setFormat] = useState<'png' | 'jpeg'>('jpeg');
@@ -138,6 +155,12 @@ function ImageExport() {
   const px = (mm: number, d: number) => Math.round((mm / 25.4) * d);
   // "Screen" = about 2400 px on the long edge, whatever the poster size.
   const screenDpi = Math.round(2400 / (Math.max(s.trimWidthMm, s.trimHeightMm) / 25.4));
+  // The quality choice above sets a sensible format and size; both stay changeable here.
+  useEffect(() => {
+    setFormat(quality === 'best' ? 'png' : 'jpeg');
+    setDpi(quality === 'share' ? screenDpi : quality === 'good' ? 150 : 300);
+    setRes(null);
+  }, [quality, screenDpi]);
   const sizes = [
     { label: 'Screen', dpi: screenDpi, hint: 'for sharing' },
     { label: '150 DPI', dpi: 150, hint: 'home printing' },
@@ -184,10 +207,11 @@ function ImageExport() {
 }
 
 /** Book as a web flipbook: one HTML file to send or put online, with page turns. */
-function FlipbookExport() {
+function FlipbookExport({ quality }: { quality: Quality }) {
   const doc = useEditor((s) => s.doc)!;
   const projectId = useEditor((s) => s.projectId)!;
   const [size, setSize] = useState<'standard' | 'sharp'>('standard');
+  useEffect(() => setSize(quality === 'best' ? 'sharp' : 'standard'), [quality]);
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<FlipbookResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);

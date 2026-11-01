@@ -7,6 +7,7 @@ import { useEditor } from '../store';
 import { ColorInput } from './ColorInput';
 import { Icon } from './Icon';
 import { NumField } from './Inspector';
+import { PatternField } from './PatternField';
 
 const SOURCE_LABEL = {
   table: 'from the printer’s page-count table',
@@ -87,6 +88,10 @@ export function CoverPanel() {
             <span>Cover colour</span>
             <ColorInput value={cover.background ?? doc.style.background} label="Cover colour" apply={(d, c) => setSurfaceBackground(d, cover.id, c)} />
           </label>
+          <div className="field">
+            <span>Cover pattern</span>
+            <PatternField surfaceId={cover.id} />
+          </div>
         </>
       )}
     </div>

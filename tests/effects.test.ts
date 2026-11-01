@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   TEXT_LOOKS, addTextAt, applyTextLook, createPoster, cutPath, displayText, maskPath, polygonArea, saveTextLook, setSurfaceGrade, textBoxForDirection, textLayers, textLookFields,
-  updateElement, makeImageElement, gradeFromPreset, gradeColor, isNeutralGrade, gradeHex, gradeSurfaceColours, pageGrades, type TextElement,
+  updateElement, makeImageElement, gradeFromPreset, gradeColor, isNeutralGrade, gradeHex, gradeSurfaceColours, pageGrades, PATTERNS, patternPath, setSurfacePattern, STICKER_PACKS, addSticker, stickerFields, type TextElement,
 } from '../src/core';
 import { exportPosterPdf } from '../src/server/pdf';
 
@@ -133,4 +133,41 @@ describe('what a grade applies to', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   }, 60_000);
+});
+
+describe('background patterns', () => {
+  const sheet = { x: -3, y: -3, w: 285, h: 362 };
+  it('covers the page with tiles, never more than a few thousand, and rotates', () => {
+    for (const def of PATTERNS) {
+      const d = patternPath({ id: def.id, color: '#000', opacity: 1, sizeMm: 12, angleDeg: 30 }, sheet);
+      expect(d.length, def.id).toBeGreaterThan(20);
+    }
+    const tiny = patternPath({ id: 'dots', color: '#000', opacity: 1, sizeMm: 1, angleDeg: 0 }, sheet);
+    expect(tiny.match(/M/g)!.length).toBeLessThanOrEqual(4600);
+    const flat = patternPath({ id: 'stripes', color: '#000', opacity: 1, sizeMm: 20, angleDeg: 0 }, sheet);
+    const turned = patternPath({ id: 'stripes', color: '#000', opacity: 1, sizeMm: 20, angleDeg: 45 }, sheet);
+    expect(turned).not.toBe(flat);
+  });
+
+  it('prints a gradient pattern and sticker effects', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pat-'));
+    try {
+      let doc = createPoster({ title: 'P', sizeId: 'p11x14' });
+      const sheetId = doc.spreads[0].id;
+      doc = setSurfacePattern(doc, sheetId, { id: 'halftone', color: '#000', gradient: { from: '#ff0000', to: '#0000ff', angleDeg: 90 }, opacity: 0.4, sizeMm: 8, angleDeg: 20 });
+      for (const pack of STICKER_PACKS) for (const shape of pack.shapes) doc = addSticker(doc, sheetId, pack.id, shape, 100, 100).doc;
+      const res = await exportPosterPdf(doc, new Map(), join(dir, 'p.pdf'));
+      expect(res.verification.ok).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it('sticker packs style their stickers from the pack, sized to the sticker', () => {
+    const neon = STICKER_PACKS.find((p) => p.id === 'neon')!;
+    const a = stickerFields(neon, 0, 40, 40);
+    const b = stickerFields(neon, 0, 80, 80);
+    expect(a.glow!.sizeMm * 2).toBeCloseTo(b.glow!.sizeMm);
+    expect(stickerFields(neon, 1, 40, 40).glow!.color).not.toBe(a.glow!.color);
+  });
 });

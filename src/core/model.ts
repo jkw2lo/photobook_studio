@@ -248,6 +248,11 @@ export interface ShapeElement extends ElementBase {
   type: 'shape';
   fill: string;
   opacity: number;
+  /** Sticker effects, as on text: a hard shadow, a glow, 3D depth, an outer (die-cut) outline. */
+  shadow?: { color: string; dxMm: number; dyMm: number; opacity: number };
+  glow?: { color: string; sizeMm: number };
+  extrude?: { color: string; depthMm: number; angleDeg: number };
+  outline2?: { color: string; widthMm: number };
   /** Id in the shape library (shapes, banners, icons, lines). Missing = a plain rectangle. */
   shape?: string;
   /** A place's outline (map sticker) instead of a library shape; fitted without distortion. */
@@ -317,6 +322,8 @@ export interface Spread {
   /** A photo filling the whole surface (out to the bleed), behind every element. Auto layouts
    * never touch it. */
   backgroundImage?: BackgroundImage;
+  /** A pattern over the background (colour and photo), under everything else. */
+  pattern?: SurfacePattern;
   /** Colour grade for the photos on this page / spread / cover, after each photo's own adjustment
    * and before the whole document's grade. */
   grade?: ColorGrade;
@@ -367,6 +374,19 @@ export interface BookDocument {
   templateElementIds?: ID[];
   /** Text looks saved from this document's own text boxes, to reuse on any page. */
   textLooks?: SavedTextLook[];
+}
+
+/** A repeating background pattern (see core/patterns). */
+export interface SurfacePattern {
+  id: string;
+  color: string;
+  /** Colours the pattern instead of `color`, across the whole page. */
+  gradient?: Gradient;
+  /** 0–1. */
+  opacity: number;
+  /** Size of one tile (mm). */
+  sizeMm: number;
+  angleDeg?: number;
 }
 
 /** A text look saved from a text box: everything about how the letters look, none of the words. */

@@ -15,7 +15,7 @@ import { newId } from './random';
 type Tone = 'text' | 'paper';
 type Colour = string | Tone;
 
-export type TextLookCategory = 'Retro' | 'Editorial' | 'Bold' | 'Neon' | 'Playful';
+export type TextLookCategory = 'Retro' | 'Vintage' | 'Editorial' | 'Bold' | 'Neon' | 'Y2K' | 'Playful';
 
 export interface TextLookDef {
   id: string;
@@ -43,7 +43,7 @@ export interface TextLookDef {
   background?: { color: Colour; opacity: number };
 }
 
-export const TEXT_LOOK_CATEGORIES: TextLookCategory[] = ['Retro', 'Editorial', 'Bold', 'Neon', 'Playful'];
+export const TEXT_LOOK_CATEGORIES: TextLookCategory[] = ['Retro', 'Vintage', 'Editorial', 'Bold', 'Neon', 'Y2K', 'Playful'];
 
 export const TEXT_LOOKS: TextLookDef[] = [
   // Retro
@@ -53,11 +53,21 @@ export const TEXT_LOOKS: TextLookDef[] = [
   { id: 'arcade', name: 'Arcade', category: 'Retro', sample: 'High score', family: 'Bungee', weight: 400, sizePt: 36, uppercase: true, lineHeight: 1, color: '#ffd23f', extrude: { color: '#ee4266', em: 0.1, angleDeg: 45 }, outline2: { color: '#1b1b1d', em: 0.04 } },
   { id: 'deco', name: 'Art deco', category: 'Retro', sample: 'Grand Hotel', family: 'Limelight', weight: 400, sizePt: 34, uppercase: true, letterSpacingEm: 0.12, lineHeight: 1.05, color: '#c9a227', gradient: { from: '#f5e199', to: '#9c7a1a', angleDeg: 180 } },
   { id: 'postcard', name: 'Postcard', category: 'Retro', sample: 'Greetings', family: 'Pacifico', weight: 400, sizePt: 40, lineHeight: 1.1, color: '#ffffff', stroke: { color: '#2b4c7e', em: 0.08 }, shadow: { color: '#2b4c7e', em: 0.07, opacity: 1 }, arch: 18 },
+  { id: 'riso', name: 'Riso misprint', category: 'Retro', sample: 'Zine', family: 'Bebas Neue', weight: 400, sizePt: 60, uppercase: true, letterSpacingEm: 0.02, lineHeight: 0.92, color: '#2b59c3', shadow: { color: '#ff4f79', em: 0.05, opacity: 0.85 } },
+  { id: 'disco', name: 'Disco', category: 'Retro', sample: 'Boogie', family: 'Shrikhand', weight: 400, sizePt: 44, lineHeight: 1, color: '#ffd23f', gradient: { from: '#ffe680', to: '#ff7b54', angleDeg: 180 }, extrude: { color: '#8a2be2', em: 0.08, angleDeg: 90 }, skewDeg: 6 },
+  // Vintage
+  { id: 'western', name: 'Western', category: 'Vintage', sample: 'Wild West', family: 'Cinzel', weight: 900, sizePt: 40, uppercase: true, letterSpacingEm: 0.06, lineHeight: 1, color: '#9a3b14', outline2: { color: '#f4e3c3', em: 0.04 }, extrude: { color: '#3d1a0b', em: 0.07, angleDeg: 60 } },
+  { id: 'stamp', name: 'Stamp', category: 'Vintage', sample: 'Air mail', family: 'Oswald', weight: 600, sizePt: 30, uppercase: true, letterSpacingEm: 0.22, lineHeight: 1.05, color: '#c0392b', stroke: { color: '#c0392b', em: 0.012 } },
+  { id: 'badge-arch', name: 'Retro badge', category: 'Vintage', sample: 'Since 1987', family: 'Righteous', weight: 400, sizePt: 30, uppercase: true, letterSpacingEm: 0.1, lineHeight: 1, color: '#2f4858', arch: 40 },
+  { id: 'typewriter-tag', name: 'Typed label', category: 'Vintage', sample: 'No. 04 — Lisbon', family: 'Courier Prime', weight: 700, sizePt: 16, uppercase: true, letterSpacingEm: 0.08, color: '#1b1b1d', background: { color: '#f2e8cf', opacity: 1 } },
+  { id: 'old-hollywood', name: 'Old Hollywood', category: 'Vintage', sample: 'Premiere', family: 'Limelight', weight: 400, sizePt: 40, lineHeight: 1, color: '#f6e7b4', shadow: { color: '#3a2b18', em: 0.06, opacity: 0.9 }, outline2: { color: '#8c6d2c', em: 0.025 } },
   // Editorial
   { id: 'vogue', name: 'Fashion masthead', category: 'Editorial', sample: 'MAISON', family: 'Bodoni Moda', weight: 800, sizePt: 60, uppercase: true, letterSpacingEm: -0.02, lineHeight: 0.95, color: 'text' },
   { id: 'thin-luxe', name: 'Thin luxe', category: 'Editorial', sample: 'The Edit', family: 'Italiana', weight: 400, sizePt: 38, uppercase: true, letterSpacingEm: 0.28, lineHeight: 1.1, color: 'text' },
   { id: 'deck', name: 'Serif italic deck', category: 'Editorial', sample: 'Notes on summer', family: 'Playfair Display', weight: 400, sizePt: 30, italic: true, lineHeight: 1.1, color: 'text' },
   { id: 'gold-caps', name: 'Gold caps', category: 'Editorial', sample: 'Anniversary', family: 'Cinzel', weight: 600, sizePt: 30, uppercase: true, letterSpacingEm: 0.16, lineHeight: 1.1, color: '#b8860b', gradient: { from: '#f6e27a', to: '#a67c00', angleDeg: 160 } },
+  { id: 'coverline', name: 'Coverline', category: 'Editorial', sample: '10 places to go now', family: 'Oswald', weight: 500, sizePt: 22, uppercase: true, letterSpacingEm: 0.08, lineHeight: 1.05, color: '#e63946' },
+  { id: 'swash', name: 'Italic swash', category: 'Editorial', sample: 'Summer', family: 'Playfair Display', weight: 900, sizePt: 58, italic: true, letterSpacingEm: -0.03, lineHeight: 0.95, color: 'text' },
   { id: 'wide', name: 'Wide gallery', category: 'Editorial', sample: 'Exhibition', family: 'Syne', weight: 800, sizePt: 34, uppercase: true, letterSpacingEm: 0.04, lineHeight: 1, color: 'text' },
   // Bold
   { id: 'gig', name: 'Gig poster', category: 'Bold', sample: 'Live tonight', family: 'Bebas Neue', weight: 400, sizePt: 64, uppercase: true, letterSpacingEm: 0.03, lineHeight: 0.92, color: 'text' },
@@ -66,13 +76,23 @@ export const TEXT_LOOKS: TextLookDef[] = [
   { id: 'long', name: 'Long shadow', category: 'Bold', sample: 'Road trip', family: 'Oswald', weight: 700, sizePt: 46, uppercase: true, lineHeight: 1, color: '#ffffff', extrude: { color: '#3d405b', em: 0.35, angleDeg: 45 } },
   { id: 'hollow', name: 'Hollow', category: 'Bold', sample: 'Outline', family: 'Anton', weight: 400, sizePt: 56, uppercase: true, lineHeight: 0.95, color: 'paper', stroke: { color: 'text', em: 0.05 } },
   { id: 'chrome', name: 'Chrome', category: 'Bold', sample: 'Metal', family: 'Archivo Black', weight: 400, sizePt: 54, uppercase: true, lineHeight: 0.95, color: '#c0c6d0', gradient: { from: '#f4f6fa', to: '#69707c', angleDeg: 180 }, stroke: { color: '#22252b', em: 0.035 }, extrude: { color: '#22252b', em: 0.08, angleDeg: 70 } },
+  { id: 'brutal', name: 'Brutalist', category: 'Bold', sample: 'RAW', family: 'Archivo Black', weight: 400, sizePt: 60, uppercase: true, letterSpacingEm: -0.04, lineHeight: 0.9, color: '#111111', background: { color: '#ffe600', opacity: 1 } },
+  { id: 'comic', name: 'Comic pop', category: 'Bold', sample: 'Pow!', family: 'Bungee', weight: 400, sizePt: 50, uppercase: true, lineHeight: 1, color: '#ffde00', stroke: { color: '#111111', em: 0.06 }, extrude: { color: '#111111', em: 0.1, angleDeg: 50 }, skewDeg: 8 },
   // Neon
   { id: 'neon-pink', name: 'Neon pink', category: 'Neon', sample: 'Night out', family: 'Pacifico', weight: 400, sizePt: 40, lineHeight: 1.1, color: '#ffe3f4', glow: { color: '#ff3cac', em: 0.22 } },
   { id: 'neon-tube', name: 'Neon tube', category: 'Neon', sample: 'Open', family: 'Monoton', weight: 400, sizePt: 48, uppercase: true, lineHeight: 1, color: '#d9fbff', glow: { color: '#18c8ff', em: 0.2 } },
   { id: 'neon-sign', name: 'Neon sign', category: 'Neon', sample: 'Motel', family: 'Righteous', weight: 400, sizePt: 44, uppercase: true, letterSpacingEm: 0.06, lineHeight: 1, color: '#fff7c2', glow: { color: '#ffb000', em: 0.18 } },
+  { id: 'neon-green', name: 'Neon green', category: 'Neon', sample: 'Arcade', family: 'Bungee', weight: 400, sizePt: 40, uppercase: true, lineHeight: 1, color: '#e9ffd9', glow: { color: '#39ff14', em: 0.2 } },
+  { id: 'cyber', name: 'Cyber', category: 'Neon', sample: 'Future', family: 'Syne', weight: 800, sizePt: 46, uppercase: true, letterSpacingEm: 0.06, lineHeight: 1, color: '#f3e8ff', glow: { color: '#a855f7', em: 0.18 }, outline2: { color: '#22d3ee', em: 0.02 } },
+  // Y2K
+  { id: 'y2k-chrome', name: 'Bubble chrome', category: 'Y2K', sample: 'Millennium', family: 'Righteous', weight: 400, sizePt: 44, lineHeight: 1, color: '#dfe7ff', gradient: { from: '#ffffff', to: '#8aa4ff', angleDeg: 180 }, stroke: { color: '#5b4bdb', em: 0.05 }, glow: { color: '#b8c6ff', em: 0.15 } },
+  { id: 'y2k-pink', name: 'Pink pop', category: 'Y2K', sample: 'Babe', family: 'Syne', weight: 800, sizePt: 52, lineHeight: 0.95, color: '#ff6ec7', gradient: { from: '#ff9ad5', to: '#b46bff', angleDeg: 135 }, outline2: { color: '#ffffff', em: 0.07 }, shadow: { color: '#b46bff', em: 0.06, opacity: 0.6 } },
+  { id: 'y2k-sticker', name: 'Holo sticker', category: 'Y2K', sample: 'Cyber girl', family: 'Archivo Black', weight: 400, sizePt: 40, lineHeight: 1, color: '#9ef0ff', gradient: { from: '#9ef0ff', to: '#ff9ad5', angleDeg: 90 }, stroke: { color: '#5b4bdb', em: 0.04 }, extrude: { color: '#5b4bdb', em: 0.07, angleDeg: 60 } },
   // Playful
   { id: 'surf', name: 'Surf sunset', category: 'Playful', sample: 'Aloha', family: 'Pacifico', weight: 400, sizePt: 44, lineHeight: 1.1, color: '#ff7e5f', gradient: { from: '#feb47b', to: '#ff5e62', angleDeg: 180 }, arch: 30 },
   { id: 'sticker', name: 'Sticker', category: 'Playful', sample: 'Yay!', family: 'Archivo Black', weight: 400, sizePt: 44, lineHeight: 1, color: '#ff5a5f', outline2: { color: '#ffffff', em: 0.12 }, shadow: { color: '#000000', em: 0.05, opacity: 0.35 } },
+  { id: 'bubblegum', name: 'Bubblegum', category: 'Playful', sample: 'Sweet', family: 'Shrikhand', weight: 400, sizePt: 46, lineHeight: 1, color: '#ff7ab6', outline2: { color: '#ffffff', em: 0.1 }, shadow: { color: '#c2185b', em: 0.08, opacity: 0.8 } },
+  { id: 'candy', name: 'Candy stripe', category: 'Playful', sample: 'Party!', family: 'Lobster', weight: 400, sizePt: 46, lineHeight: 1, color: '#ff5a5f', gradient: { from: '#ffd23f', to: '#ff5a5f', angleDeg: 90 }, stroke: { color: '#ffffff', em: 0.05 }, shadow: { color: '#2b2d42', em: 0.06, opacity: 1 } },
   { id: 'tag', name: 'Marker tag', category: 'Playful', sample: 'was here', family: 'Permanent Marker', weight: 400, sizePt: 36, lineHeight: 1.05, color: '#1b1b1d', skewDeg: -6 },
   { id: 'label', name: 'Label band', category: 'Playful', sample: 'Chapter one', family: 'Bebas Neue', weight: 400, sizePt: 22, uppercase: true, letterSpacingEm: 0.18, color: 'paper', background: { color: 'text', opacity: 0.9 } },
 ];

@@ -1,6 +1,6 @@
 import { memo, useId, useMemo, type CSSProperties, type ReactNode } from 'react';
 import {
-  COVER_INDEX, archGeometry, backgroundFrame, displayText, gradeHex, gradeSurfaceColours, pageGrades, textLayers, type TextLayer, elementPlacement, geometryFor, gradeChainSvg, gradientLine, isNeutralChain, isNeutralGrade, maskPath, pageNumberRect,
+  COVER_INDEX, archGeometry, backgroundFrame, displayText, gradeHex, patternPath, type SurfacePattern, gradeSurfaceColours, pageGrades, textLayers, type TextLayer, elementPlacement, geometryFor, gradeChainSvg, gradientLine, isNeutralChain, isNeutralGrade, maskPath, pageNumberRect,
   roleStyle, shapePath, type BookSettings, type BookStyle, type ColorGrade, type Element, type Gradient, type ImageElement, type PhotoAsset,
   type ShapeElement, type Spread, type TextElement, type CalendarElement, calendarLayout, calendarMark, mapPath, MM_PER_PT,
 } from '../../core';
@@ -76,6 +76,7 @@ export const SpreadView = memo(function SpreadView({ settings, style, spreadCoun
         ))}
       {/* The background photo is part of the page: only whole-page grades change it. */}
       {bgFrame && <ElementView el={bgFrame} scale={scale} offset={b} asset={assets.get(bgFrame.assetId!)} thumbSize={thumbSize} filter={whole.length ? `url(#${bgFilterId})` : undefined} grade={whole[1]} surfaceGrade={whole[0]} />}
+      {shown.pattern && <PatternLayer pattern={shown.pattern} w={g.width + 2 * b} h={g.height + 2 * b} bleed={b} scale={scale} />}
       {shown.elements.map((el) =>
         el.id === hiddenElementId ? null : (
           <ElementView key={el.id} el={el} scale={scale} offset={b} asset={el.type === 'image' && el.assetId ? assets.get(el.assetId) : undefined} thumbSize={thumbSize} filter={graded ? `url(#${filterId})` : undefined} grade={grade} surfaceGrade={surface.grade} />
@@ -195,6 +196,20 @@ function ImageView({ el, scale, style, asset, thumbSize, filter, grade, surfaceG
   );
 }
 
+/** A background pattern across the whole surface (bleed included), from the same path the PDF draws. */
+const PatternLayer = memo(function PatternLayer({ pattern, w, h, bleed, scale }: { pattern: SurfacePattern; w: number; h: number; bleed: number; scale: number }) {
+  const uid = `pg${useId().replace(/:/g, '')}`;
+  const d = useMemo(() => patternPath(pattern, { x: -bleed, y: -bleed, w, h }), [pattern, w, h, bleed]);
+  return (
+    <svg className="pattern-layer" width={w * scale} height={h * scale} aria-hidden>
+      <g transform={`scale(${scale})`} opacity={pattern.opacity}>
+        {pattern.gradient && <defs><GradientDef id={uid} gradient={pattern.gradient} w={w} h={h} /></defs>}
+        <path d={d} fill={pattern.gradient ? `url(#${uid})` : pattern.color} />
+      </g>
+    </svg>
+  );
+});
+
 /** SVG <linearGradient> across a w × h box, matching the PDF's gradient line. */
 function GradientDef({ id, gradient, w, h }: { id: string; gradient: Gradient; w: number; h: number }) {
   const l = gradientLine(gradient.angleDeg, w, h);
@@ -210,12 +225,19 @@ function ShapeView({ el, scale, style }: { el: ShapeElement; scale: number; styl
   const gid = `sg${useId().replace(/:/g, '')}`;
   const w = el.widthMm * scale;
   const h = el.heightMm * scale;
-  if (!el.shape && !el.outline && !el.gradient && !el.strokeWidthMm && el.fill !== 'none') return <div className="el el-shape" style={{ ...style, background: el.fill, opacity: el.opacity }} />;
+  const layers = textLayers(el);
+  if (!el.shape && !el.outline && !el.gradient && !el.strokeWidthMm && el.fill !== 'none' && !layers.length) return <div className="el el-shape" style={{ ...style, background: el.fill, opacity: el.opacity }} />;
   const path = shapePath(el, w, h);
   return (
     <div className="el el-shape" style={{ ...style, opacity: el.opacity }}>
       <svg width={w} height={h} style={{ overflow: 'visible', display: 'block' }}>
         {el.gradient && <defs><GradientDef id={gid} gradient={el.gradient} w={w} h={h} /></defs>}
+        {/* Sticker effects behind the shape: glow, shadow, 3D depth, die-cut outline (as the PDF). */}
+        {layers.map((l, i) => (
+          <path key={i} d={path.d} fillRule={path.evenOdd ? 'evenodd' : 'nonzero'} transform={l.dxMm || l.dyMm ? `translate(${l.dxMm * scale} ${l.dyMm * scale})` : undefined}
+            fill={l.color} fillOpacity={l.opacity} stroke={l.strokeMm ? l.color : undefined} strokeWidth={l.strokeMm ? l.strokeMm * scale : undefined} strokeOpacity={l.opacity} strokeLinejoin="round"
+            style={l.blurMm ? { filter: `blur(${l.blurMm * scale * 0.5}px)` } : undefined} />
+        ))}
         <path
           d={path.d} fillRule={path.evenOdd ? 'evenodd' : 'nonzero'} fill={el.gradient ? `url(#${gid})` : el.fill}
           stroke={el.strokeWidthMm ? el.strokeColor ?? '#000000' : undefined} strokeWidth={el.strokeWidthMm ? el.strokeWidthMm * scale : undefined} strokeLinejoin="round"

@@ -11,7 +11,7 @@ import { listPlaces, placeOutline, suggestPlaces } from './places';
 import { exportFlipbook, type FlipbookSize } from './flipbook';
 import { exportPosterImage } from './imageExport';
 import { ALPHA_FORMATS, colorFeatures, existingThumb, hashFile, hasTransparency, isSupported, makeThumbnails, THUMB_SIZES, type ThumbSize } from './media';
-import { exportCoverPdf, exportPdf, exportPosterPdf, type ExportAsset, type ExportOptions } from './pdf';
+import { exportCoverPdf, exportPdf, exportPosterPdf, type ExportAsset, type ExportOptions, type ExportQuality } from './pdf';
 
 // HTTP API. Bound to 127.0.0.1 by main.ts — never reachable from the network.
 
@@ -379,13 +379,14 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
   app.post('/api/projects/:id/export', wrap(async (req, res) => {
     const p = requireProject(P(req).id);
     const doc = req.body?.doc ? migrateDocument(req.body.doc) : p.doc;
-    const options: ExportOptions = req.body?.bleedMode === 'outer' || req.body?.bleedMode === 'all' ? { bleedMode: req.body.bleedMode } : {};
+    const quality: ExportQuality = req.body?.quality === 'share' || req.body?.quality === 'good' ? req.body.quality : 'best';
+    const options: ExportOptions = { quality, ...(req.body?.bleedMode === 'outer' || req.body?.bleedMode === 'all' ? { bleedMode: req.body.bleedMode } : {}) };
     const assets = exportAssets(P(req).id);
     const safeTitle = doc.title.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'photobook';
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     if (doc.settings.product === 'poster') {
       const file = `${safeTitle}-${stamp}-poster.pdf`;
-      const result = await exportPosterPdf(doc, assets, join(dataDir, 'exports', file));
+      const result = await exportPosterPdf(doc, assets, join(dataDir, 'exports', file), quality);
       return void res.json({ ...result, file, url: `/api/exports/${encodeURIComponent(file)}`, cover: null });
     }
     const file = `${safeTitle}-${stamp}-interior.pdf`;
@@ -393,7 +394,7 @@ export function createApp(dataDir: string, opts: { staticDir?: string; devWebUrl
     let cover = null;
     if (doc.cover) {
       const coverFile = `${safeTitle}-${stamp}-cover.pdf`;
-      const c = await exportCoverPdf(doc, assets, join(dataDir, 'exports', coverFile));
+      const c = await exportCoverPdf(doc, assets, join(dataDir, 'exports', coverFile), quality);
       cover = { ...c, file: coverFile, url: `/api/exports/${encodeURIComponent(coverFile)}` };
     }
     res.json({ ...result, file, url: `/api/exports/${encodeURIComponent(file)}`, cover });
