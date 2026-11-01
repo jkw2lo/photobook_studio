@@ -388,6 +388,9 @@ export interface ColorGrade {
   mono?: 'bw' | 'sepia';
   /** A negative: every colour turned to its opposite (white becomes black), after everything else. */
   invert?: boolean;
+  /** Page grades and the document's: 'photos' (missing) grades only the photos; 'page' grades
+   * everything — background, background photo, text, shapes. */
+  scope?: 'photos' | 'page';
 }
 
 /**

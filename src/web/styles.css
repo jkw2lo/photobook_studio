@@ -745,11 +745,13 @@ input[type='checkbox'] { accent-color: var(--accent); width: 15px; height: 15px;
 .pasteboard { position: absolute; z-index: 3; pointer-events: none; background: color-mix(in srgb, var(--stage) 62%, transparent); }
 .handle-rotate { width: 16px; height: 16px; margin: -8px 0 0 -8px; top: -26px; display: flex; align-items: center; justify-content: center; color: var(--select); }
 .handle-rotate::after { left: 7px; top: 15px; height: 11px; }
-.rotate-zone { position: absolute; width: 22px; height: 22px; pointer-events: auto; cursor: url("data:image/svg+xml,%3Csvg xmlns='http%3A//www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M20 11a8 8 0 10-2.3 5.7M20 4v7h-7'/%3E%3C/svg%3E") 11 11, alias; }
-.rz-nw { left: -24px; top: -24px; }
-.rz-ne { right: -24px; top: -24px; }
-.rz-se { right: -24px; bottom: -24px; }
-.rz-sw { left: -24px; bottom: -24px; }
+.rotate-zone { position: absolute; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; color: transparent; pointer-events: auto; cursor: url("data:image/svg+xml,%3Csvg xmlns='http%3A//www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M20 11a8 8 0 10-2.3 5.7M20 4v7h-7'/%3E%3C/svg%3E") 11 11, alias; }
+.rz-nw { left: -30px; top: -30px; }
+.rz-ne { right: -30px; top: -30px; }
+.rz-se { right: -30px; bottom: -30px; }
+.rz-sw { left: -30px; bottom: -30px; }
+.rotate-zone:hover { color: var(--select); }
+.rotate-zone .icon { filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.8)); }
 .rotation-field .row input[type='range'] { flex: 1; min-width: 0; }
 .text-direction button { font-size: 11.5px; }
 
@@ -793,3 +795,10 @@ input[type='checkbox'] { accent-color: var(--accent); width: 15px; height: 15px;
 .quit-screen { position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; padding: 24px; background: var(--bg, #141416); color: var(--text); }
 .quit-screen h2 { font-size: 20px; margin: 0; }
 .quit-screen p { max-width: 420px; margin: 0; }
+
+/* ---- tool bars docked at the bottom of the visible canvas */
+.canvas-wrap { flex: 1; position: relative; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.canvas-dock { position: absolute; left: 0; right: 0; bottom: 12px; z-index: 12; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0 12px; pointer-events: none; }
+.canvas-dock > * { pointer-events: auto; }
+.canvas-dock .crop-toolbar { position: static; transform: none; left: auto; bottom: auto; max-width: 100%; }
+.canvas-dock .canvas-hint { position: static; transform: none; left: auto; top: auto; pointer-events: none; }

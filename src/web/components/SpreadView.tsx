@@ -1,6 +1,6 @@
 import { memo, useId, useMemo, type CSSProperties, type ReactNode } from 'react';
 import {
-  COVER_INDEX, archGeometry, backgroundFrame, displayText, textLayers, type TextLayer, elementPlacement, geometryFor, gradeChainSvg, gradientLine, isNeutralChain, isNeutralGrade, maskPath, pageNumberRect,
+  COVER_INDEX, archGeometry, backgroundFrame, displayText, gradeHex, gradeSurfaceColours, pageGrades, textLayers, type TextLayer, elementPlacement, geometryFor, gradeChainSvg, gradientLine, isNeutralChain, isNeutralGrade, maskPath, pageNumberRect,
   roleStyle, shapePath, type BookSettings, type BookStyle, type ColorGrade, type Element, type Gradient, type ImageElement, type PhotoAsset,
   type ShapeElement, type Spread, type TextElement, type CalendarElement, calendarLayout, calendarMark, mapPath, MM_PER_PT,
 } from '../../core';
@@ -28,13 +28,18 @@ interface Props {
 }
 
 export const SpreadView = memo(function SpreadView({ settings, style, spreadCount, index, surface, scale, assets, thumbSize = 'm', children, hiddenElementId, grade }: Props) {
-  const filterId = `grade${useId().replace(/:/g, '')}`;
-  // The page's own grade, then the document's.
+  const uid = useId().replace(/:/g, '');
+  const filterId = `grade${uid}`;
+  const bgFilterId = `bggrade${uid}`;
+  // The page's own grade, then the document's. Photos take both; grades for the whole page also
+  // recolour the background (colour and photo), text and shapes.
   const chain = [surface.grade, grade];
   const graded = !isNeutralChain(chain);
+  const whole = useMemo(() => pageGrades([surface.grade, grade]), [surface.grade, grade]);
+  const shown = useMemo(() => (whole.length ? gradeSurfaceColours(surface, style.background, whole) : surface), [surface, style.background, whole]);
   const g = useMemo(() => geometryFor(settings, spreadCount, index), [settings, spreadCount, index]);
   const b = g.bleed;
-  const bg = surface.background ?? style.background;
+  const bg = shown.background ?? style.background;
   const px = (mm: number) => mm * scale;
   // Covers and posters are one continuous sheet; spreads are two pages (with inside covers).
   const isCover = index === COVER_INDEX || g.kind === 'poster';
@@ -45,6 +50,13 @@ export const SpreadView = memo(function SpreadView({ settings, style, spreadCoun
         <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden>
           <filter id={filterId} colorInterpolationFilters="sRGB">
             <feColorMatrix type="matrix" values={gradeChainSvg(chain)} />
+          </filter>
+        </svg>
+      )}
+      {whole.length > 0 && (
+        <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden>
+          <filter id={bgFilterId} colorInterpolationFilters="sRGB">
+            <feColorMatrix type="matrix" values={gradeChainSvg(whole)} />
           </filter>
         </svg>
       )}
@@ -62,8 +74,9 @@ export const SpreadView = memo(function SpreadView({ settings, style, spreadCoun
             }}
           />
         ))}
-      {bgFrame && <ElementView el={bgFrame} scale={scale} offset={b} asset={assets.get(bgFrame.assetId!)} thumbSize={thumbSize} filter={graded ? `url(#${filterId})` : undefined} grade={grade} surfaceGrade={surface.grade} />}
-      {surface.elements.map((el) =>
+      {/* The background photo is part of the page: only whole-page grades change it. */}
+      {bgFrame && <ElementView el={bgFrame} scale={scale} offset={b} asset={assets.get(bgFrame.assetId!)} thumbSize={thumbSize} filter={whole.length ? `url(#${bgFilterId})` : undefined} grade={whole[1]} surfaceGrade={whole[0]} />}
+      {shown.elements.map((el) =>
         el.id === hiddenElementId ? null : (
           <ElementView key={el.id} el={el} scale={scale} offset={b} asset={el.type === 'image' && el.assetId ? assets.get(el.assetId) : undefined} thumbSize={thumbSize} filter={graded ? `url(#${filterId})` : undefined} grade={grade} surfaceGrade={surface.grade} />
         ),
@@ -80,7 +93,7 @@ export const SpreadView = memo(function SpreadView({ settings, style, spreadCoun
               style={{
                 left: px(r.x + b), top: px(r.y + b), width: px(r.w), height: px(r.h),
                 fontSize: px(8 * MM_PER_PT), textAlign: p.id === 'left' ? 'left' : 'right',
-                color: style.textColor, fontFamily: `'${roleStyle(style, 'caption').family}'`,
+                color: gradeHex(style.textColor, whole), fontFamily: `'${roleStyle(style, 'caption').family}'`,
               }}
             >
               {num}

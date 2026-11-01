@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   TEXT_LOOKS, addTextAt, applyTextLook, createPoster, cutPath, displayText, maskPath, polygonArea, saveTextLook, setSurfaceGrade, textBoxForDirection, textLayers, textLookFields,
-  updateElement, makeImageElement, gradeFromPreset, gradeColor, isNeutralGrade, type TextElement,
+  updateElement, makeImageElement, gradeFromPreset, gradeColor, isNeutralGrade, gradeHex, gradeSurfaceColours, pageGrades, type TextElement,
 } from '../src/core';
 import { exportPosterPdf } from '../src/server/pdf';
 
@@ -103,4 +103,34 @@ describe('inverted photos', () => {
     expect(r).toBeGreaterThan(128); // a mid-dark colour becomes a light grey
     expect(isNeutralGrade(g({ invert: true }))).toBe(false);
   });
+});
+
+describe('what a grade applies to', () => {
+  const bw = { ...gradeFromPreset('none'), preset: 'custom', mono: 'bw' as const };
+  it('photos only leaves the page alone; the whole page recolours background, text and shapes', () => {
+    expect(pageGrades([bw, undefined])).toEqual([]);
+    const whole = { ...bw, scope: 'page' as const };
+    expect(pageGrades([undefined, whole])).toEqual([whole]);
+    expect(gradeHex('#ff0000', [whole])).toMatch(/^#([0-9a-f]{2})\1\1$/);
+    expect(gradeHex('none', [whole])).toBe('none');
+    let doc = createPoster({ title: 'G', sizeId: 'p11x14' });
+    const r = addTextAt(doc, doc.spreads[0].id, 50, 50, 'Hi', 'title');
+    doc = updateElement(r.doc, doc.spreads[0].id, r.newId, { color: '#d02020' });
+    const shown = gradeSurfaceColours({ ...doc.spreads[0], background: '#2040c0' }, doc.style.background, [whole]);
+    expect(shown.background).toMatch(/^#([0-9a-f]{2})\1\1$/);
+    expect((shown.elements[0] as TextElement).color).toMatch(/^#([0-9a-f]{2})\1\1$/);
+  });
+
+  it('prints a whole-page grade', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'scope-'));
+    try {
+      let doc = createPoster({ title: 'G', sizeId: 'p11x14' });
+      const r = addTextAt(doc, doc.spreads[0].id, 50, 50, 'Hi', 'title');
+      doc = { ...r.doc, grade: { ...bw, scope: 'page' } };
+      const res = await exportPosterPdf(doc, new Map(), join(dir, 'g.pdf'));
+      expect(res.verification.ok).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
 });

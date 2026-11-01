@@ -543,13 +543,28 @@ export function GradeControls({ surfaceId }: { surfaceId?: string } = {}) {
   const grade = useEditor((s) => (surfaceId ? (s.doc ? findSurface(s.doc, surfaceId)?.surface.grade : undefined) : s.doc?.grade)) ?? NO_GRADE;
   const poster = useEditor((s) => s.doc?.settings.product === 'poster');
   const { run } = useEditor.getState();
-  const apply = (d: BookDocument, next: ColorGrade | undefined) => {
-    const g = next && !isNeutralGrade(next) ? next : undefined;
+  // Remembered here too, so the choice sticks before any grade is picked.
+  const [scope, setScope] = useState<'photos' | 'page'>(grade.scope ?? 'photos');
+  useEffect(() => setScope(grade.scope ?? 'photos'), [grade.scope]);
+  const apply = (d: BookDocument, next: ColorGrade | undefined, sc = scope) => {
+    const g = next && !isNeutralGrade(next) ? { ...next, scope: sc === 'page' ? ('page' as const) : undefined } : undefined;
     return surfaceId ? setSurfaceGrade(d, surfaceId, g) : { ...d, grade: g };
   };
-  const where = surfaceId ? 'on this page' : poster ? 'on the poster (and the background image)' : 'in the book';
+  const whole = surfaceId ? 'page' : poster ? 'poster' : 'book';
+  const pick = (sc: 'photos' | 'page') => {
+    setScope(sc);
+    if (!isNeutralGrade(grade)) run(sc === 'page' ? `Grade the whole ${whole}` : 'Grade only the photos', (d) => apply(d, grade, sc));
+  };
+  const where = scope === 'page' ? `on everything ${surfaceId ? 'on this page' : `in the ${whole}`} — photos, background, text and shapes` : `only to the photos ${surfaceId ? 'on this page' : `in the ${whole}`}; the background, text and shapes keep their colours`;
   return (
     <div className="stack">
+      <div className="field">
+        <span>Applies to</span>
+        <div className="seg seg-wide" role="radiogroup" aria-label="Grade applies to">
+          <button role="radio" aria-checked={scope === 'photos'} className={scope === 'photos' ? 'on' : ''} onClick={() => pick('photos')}>Photos only</button>
+          <button role="radio" aria-checked={scope === 'page'} className={scope === 'page' ? 'on' : ''} onClick={() => pick('page')}>Whole {whole}</button>
+        </div>
+      </div>
       <div className="grade-presets">
         {GRADE_PRESETS.map((p) => {
           const g = gradeFromPreset(p.id);
@@ -567,7 +582,7 @@ export function GradeControls({ surfaceId }: { surfaceId?: string } = {}) {
         <InvertButton value={grade} apply={apply} label={surfaceId ? 'page' : poster ? 'poster' : 'book'} />
       </div>
       <GradeSliders value={grade} apply={apply} label="Grade" />
-      <p className="muted small">Applies to every photo {where}, on screen and in the PDF. Text and shapes keep their colours. Double-click a slider to reset it.</p>
+      <p className="muted small">The grade applies {where}, on screen and in the PDF. Double-click a slider to reset it.</p>
     </div>
   );
 }

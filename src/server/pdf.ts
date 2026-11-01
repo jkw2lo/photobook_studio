@@ -6,7 +6,7 @@ import PDFDocument from 'pdfkit';
 import { PDFDocument as PdfLibDocument, PDFName, PDFArray, PDFNumber } from 'pdf-lib';
 import sharp from 'sharp';
 import {
-  COVER_INDEX, archGeometry, displayText, textLayers, calendarLayout, calendarMark, elementOpacity, mapPath, backgroundFrame, coverGeometry, geometryFor, gradeChainKey, gradeChainMatrix, gradientLine, isNeutralChain, maskPath, pointOnArch, shapePath, posterGeometry, elementBounds, elementPlacement, fontFilePath, intersects, mmToInch, mmToPt, nearestWeight,
+  COVER_INDEX, archGeometry, displayText, textLayers, gradeHex, gradeSurfaceColours, pageGrades, calendarLayout, calendarMark, elementOpacity, mapPath, backgroundFrame, coverGeometry, geometryFor, gradeChainKey, gradeChainMatrix, gradientLine, isNeutralChain, maskPath, pointOnArch, shapePath, posterGeometry, elementBounds, elementPlacement, fontFilePath, intersects, mmToInch, mmToPt, nearestWeight,
   pageNumberRect, preflight, printablePages, roleStyle, type BleedMode, type BookDocument, type Element, type ImageElement,
   type CalendarElement, type ColorGrade, type Gradient, type PhotoAsset, type PreflightIssue, type Rect, type ShapeElement, type Spread, type TextElement,
 } from '../core';
@@ -67,6 +67,8 @@ class PdfWriter {
   private alpha = 1;
   /** Grade of the page / spread / cover being drawn (between each photo's own and the document's). */
   private surfaceGrade?: ColorGrade;
+  /** The grades that colour the whole page being drawn — the only ones its background photo takes. */
+  private wholePage: ColorGrade[] = [];
 
   constructor(readonly outPath: string, title: string, private readonly assets: Map<string, ExportAsset>, private readonly grade?: ColorGrade) {
     this.pdf = new PDFDocument({ autoFirstPage: false, compress: true, info: { Title: title, Creator: 'Photobook Studio', Producer: 'Photobook Studio (PDFKit)' } });
@@ -106,6 +108,7 @@ class PdfWriter {
   async elements(elements: Element[], area: Rect, spreadIndex: number, label: string, surfaceGrade?: ColorGrade) {
     const { pdf } = this;
     this.surfaceGrade = surfaceGrade;
+    this.wholePage = pageGrades([surfaceGrade, this.grade]);
     for (const el of elements) {
       if (!intersects(elementBounds(el), area)) continue;
       pdf.save();
@@ -194,7 +197,7 @@ class PdfWriter {
     const tw = Math.max(1, Math.min(width, Math.round(mmToInch(visible.dest.w) * TARGET_DPI)));
     const th = Math.max(1, Math.min(height, Math.round(mmToInch(visible.dest.h) * TARGET_DPI)));
     // The photo's own adjustment, the page's grade, then the document's — as in the editor.
-    const chain = [el.adjust, this.surfaceGrade, this.grade];
+    const chain = el.id.endsWith(':bg') ? [el.adjust, ...this.wholePage] : [el.adjust, this.surfaceGrade, this.grade];
     const grade = isNeutralChain(chain) ? null : gradeChainMatrix(chain);
     const key = `${asset.id}|${left},${top},${width},${height}|${tw}x${th}|${gradeChainKey(chain)}`;
     let buf = this.imageCache.get(key);
@@ -326,6 +329,13 @@ function withBackground(surface: Spread, g: { width: number; height: number; ble
   return bg ? [bg, ...surface.elements] : surface.elements;
 }
 
+/** A surface as printed: under grades for the whole page its background and colours change too. */
+function asGraded(doc: BookDocument, surface: Spread): { surface: Spread; background: string; textColor: string } {
+  const whole = pageGrades([surface.grade, doc.grade]);
+  const shown = gradeSurfaceColours(surface, doc.style.background, whole);
+  return { surface: shown, background: shown.background ?? doc.style.background, textColor: gradeHex(doc.style.textColor, whole) };
+}
+
 /** Interior: one PDF page per printed page, trim + bleed, TrimBox/BleedBox set. */
 export async function exportPdf(doc: BookDocument, assets: Map<string, ExportAsset>, outPath: string, options: ExportOptions = {}): Promise<ExportResult> {
   const started = Date.now();
@@ -347,12 +357,13 @@ export async function exportPdf(doc: BookDocument, assets: Map<string, ExportAss
     const originX = page.side === 'left' ? -b : W - spineBleed;
     const spec: PageSpec = { pageW, pageH, trim: { x: page.side === 'left' ? b : spineBleed, y: b, w: W, h: H } };
     specs.push(spec);
-    w.page(spec, spread.background ?? doc.style.background);
-    await w.elements(withBackground(spread, geometryFor(s, doc.spreads.length, page.spreadIndex)), { x: originX, y: -b, w: pageW, h: pageH }, page.spreadIndex, `Page ${page.pageNumber}`, spread.grade);
+    const shown = asGraded(doc, spread);
+    w.page(spec, shown.background);
+    await w.elements(withBackground(shown.surface, geometryFor(s, doc.spreads.length, page.spreadIndex)), { x: originX, y: -b, w: pageW, h: pageH }, page.spreadIndex, `Page ${page.pageNumber}`, spread.grade);
     if (s.pageNumbers && page.pageNumber > 1) {
       const r = pageNumberRect(page.side, s);
       w.useFont(roleStyle(doc.style, 'caption').family, 400);
-      w.pdf.fontSize(8).fillColor(doc.style.textColor);
+      w.pdf.fontSize(8).fillColor(shown.textColor);
       w.pdf.text(String(page.pageNumber), mmToPt(r.x - originX), mmToPt(r.y + b), { width: mmToPt(r.w), align: page.side === 'left' ? 'left' : 'right', lineBreak: false });
     }
   }
@@ -368,8 +379,9 @@ export async function exportCoverPdf(doc: BookDocument, assets: Map<string, Expo
   const g = coverGeometry(doc);
   const spec: PageSpec = { pageW: g.width + 2 * g.bleed, pageH: g.height + 2 * g.bleed, trim: { x: g.bleed, y: g.bleed, w: g.width, h: g.height } };
   const w = new PdfWriter(outPath, `${doc.title} — cover`, assets, doc.grade);
-  w.page(spec, doc.cover.background ?? doc.style.background);
-  await w.elements(withBackground(doc.cover, g), { x: -g.bleed, y: -g.bleed, w: spec.pageW, h: spec.pageH }, COVER_INDEX, 'Cover', doc.cover.grade);
+  const shown = asGraded(doc, doc.cover);
+  w.page(spec, shown.background);
+  await w.elements(withBackground(shown.surface, g), { x: -g.bleed, y: -g.bleed, w: spec.pageW, h: spec.pageH }, COVER_INDEX, 'Cover', doc.cover.grade);
   const bytes = await w.finish();
   return { path: outPath, bytes, verification: await verifyPdf(outPath, [spec]), textOverflow: overflowIssues(w), spineMm: g.spine?.mm ?? 0 };
 }
@@ -383,8 +395,9 @@ export async function exportPosterPdf(doc: BookDocument, assets: Map<string, Exp
   const issues = preflight(doc, new Map([...assets].map(([id, a]) => [id, a.asset])));
   const spec: PageSpec = { pageW: g.width + 2 * g.bleed, pageH: g.height + 2 * g.bleed, trim: { x: g.bleed, y: g.bleed, w: g.width, h: g.height } };
   const w = new PdfWriter(outPath, doc.title, assets, doc.grade);
-  w.page(spec, sheet.background ?? doc.style.background);
-  await w.elements(withBackground(sheet, g), { x: -g.bleed, y: -g.bleed, w: spec.pageW, h: spec.pageH }, 0, 'Poster', sheet.grade);
+  const shown = asGraded(doc, sheet);
+  w.page(spec, shown.background);
+  await w.elements(withBackground(shown.surface, g), { x: -g.bleed, y: -g.bleed, w: spec.pageW, h: spec.pageH }, 0, 'Poster', sheet.grade);
   const bytes = await w.finish();
   return { path: outPath, bytes, issues, textOverflow: overflowIssues(w), verification: await verifyPdf(outPath, [spec]), durationMs: Date.now() - started, bleedMode: 'all' };
 }

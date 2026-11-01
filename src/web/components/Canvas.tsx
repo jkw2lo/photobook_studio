@@ -307,7 +307,9 @@ export function Canvas() {
       return;
     }
 
-    const hit = hitTest(p);
+    // A click just outside the selected item's edge still grabs it, rather than deselecting it.
+    const near = selected && !selected.locked && multiEls.length <= 1 ? nearElement(selected, p, 10 / scale) : false;
+    const hit = hitTest(p) ?? (near ? selected : undefined);
     if (swapSource && hit?.type === 'image') {
       run('Swap photos', (d) => swapFramePhotos(d, swapSource, { spreadId: surface.id, elementId: hit.id }, assets));
       setSwapSource(null);
@@ -760,6 +762,7 @@ export function Canvas() {
   const canNext = index < doc.spreads.length - 1;
 
   return (
+    <div className="canvas-wrap">
     <div className="canvas" ref={wrapRef}>
       <div className="canvas-inner" style={{ minWidth: Math.max(totalW + 120, totalW + 2 * pad), minHeight: Math.max((g.height + 2 * b) * scale + 72, (g.height + 2 * b) * scale + 2 * pad) }}>
         {!isPosterDoc && (
@@ -843,12 +846,24 @@ export function Canvas() {
           {selected?.type === 'image' && selected.assetId && <img src={thumbUrl(selected.assetId)} alt="" />}
         </div>
       )}
-      {swapSource && <div className="canvas-hint">Click another photo to swap with — on any spread. Esc to cancel.</div>}
-      {cropEl && cropAsset && <CropToolbar key={cropEl.id} el={cropEl} asset={cropAsset} surfaceId={surface.id} ratio={cropRatio} onRatio={setCropRatio} />}
-      {tool && <ToolBar tool={tool} />}
       {menu && <ContextMenu target={menu} onClose={() => setMenu(null)} onEditText={(id) => setEditingText(id)} />}
     </div>
+    {/* Tool bars sit at the bottom of the visible canvas, outside the scrolling area, so zooming
+        and scrolling never move them off screen. */}
+    {(swapSource || (cropEl && cropAsset) || tool) && (
+      <div className="canvas-dock">
+        {swapSource && <div className="canvas-hint">Click another photo to swap with — on any spread. Esc to cancel.</div>}
+        {cropEl && cropAsset && <CropToolbar key={cropEl.id} el={cropEl} asset={cropAsset} surfaceId={surface.id} ratio={cropRatio} onRatio={setCropRatio} />}
+        {tool && <ToolBar tool={tool} />}
+      </div>
+    )}
+    </div>
   );
+}
+
+/** Is a point on an element or within `margin` mm of its edge (rotation respected)? */
+function nearElement(el: Element, p: Pt, margin: number): boolean {
+  return pointInElement({ ...el, xMm: el.xMm - margin, yMm: el.yMm - margin, widthMm: el.widthMm + 2 * margin, heightMm: el.heightMm + 2 * margin }, p.x, p.y);
 }
 
 /** A point in a frame's own coordinates (mm from its top-left corner, rotation undone). */
@@ -1211,9 +1226,12 @@ function HandleLayer({ el, scale, offset }: { el: Element; scale: number; offset
       {HANDLES.map((h) => (
         <div key={h} className={`handle handle-${h}`} data-handle={h} />
       ))}
-      <div className="handle handle-rotate" data-handle="rotate" title="Rotate (Shift: 15° steps)"><Icon name="rotate" size={10} /></div>
       {/* Just outside each corner: grab there to rotate, as in most design apps. */}
-      {(['nw', 'ne', 'se', 'sw'] as const).map((c) => <div key={c} className={`rotate-zone rz-${c}`} data-handle="rotate" title="Drag to rotate (Shift: 15° steps)" />)}
+      {(['nw', 'ne', 'se', 'sw'] as const).map((c) => (
+        <div key={c} className={`rotate-zone rz-${c}`} data-handle="rotate" title="Drag to rotate (Shift: 15° steps)">
+          <Icon name="rotate" size={12} />
+        </div>
+      ))}
       {el.type === 'image' && el.assetId && short >= 26 && (
         <div className="handle-swap" data-handle="swap" title="Drag onto another photo to swap them" style={{ width: swapPx, height: swapPx, margin: -swapPx / 2 }}>
           <Icon name="swap" size={Math.round(swapPx * 0.47)} />

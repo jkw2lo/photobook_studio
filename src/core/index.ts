@@ -33,3 +33,4 @@ export * from './spacing';
 export * from './calendar';
 export * from './freeform';
 export * from './textLooks';
+export * from './gradeScope';
