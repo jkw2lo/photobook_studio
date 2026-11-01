@@ -73,7 +73,14 @@ copy it over, never here. `src/web/demo/` supplies the words, the sample and the
 - **See the demo** imports 22 made-up illustrated photos (`src/web/public/demo/`, made by
   `scripts/make-demo.ts`) through the real import, with their EXIF dates moved to about three
   weeks ago, drafts *Amalfi Coast* with the Travel journal template, and makes a *Lemon grove*
-  poster. Then the page reloads and an eight-step walk-through runs.
+  poster. It also rebuilds *Japanese teas*, a poster designed by hand in the desktop editor, from
+  `src/web/demo/tea-poster.json` (the poster, with each photo named by its file) and 32 web-sized
+  copies of its photos in `src/web/public/demo/tea/`. Then the page reloads and a ten-step
+  walk-through runs; its second and third steps open the two posters.
+- Posters from the desktop editor draw here as designed: hand cut-outs (`mask.kind: 'cut'`,
+  `core/cutouts.ts`), inverted photos (`grade.invert`), a background photo moved into place
+  (`backgroundImage.box`) with its own adjustment, and grades for the photos only
+  (`grade.scope: 'photos'`). The tools that make them live in the desktop version.
 - **Start fresh** (from the banner) erases this browser's Photobook Studio data and reloads.
 - The sample photos and the welcome ship in the web build only (`publicDir` is off for the local build).
 

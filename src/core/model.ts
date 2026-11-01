@@ -170,6 +170,9 @@ export interface ImageElement extends ElementBase {
  */
 export type PhotoMask =
   | { kind: 'shape'; shape: string }
+  /** Cut by hand (desktop editor): an outline to keep (missing = the whole frame) minus erased
+   * areas, in fractions of the frame (0–1). */
+  | { kind: 'cut'; keep?: { x: number; y: number }[]; erase: { x: number; y: number }[][] }
   | { kind: 'text'; text: string; fontFamily: string; fontWeight: number; italic?: boolean; uppercase?: boolean; letterSpacingEm?: number; d: string; aspect: number }
   | ({ kind: 'outline' } & PlaceOutline);
 
@@ -279,6 +282,11 @@ export interface BackgroundImage {
   /** 0–1. */
   opacity: number;
   crop: Crop;
+  /** 'contain' only: where the whole photo sits on the surface (mm, surface coordinates, the
+   * photo's own shape). Missing = as large as fits, centred. (Made by the desktop editor.) */
+  box?: Rect;
+  /** The background photo's own adjustments, applied before the document's grade. */
+  adjust?: ColorGrade;
 }
 
 export interface SpreadLayout {
@@ -351,6 +359,11 @@ export interface ColorGrade {
   fade: number;
   /** Tint shadows-to-highlights through a single colour (black & white, sepia). */
   mono?: 'bw' | 'sepia';
+  /** A negative: every colour turned to its opposite (white becomes black), after everything else. */
+  invert?: boolean;
+  /** 'photos': the grade changes the photos only, not the background photo (posters made in the
+   * desktop editor). Missing or 'page': the background photo too. */
+  scope?: 'photos' | 'page';
 }
 
 /**

@@ -1,6 +1,7 @@
-import { applyBookTemplate, generatePoster, reconcileCover, refreshContents, type BookDocument, type PhotoAsset } from '../../core';
+import { applyBookTemplate, generatePoster, reconcileCover, refreshContents, type BackgroundImage, type BookDocument, type Element, type PhotoAsset } from '../../core';
 import { api, type ImportJob } from '../api';
 import { initialCollageSettings } from '../components/PosterUI';
+import teaRecipe from './tea-poster.json';
 
 // The web version's demo: someone a few weeks after a three-day trip along the Amalfi Coast. The
 // sample photos (made-up illustrations, see scripts/make-demo.ts) go through the real import —
@@ -18,6 +19,8 @@ const TRIP_DAYS_AGO = 23;
 export interface DemoIds {
   book: string;
   poster: string;
+  /** The hand-made Japanese teas poster (missing in demos set up before it existed). */
+  tea?: string;
 }
 
 export function demoIds(): DemoIds | null {
@@ -112,7 +115,11 @@ export async function loadDemo(onProgress: (text: string) => void): Promise<Demo
   const collage = generatePoster(poster.doc, posterAssets, { ...initialCollageSettings(poster.doc, usable), photoCount: 9 }).doc;
   await save(collage, poster.revision);
 
-  const ids = { book: drafted.id, poster: collage.id };
+  // The second poster: made by hand in the desktop editor (cut-outs, inverted labels, a background
+  // photo moved into place), rebuilt here from its recipe with the demo's own copies of its photos.
+  const tea = await makeTeaPoster(onProgress);
+
+  const ids = { book: drafted.id, poster: collage.id, tea };
   try {
     localStorage.setItem(KEY, JSON.stringify(ids));
     // The demo opens with the web-version notes folded, so the books are what you see first.
@@ -121,6 +128,49 @@ export async function loadDemo(onProgress: (text: string) => void): Promise<Demo
     // storage unavailable: the tour falls back to the first book
   }
   return ids;
+}
+
+interface TeaRecipe {
+  title: string;
+  sizeId: string;
+  style: BookDocument['style'];
+  grade?: BookDocument['grade'];
+  collage?: BookDocument['collage'];
+  sheet: { background?: string; backgroundImage: BackgroundImage; elements: Element[] };
+  photos: string[];
+}
+
+/** Import the tea poster's photos into a new poster and lay it out exactly as designed. */
+async function makeTeaPoster(onProgress: (text: string) => void): Promise<string> {
+  const recipe = teaRecipe as unknown as TeaRecipe;
+  const files: File[] = [];
+  for (const [i, name] of recipe.photos.entries()) {
+    onProgress(`Fetching the tea poster's photos… ${i + 1} / ${recipe.photos.length}`);
+    const r = await fetch(`${BASE}tea/${name}`);
+    if (!r.ok) throw new Error(`Couldn't load ${name}`);
+    files.push(new File([await r.arrayBuffer()], name, { type: 'image/webp' }));
+  }
+  const folder = api.web!.registerFiles(files);
+  onProgress('Making the tea poster…');
+  const created = await api.createProject({ title: recipe.title, sizeId: recipe.sizeId, product: 'poster' });
+  await importInto(created.doc.id, folder, onProgress);
+  const byFile = new Map((await api.assets(created.doc.id)).map((a) => [a.fileName, a.id]));
+  const asset = (ref: string | null) => (ref?.startsWith('file:') ? byFile.get(ref.slice(5)) ?? null : ref);
+  const sheet = created.doc.spreads[0];
+  const doc: BookDocument = {
+    ...created.doc,
+    style: recipe.style,
+    grade: recipe.grade,
+    collage: recipe.collage,
+    spreads: [{
+      ...sheet,
+      background: recipe.sheet.background,
+      backgroundImage: { ...recipe.sheet.backgroundImage, assetId: asset(recipe.sheet.backgroundImage.assetId) ?? '' },
+      elements: recipe.sheet.elements.map((e) => (e.type === 'image' ? { ...e, assetId: asset(e.assetId) } : e)),
+    }],
+  };
+  await save(doc, created.revision);
+  return doc.id;
 }
 
 export function forgetDemo() {

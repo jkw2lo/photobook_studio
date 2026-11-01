@@ -11,21 +11,26 @@ import { findSurface } from './surface';
 export function backgroundFrame(surface: Pick<Spread, 'id' | 'backgroundImage'>, g: { width: number; height: number; bleed: number }): ImageElement | null {
   const bg = surface.backgroundImage;
   if (!bg) return null;
+  // A fitted photo moved or resized on the desktop sits in its own box; otherwise it covers the
+  // surface and its bleed.
+  const boxed = bg.fit === 'contain' && bg.box;
+  const r = boxed ? bg.box! : { x: -g.bleed, y: -g.bleed, w: g.width + 2 * g.bleed, h: g.height + 2 * g.bleed };
   return {
     id: `${surface.id}:bg`,
     type: 'image',
     assetId: bg.assetId,
-    xMm: -g.bleed,
-    yMm: -g.bleed,
-    widthMm: g.width + 2 * g.bleed,
-    heightMm: g.height + 2 * g.bleed,
+    xMm: r.x,
+    yMm: r.y,
+    widthMm: r.w,
+    heightMm: r.h,
     rotationDeg: 0,
     locked: true,
-    crop: bg.crop,
+    crop: boxed ? { cx: 0.5, cy: 0.5, zoom: 1 } : bg.crop,
     fit: bg.fit,
     borderMm: 0,
     borderColor: '#ffffff',
     opacity: bg.opacity,
+    adjust: bg.adjust,
   };
 }
 
