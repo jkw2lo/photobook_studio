@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import PDFDocument from 'pdfkit';
 import { PDFDocument as PdfLibDocument, PDFName, PDFArray, PDFNumber } from 'pdf-lib';
-import sharp from 'sharp';
+import sharp, { type Sharp } from 'sharp';
 import {
   COVER_INDEX, archGeometry, displayText, textLayers, gradeHex, gradeSurfaceColours, pageGrades, patternPath, type SurfacePattern, calendarLayout, calendarMark, elementOpacity, mapPath, backgroundFrame, coverGeometry, geometryFor, gradeChainKey, gradeChainMatrix, gradientLine, isNeutralChain, maskPath, pointOnArch, shapePath, posterGeometry, elementBounds, elementPlacement, fontFilePath, intersects, mmToInch, mmToPt, nearestWeight,
   pageNumberRect, preflight, printablePages, roleStyle, type BleedMode, type BookDocument, type Element, type ImageElement,
@@ -257,13 +257,11 @@ class PdfWriter {
         .resize(tw, th, { fit: 'fill' });
       const cutout = !!asset.analysis?.transparent;
       img = cutout ? img.ensureAlpha() : img.flatten({ background: '#ffffff' });
-      // The colour grade: the same rgb' = M·rgb + o the editor applies (alpha untouched).
-      if (grade) {
-        const { m, o } = grade;
-        img = cutout
-          ? img.recomb([[m[0], m[1], m[2], 0], [m[3], m[4], m[5], 0], [m[6], m[7], m[8], 0], [0, 0, 0, 1]]).linear([1, 1, 1, 1], [o[0] * 255, o[1] * 255, o[2] * 255, 0])
-          : img.recomb([[m[0], m[1], m[2]], [m[3], m[4], m[5]], [m[6], m[7], m[8]]]).linear([1, 1, 1], [o[0] * 255, o[1] * 255, o[2] * 255]);
-      }
+      // The colour grade: the same rgb' = M·rgb + o the editor applies (alpha untouched), done here
+      // on the finished pixels in one step and clamped once. (Left to sharp as recomb + linear, the
+      // negative values an invert produces get clamped between the two steps after a resize, and
+      // inverted photos print white.)
+      if (grade) img = await applyGrade(img.toColourspace('srgb'), grade);
       // Cutouts keep their transparency (PNG with alpha → PDF soft mask) so whatever is behind them
       // — the sheet colour, a background image, other photos — shows through. Photos stay JPEG.
       buf = cutout ? await img.png({ compressionLevel: 6 }).toBuffer() : await img.jpeg({ quality: this.q.jpeg, chromaSubsampling: this.q.subsampling }).toBuffer();
@@ -370,6 +368,27 @@ class PdfWriter {
     await this.done;
     return (await readFile(this.outPath)).byteLength;
   }
+}
+
+/** A colour grade (rgb' = M·rgb + o, sRGB 0–1) applied to an image's final 8-bit pixels; alpha is left alone. */
+async function applyGrade(img: Sharp, { m, o }: { m: number[]; o: number[] }): Promise<Sharp> {
+  const { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
+  const ch = info.channels;
+  const out = Buffer.from(data);
+  const ob = o.map((v) => v * 255);
+  const clamp = (v: number) => (v <= 0 ? 0 : v >= 255 ? 255 : Math.round(v));
+  for (let i = 0; i < out.length; i += ch) {
+    const r = data[i];
+    const g = ch >= 3 ? data[i + 1] : r;
+    const b = ch >= 3 ? data[i + 2] : r;
+    const R = clamp(m[0] * r + m[1] * g + m[2] * b + ob[0]);
+    if (ch >= 3) {
+      out[i] = R;
+      out[i + 1] = clamp(m[3] * r + m[4] * g + m[5] * b + ob[1]);
+      out[i + 2] = clamp(m[6] * r + m[7] * g + m[8] * b + ob[2]);
+    } else out[i] = R;
+  }
+  return sharp(out, { raw: { width: info.width, height: info.height, channels: ch } });
 }
 
 /** A surface as printed: under grades for the whole page its background and colours change too. */

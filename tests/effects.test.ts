@@ -9,6 +9,9 @@ import {
   updateElement, makeImageElement, gradeFromPreset, gradeColor, isNeutralGrade, gradeHex, gradeSurfaceColours, pageGrades, PATTERNS, patternPath, setSurfacePattern, STICKER_PACKS, addSticker, stickerFields, type TextElement,
 } from '../src/core';
 import { exportPosterPdf } from '../src/server/pdf';
+import { exportPosterImage } from '../src/server/imageExport';
+import sharp from 'sharp';
+import { fakeAsset } from './helpers';
 
 describe('text', () => {
   const base = { text: 'Hi there\nYou', uppercase: false, vertical: false };
@@ -170,4 +173,43 @@ describe('background patterns', () => {
     expect(a.glow!.sizeMm * 2).toBeCloseTo(b.glow!.sizeMm);
     expect(stickerFields(neon, 1, 40, 40).glow!.color).not.toBe(a.glow!.color);
   });
+});
+
+describe('inverted photos in exports', () => {
+  it('a white photo inverted prints black — transparent cut-outs and plain photos alike', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'inv-'));
+    try {
+      // White, opaque except a transparent band: a "cut-out" PNG, and the same as a plain JPEG —
+      // bigger than they print, so the exporter scales them down (as with real photos).
+      const W = 3200;
+      const H = 2400;
+      const raw = Buffer.alloc(W * H * 4, 255);
+      for (let y = 0; y < 200; y++) for (let x = 0; x < W; x++) raw[(y * W + x) * 4 + 3] = 0;
+      const png = join(dir, 'white.png');
+      const jpg = join(dir, 'white.jpg');
+      await sharp(raw, { raw: { width: W, height: H, channels: 4 } }).png().toFile(png);
+      await sharp(raw, { raw: { width: W, height: H, channels: 4 } }).flatten({ background: '#ffffff' }).jpeg().toFile(jpg);
+      const cut = fakeAsset({ widthPx: W, heightPx: H });
+      cut.analysis = { ...cut.analysis!, transparent: true };
+      const plain = fakeAsset({ widthPx: W, heightPx: H });
+      let doc = createPoster({ title: 'I', sizeId: 'p11x14' });
+      const neg = { ...gradeFromPreset('none'), preset: 'custom', mono: 'bw' as const, invert: true, brightness: 100 };
+      const frame = (asset: typeof cut, y: number) => ({ ...makeImageElement(doc, asset, { x: 40, y, w: 200, h: 150 }), adjust: neg });
+      doc = { ...doc, style: { ...doc.style, background: '#808080' }, grade: { ...gradeFromPreset('bw') }, spreads: [{ ...doc.spreads[0], background: '#808080', elements: [frame(cut, 20), frame(plain, 190)] }] };
+      const assets = new Map([[cut.id, { asset: cut, workPath: png }], [plain.id, { asset: plain, workPath: jpg }]]);
+      const out = join(dir, 'p.png');
+      await exportPosterImage(doc, assets, out, { format: 'png', dpi: 40 });
+      const { data, info } = await sharp(out).raw().toBuffer({ resolveWithObject: true });
+      const at = (xMm: number, yMm: number) => {
+        const x = Math.round((xMm / 25.4) * 40);
+        const y = Math.round((yMm / 25.4) * 40);
+        return data[(y * info.width + x) * info.channels];
+      };
+      expect(at(140, 120)).toBeLessThan(30); // the cut-out, inverted: black
+      expect(at(140, 280)).toBeLessThan(30); // the plain photo, inverted: black
+      expect(at(270, 120)).toBeGreaterThan(100); // the grey sheet beside them is untouched
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
 });
