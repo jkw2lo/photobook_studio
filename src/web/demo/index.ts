@@ -1,11 +1,14 @@
 import { api } from '../api';
 import { useEditor } from '../store';
-import { demoIds, forgetDemo, loadDemo } from './sample';
+import { demoIds, ensureDemo, loadDemo } from './sample';
+import { isDemoProject } from './status';
 
-// The portfolio's demo welcome (projects/DEMO.md): a visitor arriving with ?from=portfolio and
-// nothing saved can see the demo, with a walk-through, or start fresh. Look and behaviour come
-// from public/demo-welcome.js, an unchanged copy of the portfolio's master; this file supplies
-// the words, the sample and the steps. Web version only.
+// The web version's demo projects are always there (set up in the background on start, and again
+// if one goes missing); the home page marks them. On top of that, the portfolio's demo welcome
+// (projects/DEMO.md): a visitor arriving with ?from=portfolio and nothing of their own saved can
+// see the demo, with a walk-through, or start fresh. Look and behaviour come from
+// public/demo-welcome.js, an unchanged copy of the portfolio's master; this file supplies the
+// words, the sample and the steps. Web version only.
 
 interface DemoWelcomeApi {
   init(cfg: object): void;
@@ -51,9 +54,13 @@ function progress() {
   return { set: (t: string) => (el.textContent = t), done: () => el.remove() };
 }
 
-export async function startDemoWelcome() {
-  const web = api.web;
-  if (!web) return;
+export async function startDemo() {
+  if (!api.web) return;
+  void ensureDemo().catch((e) => console.warn('demo setup', e));
+  await startDemoWelcome();
+}
+
+async function startDemoWelcome() {
   // Only load the welcome for visitors it can concern: from the portfolio, or mid-demo.
   let demoOn = false;
   try {
@@ -69,8 +76,12 @@ export async function startDemoWelcome() {
     name: 'Photobook Studio',
     accent: '#e7a65f',
     demo: 'A three-day Amalfi Coast trip drafted into a travel journal and a lemon grove poster, plus a Japanese teas poster designed by hand.',
-    fresh: 'No books yet. Make one, import a folder of photos, and it drafts the pages.',
-    isEmpty: async () => (await api.listProjects()).length === 0 && (await api.deletedProjects()).length === 0,
+    fresh: 'Make your own book: import a folder of photos and it drafts the pages. The demo projects stay alongside, marked Demo.',
+    // Nothing of the visitor's own yet (the demo projects don't count).
+    isEmpty: async () => {
+      const own = (list: { id: string }[]) => list.filter((p) => !isDemoProject(p.id)).length;
+      return own(await api.listProjects()) === 0 && own(await api.deletedProjects()) === 0;
+    },
     loadDemo: async () => {
       const p = progress();
       try {
@@ -78,17 +89,10 @@ export async function startDemoWelcome() {
       } finally {
         p.done();
       }
-      // Reload so the home page lists the new books; the walk-through runs after the reload.
-      history.replaceState(null, '', location.pathname + location.search);
-      location.reload();
-      await new Promise(() => undefined);
     },
-    clear: async () => {
-      forgetDemo();
-      await web.eraseEverything();
-      history.replaceState(null, '', location.pathname + location.search);
-      location.reload();
-    },
+    // The home page marks the demo projects itself, and they stay: no banner, nothing to clear.
+    banner: false,
+    clear: () => undefined,
     tour: [
       {
         go: home,
@@ -163,7 +167,7 @@ export async function startDemoWelcome() {
       },
       {
         title: 'Over to you',
-        text: 'Everything works, and it all stays in this browser. Drag a photo onto a page, or open the poster. Start fresh is at the bottom left.',
+        text: 'Everything works, and it all stays in this browser. The demo projects stay on the home page, marked Demo, and each can be reset; New book or poster starts your own.',
       },
     ],
   });

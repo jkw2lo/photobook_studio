@@ -63,24 +63,39 @@ Left out of the web build: the "server is out of date" banner and restart, the `
 browser (replaced by the browser's own folder picker), creating the Shelf folder for you, and the
 Mac launcher.
 
-## Demo for portfolio visitors
+## Demo projects
 
-Follows the portfolio's `DEMO.md` (jkw2lo/projects). `src/web/public/demo-welcome.js` is an
-unchanged copy of the portfolio's master (`projects/tools/demo-welcome.js`): change it there and
-copy it over, never here. `src/web/demo/` supplies the words, the sample and the walk-through:
+Every visitor has the demo's three projects, alongside their own: *Amalfi Coast* (a book),
+*Lemon grove* and *Japanese teas* (posters). `ensureDemo()` (`src/web/demo/sample.ts`) runs on
+every start and sets up whatever is missing: everything on a first visit, a piece added since an
+older demo was set up, or one that was lost. One in Recently deleted is restored instead. Which
+projects are the demo is kept in localStorage (`photobook:demo`, `src/web/demo/status.ts`); the
+setup takes turns between tabs (`navigator.locks`).
 
-- Shown only for `?from=portfolio` with no books saved (the welcome script isn't even loaded otherwise).
-- **See the demo** imports 22 made-up illustrated photos (`src/web/public/demo/`, made by
-  `scripts/make-demo.ts`) through the real import, with their EXIF dates moved to about three
-  weeks ago, drafts *Amalfi Coast* with the Travel journal template, and makes a *Lemon grove*
-  poster. It also rebuilds *Japanese teas*, a poster designed by hand in the desktop editor, from
+- The home page lists your own projects first, then the demo's, tinted and labelled **Demo**
+  (also in the editor's title bar). A demo project has **Reset** (back to the original, edits
+  discarded) instead of Delete. While a piece is being set up it shows as a placeholder card.
+- *Amalfi Coast* and *Lemon grove*: 22 made-up illustrated photos (`src/web/public/demo/`, made
+  by `scripts/make-demo.ts`) through the real import, with their EXIF dates moved to about three
+  weeks ago; the book is drafted with the Travel journal template, the poster is an auto collage.
+- *Japanese teas*: a poster designed by hand in the desktop editor, rebuilt from
   `src/web/demo/tea-poster.json` (the poster, with each photo named by its file) and 32 web-sized
-  copies of its photos in `src/web/public/demo/tea/`. Then the page reloads and a ten-step
-  walk-through runs; its second and third steps open the two posters.
+  copies of its photos in `src/web/public/demo/tea/`.
 - Posters from the desktop editor draw here as designed: hand cut-outs (`mask.kind: 'cut'`,
   `core/cutouts.ts`), inverted photos (`grade.invert`), a background photo moved into place
   (`backgroundImage.box`) with its own adjustment, and grades for the photos only
   (`grade.scope: 'photos'`). The tools that make them live in the desktop version.
-- **Start fresh** (from the banner) erases this browser's Photobook Studio data and reloads.
+
+### Welcome for portfolio visitors
+
+Follows the portfolio's `DEMO.md` (jkw2lo/projects). `src/web/public/demo-welcome.js` is an
+unchanged copy of the portfolio's master (`projects/tools/demo-welcome.js`): change it there and
+copy it over, never here. `src/web/demo/index.ts` supplies the words and the walk-through:
+
+- Shown only for `?from=portfolio` with nothing of the visitor's own saved (demo projects don't count).
+- **See the demo** waits for the demo projects, then a ten-step walk-through runs; its second and
+  third steps open the two posters. **Start fresh** just closes the card.
+- The welcome's own banner is off (`banner: false`): the home page marks the demo itself, and
+  the demo projects stay.
 - The sample photos and the welcome ship in the web build only (`publicDir` is off for the local build).
 

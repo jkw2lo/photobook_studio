@@ -103,6 +103,9 @@ input[type='checkbox'] { accent-color: var(--accent); width: 15px; height: 15px;
 .home-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 32px; flex-wrap: wrap; }
 .home-head h1 { font-family: 'Playfair Display', serif; font-size: 34px; font-weight: 700; }
 .home-empty { text-align: center; padding: 64px 16px; border: 1px dashed var(--line); border-radius: 14px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.home-empty-compact { flex-direction: row; flex-wrap: wrap; justify-content: space-between; text-align: left; padding: 14px 16px; margin-bottom: 14px; gap: 4px 16px; }
+.home-empty-compact h2 { font-size: 15px; margin: 0; flex-basis: 100%; }
+.home-empty-compact p { margin: 0; flex: 1 1 320px; }
 .project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
 .project-card { display: flex; flex-direction: column; gap: 4px; padding: 18px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line-soft); color: var(--text); text-decoration: none; }
 .project-card:hover { border-color: var(--accent); }
@@ -622,6 +625,14 @@ input[type='checkbox'] { accent-color: var(--accent); width: 15px; height: 15px;
 .project-delete { position: absolute; top: 8px; right: 8px; opacity: 0; transition: opacity 0.12s; }
 .project-card:hover .project-delete, .project-delete:focus-visible { opacity: 1; }
 .project-delete:hover { color: var(--error); }
+/* The web version's demo projects: a warm tint and a Demo label, so they read as samples. */
+.project-demo { background: color-mix(in srgb, var(--accent) 9%, var(--panel)); border-color: color-mix(in srgb, var(--accent) 32%, var(--line-soft)); }
+.project-demo .project-delete:hover { color: var(--accent); }
+.topbar .demo-badge { margin: 0; }
+.demo-badge { align-self: flex-start; margin-bottom: 4px; padding: 1px 7px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent-strong); font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.project-pending { opacity: 0.7; cursor: progress; }
+.project-pending:hover { border-color: color-mix(in srgb, var(--accent) 32%, var(--line-soft)); }
+.demo-reset { margin-top: 6px; gap: 6px; align-items: center; flex-wrap: wrap; }
 .undo-bar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; margin: 0 0 14px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); width: fit-content; }
 .deleted { margin-top: 28px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .deleted > .link { display: inline-flex; align-items: center; gap: 4px; }

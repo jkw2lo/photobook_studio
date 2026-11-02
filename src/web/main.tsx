@@ -91,5 +91,6 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 );
 
-// Web version: the portfolio's demo welcome (only for visitors arriving with ?from=portfolio).
-if (__BROWSER_BACKEND__) void import('./demo').then((m) => m.startDemoWelcome()).catch((e) => console.warn('demo welcome', e));
+// Web version: the demo projects (always there), and the portfolio's demo welcome (only for
+// visitors arriving with ?from=portfolio).
+if (__BROWSER_BACKEND__) void import('./demo').then((m) => m.startDemo()).catch((e) => console.warn('demo', e));
