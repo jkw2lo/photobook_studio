@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useReducer, useState } from 'react';
 import { POSTER_SIZES, PRINTERS, SIZE_PRESETS, STYLE_PRESETS, printer, type BindingId, type PrinterId } from '../../core';
 import { api, isBrowserBackend, type ProjectSummary } from '../api';
+import { DEMO_PIECES, DEMO_TITLES, demoBuilding, demoPieceOf, onDemoChange, type DemoPiece } from '../demo/status';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
 import { WebNotes, downloadBackup } from './WebNotes';
@@ -21,6 +22,14 @@ export function Home() {
     api.deletedProjects().then(setDeleted).catch(() => undefined);
   };
   useEffect(reload, []);
+  // The web version's demo projects are set up (or put back) in the background: list them as they arrive.
+  const [, demoChanged] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => onDemoChange(() => {
+    demoChanged();
+    reload();
+  }), []);
+  const [confirmReset, setConfirmReset] = useState<string | null>(null);
+  const [resetting, setResetting] = useState<DemoPiece | null>(null);
   // The undo bar goes away by itself after a while; Recently deleted still has the project.
   useEffect(() => {
     if (!undo) return;
@@ -56,7 +65,27 @@ export function Home() {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
+  const reset = async (piece: DemoPiece) => {
+    setConfirmReset(null);
+    setResetting(piece);
+    try {
+      await (await import('../demo/sample')).resetDemo(piece);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+    setResetting(null);
+    reload();
+  };
   const daysLeft = (iso: string) => Math.max(0, 30 - Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
+
+  // Your own projects first, then the demo's (marked, and reset instead of deleted); projects the
+  // demo setup is still filling in are shown as placeholders until they're done.
+  const building = demoBuilding();
+  const shown = (projects ?? []).filter((p) => !building?.pending.includes(p.id) || demoPieceOf(p.id));
+  const own = shown.filter((p) => !demoPieceOf(p.id));
+  const order = (p: ProjectSummary) => DEMO_PIECES.indexOf(demoPieceOf(p.id)!);
+  const demo = shown.filter((p) => demoPieceOf(p.id)).sort((a, b) => order(a) - order(b));
+  const placeholders = DEMO_PIECES.filter((k) => building?.pieces.includes(k) || resetting === k);
 
   return (
     <div className="home">
@@ -76,44 +105,76 @@ export function Home() {
           <button className="btn btn-small" onClick={() => void restore(undo.id)}>Undo</button>
         </div>
       )}
-      {projects && projects.length === 0 && (
-        <div className="home-empty">
+      {projects && own.length === 0 && (
+        // Next to the demo projects, a short line rather than the big empty page.
+        <div className={`home-empty${demo.length || placeholders.length ? ' home-empty-compact' : ''}`}>
           <h2>Make your first book or poster</h2>
           <p className="muted">Import a folder of photos, let the app draft a whole book or a collage poster, then refine it and export a print-ready PDF.</p>
           <button className="btn btn-primary" onClick={() => setCreating(true)}>New book</button>
         </div>
       )}
       <div className="project-grid">
-        {projects?.map((p) => (
-          <a key={p.id} className="project-card" href={`#/book/${p.id}`}>
-            <strong>{p.title}</strong>
-            <span className="muted small">
-              {p.product === 'poster' ? `Poster · ${(p.trimWidthMm / 25.4).toFixed(0)} × ${(p.trimHeightMm / 25.4).toFixed(0)} in` : `${p.pageCount} pages`} · {p.photoCount} photos
-            </span>
-            <span className="muted small">Edited {new Date(p.updatedAt).toLocaleString()}</span>
-            {isBrowserBackend && (
-              <button
-                className="icon-btn project-backup" title={`Back up “${p.title}” to a file`} aria-label={`Back up ${p.title}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  void backup(p);
-                }}
-              >
-                <Icon name="download" />
-              </button>
-            )}
-            <button
-              className="icon-btn project-delete" title={`Delete “${p.title}”`} aria-label={`Delete ${p.title}`}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                void trash(p);
-              }}
-            >
-              <Icon name="trash" />
-            </button>
-          </a>
+        {[...own, ...demo].map((p) => {
+          const piece = demoPieceOf(p.id);
+          return (
+            <a key={p.id} className={`project-card${piece ? ' project-demo' : ''}`} href={`#/book/${p.id}`}>
+              {piece && <span className="demo-badge">Demo</span>}
+              <strong>{p.title}</strong>
+              <span className="muted small">
+                {p.product === 'poster' ? `Poster · ${(p.trimWidthMm / 25.4).toFixed(0)} × ${(p.trimHeightMm / 25.4).toFixed(0)} in` : `${p.pageCount} pages`} · {p.photoCount} photos
+              </span>
+              <span className="muted small">{piece ? 'Sample project — try anything, then reset it' : `Edited ${new Date(p.updatedAt).toLocaleString()}`}</span>
+              {piece && confirmReset === p.id && (
+                <span className="demo-reset row" onClick={(e) => e.preventDefault()}>
+                  <span className="small">Undo your changes?</span>
+                  <button className="btn btn-small" onClick={(e) => { e.preventDefault(); e.stopPropagation(); void reset(piece); }}>Reset</button>
+                  <button className="btn btn-small btn-ghost" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmReset(null); }}>Cancel</button>
+                </span>
+              )}
+              {isBrowserBackend && (
+                <button
+                  className="icon-btn project-backup" title={`Back up “${p.title}” to a file`} aria-label={`Back up ${p.title}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void backup(p);
+                  }}
+                >
+                  <Icon name="download" />
+                </button>
+              )}
+              {piece ? (
+                <button
+                  className="icon-btn project-delete" title={`Reset “${p.title}” to the original demo`} aria-label={`Reset ${p.title}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setConfirmReset(p.id);
+                  }}
+                >
+                  <Icon name="undo" />
+                </button>
+              ) : (
+                <button
+                  className="icon-btn project-delete" title={`Delete “${p.title}”`} aria-label={`Delete ${p.title}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void trash(p);
+                  }}
+                >
+                  <Icon name="trash" />
+                </button>
+              )}
+            </a>
+          );
+        })}
+        {placeholders.map((k, i) => (
+          <div key={`demo-${k}`} className="project-card project-demo project-pending" role="status">
+            <span className="demo-badge">Demo</span>
+            <strong>{DEMO_TITLES[k]}</strong>
+            <span className="muted small">{i === 0 ? building?.text ?? 'Setting up the demo…' : 'Up next…'}</span>
+          </div>
         ))}
       </div>
       {deleted.length > 0 && (

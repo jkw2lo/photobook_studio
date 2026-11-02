@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { findSurface, innerBox, issueCounts, moveElements, panCrop, updateElement, zoomCropAt } from '../../core';
 import { isBrowserBackend } from '../api';
+import { isDemoProject } from '../demo/status';
 import { duplicate, group, remove, toggleLock, togglePin, ungroup } from '../elementActions';
 import { retrySave, selectedElement, selectedIds, useEditor } from '../store';
 import { Canvas } from './Canvas';
@@ -102,6 +103,7 @@ export function Editor({ projectId }: { projectId: string }) {
 
 function TopBar({ onGenerate, onExport, onPreview }: { onGenerate: () => void; onExport: () => void; onPreview: () => void }) {
   const title = useEditor((s) => s.doc?.title ?? '');
+  const demo = useEditor((s) => !!s.doc && isDemoProject(s.doc.id));
   const poster = useEditor((s) => s.doc?.settings.product === 'poster');
   const past = useEditor((s) => s.past);
   const future = useEditor((s) => s.future);
@@ -117,6 +119,7 @@ function TopBar({ onGenerate, onExport, onPreview }: { onGenerate: () => void; o
       <div className="row">
         <a className="icon-btn" href="#/" title="All books"><Icon name="back" /></a>
         <span className="book-title">{title}</span>
+        {demo && <span className="demo-badge" title="A sample project: reset it from the home page">Demo</span>}
         <span className={`save save-${saveState}`} title={saveError ?? undefined}>
           {saveLabel}
           {saveState === 'error' && <button className="link" onClick={retrySave}>Retry</button>}
