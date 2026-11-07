@@ -1,6 +1,6 @@
 {
-  "url": "http://127.0.0.1:5273/#/book/05fa602b-9826-4552-a591-f1f1101785eb",
-  "note": "Photobook Studio runs on the Mac. Shot from `npm run dev` with PHOTOBOOK_DATA_DIR and PHOTOBOOK_SHELF_DIR pointed at scratch folders, PHOTOBOOK_WEB_PORT=5273, and an illustrated sample trip (22 made-up photos over three days) linked from the Shelf, auto-drafted, with the Travel journal template. The Shelf path is shown as the default.",
+  "url": "http://127.0.0.1:5273/#/book/<the sample book>",
+  "note": "Photobook Studio runs on the Mac. Shot from `npm run dev` (desktop branch) with PHOTOBOOK_DATA_DIR and PHOTOBOOK_SHELF_DIR pointed at scratch folders and PHOTOBOOK_WEB_PORT=5273. The Shelf holds an Amalfi folder with the web demo's 22 made-up photos (src/web/public/demo/*.jpg), their placeholder EXIF dates (2000:01:0D) rewritten to 12-14 May 2026. The book is 'Amalfi, May 2026' (Lulu, square 8.5 in), linked from the Shelf, drafted with Generate first draft, then given the Travel journal template in Layout > Templates. Replace the book id in url with yours. The Shelf path is shown as the default.",
   "shots": [
     {
       "file": "desktop.png",
@@ -9,7 +9,7 @@
         "wait:2500",
         "eval:document.querySelectorAll('.shelf-path span.ellipsis').forEach(s => s.textContent = '~/Pictures/Studio Shelf')",
         "eval:document.querySelectorAll('.navigator .nav-item')[4].click()",
-        "eval:const by = (t) => [...document.querySelectorAll('button')].find(b => (b.getAttribute('aria-label') || b.title || b.textContent.trim()) === t); by('Draft').click()",
+        "eval:[...document.querySelectorAll('.inspector .binder-tabs button')].find(b => b.textContent.trim() === 'Templates').click()",
         "wait:3000",
         "eval:document.querySelectorAll('.shelf-path span.ellipsis').forEach(s => s.textContent = '~/Pictures/Studio Shelf')"
       ]
