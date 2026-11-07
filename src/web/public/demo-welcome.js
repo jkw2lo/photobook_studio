@@ -156,7 +156,7 @@
     wrap.className = "scrim";
     wrap.innerHTML =
       '<div class="card" role="dialog" aria-modal="true" aria-labelledby="dw-title">' +
-        '<p class="eyebrow">From Jen’s portfolio</p>' +
+        '<p class="eyebrow">From Jennifer Lo’s portfolio</p>' +
         '<h2 id="dw-title">' + esc(cfg.name) + "</h2>" +
         '<p class="lead">Look around with sample data already in it, or start from a blank slate the way a new user would.</p>' +
         '<button type="button" class="opt demo" data-pick="demo"><b>See the demo</b><span>' + esc(cfg.demo) + "</span></button>" +
